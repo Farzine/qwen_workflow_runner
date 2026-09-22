@@ -1,0 +1,12 @@
+{
+  "review_date": "2026-09-22",
+  "upstream_pipeline_url": "https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/qwenimage21/pipeline_qwenimage21.py",
+  "upstream_pipeline_sha256": "6985b2f1f25e8dd09ef85c867ebcad184b981f10c0b4f80757ca9cc135b8fa5e",
+  "original_workflow_sha256": "634f0be3127003fcbc4f34696374d747dae811ec1357bcc66199cbdaf75faaff",
+  "model_revision_reviewed": "790c92633540aa0cb11d9abf19eb46d861714758",
+  "diffusers_commit": "fbf49e7f35857f76bc57b177e26f12b03687c668",
+  "reviewed_gguf_url": "https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF/resolve/main/qwen-image-2.1-Q4_K_M.gguf",
+  "reviewed_gguf_header_tensor_count": 297,
+  "transformer_qwenimage21_source_sha256": "0eb0555e21ca93195e1fe9389113cafbf0e8822f6454c3001cebb3d21521ebd7",
+  "autoencoder_kl_qwenimage21_source_sha256": "afb341db5e9d081e568ae4703119d1141d124aaf2fa9c061b3d4eb80ce73c15b"
+}

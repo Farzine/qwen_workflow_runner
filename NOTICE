@@ -1,0 +1,18 @@
+qwen-workflow-runner
+
+qwen_runner/pipeline.py is adapted from Hugging Face Diffusers:
+src/diffusers/pipelines/qwenimage21/pipeline_qwenimage21.py
+Commit: fbf49e7f35857f76bc57b177e26f12b03687c668
+
+Copyright 2026 Qwen-Image Team and The HuggingFace Team. All rights reserved.
+Licensed under the Apache License, Version 2.0; see LICENSE.
+Original copyright/license header is retained in the file.
+
+Modifications: absolute package imports, workflow canvas selection, independent
+reference-image sizing (including disabled second vision resize), FP32 latent accumulation, CFG below one, and configurable
+lossless cache storage. Other project modules implement configuration, cache
+management, file selection, metrics, logging and tests for the supplied workflow.
+
+No ComfyUI code modules are bundled or imported. The supplied workflow JSON is
+included as the user's reference input. External weights, reference images and
+libraries are subject to their respective licenses.

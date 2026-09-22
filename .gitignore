@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+models/*
+!models/.gitkeep
+outputs/*
+!outputs/.gitkeep
+inputs/*
+!inputs/README.md
+!inputs/.gitkeep

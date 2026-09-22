@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qwen-workflow-runner"
+version = "1.0.0"
+description = "Standalone Qwen Image 2.1 reference-image editing and performance logs"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["qwen_runner*"]
