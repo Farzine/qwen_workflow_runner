@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Qwen Image 2.1 Workflow Runner</title>
+  <!-- Zero external CDN dependencies - 100% offline self-contained -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="app-body">
+  <!-- Top Application Navigation Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="brand-logo">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+      </div>
+      <div class="brand-info">
+        <h1 class="brand-title">Qwen Image 2.1</h1>
+        <span class="brand-subtitle">Workflow Runner &bull; Image-to-Image Pipeline</span>
+      </div>
+      <span class="badge badge-accent">Local Diffusion</span>
+    </div>
+
+    <div class="header-center">
+      <div id="backend-status-pill" class="status-pill status-online" title="Backend Server Status">
+        <span class="status-indicator"></span>
+        <span id="backend-status-text" class="status-text">Connected</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <button id="btn-quick-presets" class="btn btn-ghost btn-sm" title="Apply Default Workflow Presets">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        Presets
+      </button>
+      <button id="btn-toggle-history" class="btn btn-outline btn-sm" title="View Run History">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        History (<span id="history-counter">0</span>)
+      </button>
+    </div>
+  </header>
+
+  <!-- Global Validation and Notification Banner -->
+  <aside id="global-alert-container" class="alert-container hidden" role="alert" aria-live="assertive">
+    <div class="alert-content">
+      <div class="alert-icon-wrapper">
+        <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+      </div>
+      <div class="alert-body">
+        <div class="alert-title" id="alert-title">Configuration Validation Issues</div>
+        <ul class="alert-list" id="alert-messages-list"></ul>
+      </div>
+      <button id="btn-dismiss-alert" class="btn-close" aria-label="Dismiss alert">&times;</button>
+    </div>
+  </aside>
+
+  <!-- Main Multi-Column Interactive Workspace -->
+  <main class="app-layout" id="main-workspace">
+    
+    <!-- ==================================================================== -->
+    <!-- COLUMN 1: INPUT IMAGE BROWSER (R1)                                  -->
+    <!-- ==================================================================== -->
+    <section class="panel panel-inputs" id="panel-inputs" aria-labelledby="heading-inputs">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <svg class="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          <h2 id="heading-inputs" class="panel-title">Input Assets</h2>
+        </div>
+        <button id="btn-refresh-inputs" class="btn-icon-action" title="Refresh directory scan" aria-label="Refresh inputs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Folder Navigation Bar -->
+      <div class="folder-navigation">
+        <div class="folder-breadcrumbs" id="folder-breadcrumbs">
+          <button class="breadcrumb-item active" data-folder="">/inputs (root)</button>
+        </div>
+        <div class="subfolders-bar" id="subfolders-list">
+          <!-- Dynamically populated subfolder chips -->
+        </div>
+      </div>
+
+      <!-- Quick Filter -->
+      <div class="filter-box">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="input-search-filter" class="form-control form-control-sm" placeholder="Filter images by name..." autocomplete="off">
+      </div>
+
+      <!-- Discovered Thumbnail Grid -->
+      <div class="gallery-scroll-area">
+        <div class="thumbnail-grid" id="input-gallery-grid" aria-label="Available input images">
+          <div class="loading-state" id="inputs-loading-spinner">
+            <div class="spinner"></div>
+            <span>Scanning inputs directory...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Selected Reference Images Sequence (1 to 10 Ordered Slots) -->
+      <div class="selection-sequence-panel" id="selection-sequence-panel">
+        <div class="sequence-header">
+          <div class="sequence-title-group">
+            <h3 class="sequence-title">Reference Sequence</h3>
+            <span id="selected-count-badge" class="badge badge-primary">0 / 10</span>
+          </div>
+          <button id="btn-clear-selection" class="btn btn-ghost btn-xs" title="Clear all selected images">Clear All</button>
+        </div>
+
+        <p class="sequence-hint">
+          <strong>Slot 1</strong> is the editing canvas. <strong>Slots 2&ndash;10</strong> provide reference context.
+        </p>
+
+        <!-- Ordered Selected Slots List -->
+        <div class="selected-slots-list" id="selected-slots-list">
+          <div class="empty-selection-placeholder" id="empty-selection-notice">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M4 16l4.586-4.586a2 2 0 0 1 2.828 0L16 16m-2-2l1.586-1.586a2 2 0 0 1 2.828 0L20 14m-6-6h.01M6 20h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"></path>
+            </svg>
+            <span>Click images above to build your 1&ndash;10 ordered sequence.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================== -->
+    <!-- COLUMN 2: PARAMETER CONFIGURATION & LAUNCH HUB (R2, R3)             -->
+    <!-- ==================================================================== -->
+    <section class="panel panel-config" id="panel-config" aria-labelledby="heading-config">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <svg class="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="4" y1="21" x2="4" y2="14"></line>
+            <line x1="4" y1="10" x2="4" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12" y2="3"></line>
+            <line x1="20" y1="21" x2="20" y2="16"></line>
+            <line x1="20" y1="12" x2="20" y2="3"></line>
+            <line x1="1" y1="14" x2="7" y2="14"></line>
+            <line x1="9" y1="8" x2="15" y2="8"></line>
+            <line x1="17" y1="16" x2="23" y2="16"></line>
+          </svg>
+          <h2 id="heading-config" class="panel-title">Workflow Configuration</h2>
+        </div>
+
+        <button id="btn-validate-config" class="btn btn-outline btn-xs" title="Verify parameters against runner schema">
+          <svg class="btn-icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          Validate
+        </button>
+      </div>
+
+      <!-- Navigation Tabs for Configuration Groups -->
+      <nav class="config-tabs-nav" role="tablist">
+        <button class="tab-btn active" id="tab-btn-prompt" role="tab" aria-selected="true" aria-controls="tab-pane-prompt">
+          Prompt &amp; Text
+        </button>
+        <button class="tab-btn" id="tab-btn-generation" role="tab" aria-selected="false" aria-controls="tab-pane-generation">
+          Generation
+        </button>
+        <button class="tab-btn" id="tab-btn-runtime" role="tab" aria-selected="false" aria-controls="tab-pane-runtime">
+          Runtime
+        </button>
+        <button class="tab-btn" id="tab-btn-model" role="tab" aria-selected="false" aria-controls="tab-pane-model">
+          Model &amp; Weights
+        </button>
+      </nav>
+
+      <!-- Scrollable Tab Content Container -->
+      <div class="config-scroll-area">
+        
+        <!-- ------------------------------------------------------------------ -->
+        <!-- TAB 1: PROMPT & CONDITIONING                                       -->
+        <!-- ------------------------------------------------------------------ -->
+        <div class="tab-pane active" id="tab-pane-prompt" role="tabpanel" aria-labelledby="tab-btn-prompt">
+          <div class="form-group">
+            <div class="label-row">
+              <label for="param-prompt" class="form-label">
+                Positive Prompt
+                <span class="required-indicator">*</span>
+              </label>
+              <span class="label-hint">Insert image tokens to link reference images</span>
+            </div>
+
+            <!-- Quick Token Insert Toolbar -->
+            <div class="token-toolbar" id="prompt-token-toolbar" title="Click to insert image reference token at cursor">
+              <span class="token-toolbar-label">Tokens:</span>
+              <button type="button" class="token-btn" data-token="<image1>">&lt;image1&gt; (canvas)</button>
+              <button type="button" class="token-btn" data-token="<image2>">&lt;image2&gt;</button>
+              <button type="button" class="token-btn" data-token="<image3>">&lt;image3&gt;</button>
+              <button type="button" class="token-btn" data-token="<image4>">&lt;image4&gt;</button>
+              <button type="button" class="token-btn" data-token="<image5>">&lt;image5&gt;</button>
+              <button type="button" class="token-btn" data-token="<image6>">&lt;image6&gt;</button>
+              <button type="button" class="token-btn" data-token="<image7>">&lt;image7&gt;</button>
+              <button type="button" class="token-btn" data-token="<image8>">&lt;image8&gt;</button>
+              <button type="button" class="token-btn" data-token="<image9>">&lt;image9&gt;</button>
+              <button type="button" class="token-btn" data-token="<image10>">&lt;image10&gt;</button>
+            </div>
+
+            <textarea id="param-prompt" class="form-control form-textarea" rows="5" placeholder="Keep the character and pose in <image1> unchanged, put this light blue denim shirt from <image2> on the character..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <div class="label-row">
+              <label for="param-negative-prompt" class="form-label">Negative Prompt</label>
+              <span class="badge badge-muted" title="Ignored when CFG scale is set to 1.0">CFG &gt; 1.0 only</span>
+            </div>
+            <textarea id="param-negative-prompt" class="form-control form-textarea" rows="3" placeholder="deformed, low quality, artifacts, extra limbs, blurry..."></textarea>
+            <span class="field-hint">Note: Negative prompt conditioning is ignored if CFG scale equals 1.0 (true CFG).</span>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------ -->
+        <!-- TAB 2: GENERATION PARAMETERS                                       -->
+        <!-- ------------------------------------------------------------------ -->
+        <div class="tab-pane" id="tab-pane-generation" role="tabpanel" aria-labelledby="tab-btn-generation">
+          
+          <!-- Steps & CFG Grid -->
+          <div class="form-grid-2">
+            <!-- Steps -->
+            <div class="form-group">
+              <div class="label-row">
+                <label for="param-steps" class="form-label">Steps (1&ndash;10000)</label>
+                <input type="number" id="param-steps" class="form-control form-control-num" min="1" max="10000" step="1" value="25">
+              </div>
+              <input type="range" id="slider-steps" class="form-range" min="1" max="100" step="1" value="25" aria-label="Steps slider">
+              <span class="field-hint">Diffusion denoising iterations (default: 25)</span>
+            </div>
+
+            <!-- CFG Scale -->
+            <div class="form-group">
+              <div class="label-row">
+                <label for="param-cfg" class="form-label">CFG Scale (&ge; 0.0)</label>
+                <input type="number" id="param-cfg" class="form-control form-control-num" min="0" max="30" step="0.1" value="1.0">
+              </div>
+              <input type="range" id="slider-cfg" class="form-range" min="0" max="15" step="0.1" value="1.0" aria-label="CFG scale slider">
+              <span class="field-hint">Guidance strength. 1.0 disables negative prompt.</span>
+            </div>
+          </div>
+
+          <!-- Strength & Shift Grid -->
+          <div class="form-grid-2">
+            <!-- Denoise Strength -->
+            <div class="form-group">
+              <div class="label-row">
+                <label for="param-strength" class="form-label">Denoise Strength (0, 1]</label>
+                <input type="number" id="param-strength" class="form-control form-control-num" min="0.01" max="1.0" step="0.01" value="1.0">
+              </div>
+              <input type="range" id="slider-strength" class="form-range" min="0.05" max="1.0" step="0.01" value="1.0" aria-label="Denoise strength slider">
+              <div id="strength-schedule-guard" class="field-hint">
+                Schedule guard: <span id="schedule-calc-ratio">steps/strength = 25</span> &le; 10000
+              </div>
+            </div>
+
+            <!-- Flow Shift -->
+            <div class="form-group">
+              <div class="label-row">
+                <label for="param-shift" class="form-label">Flow Shift [-10, 10]</label>
+                <input type="number" id="param-shift" class="form-control form-control-num" min="-10" max="10" step="0.01" value="0.69">
+              </div>
+              <input type="range" id="slider-shift" class="form-range" min="-5" max="5" step="0.01" value="0.69" aria-label="Flow shift slider">
+              <span class="field-hint">Flow matching schedule shift (default: 0.69)</span>
+            </div>
+          </div>
+
+          <!-- Seed & Randomize -->
+          <div class="form-group">
+            <div class="label-row">
+              <label for="param-seed" class="form-label">Seed (64-bit Unsigned Integer)</label>
+              <div class="inline-actions">
+                <button type="button" id="btn-random-seed" class="btn btn-ghost btn-xs" title="Generate random 64-bit seed">
+                  🎲 Randomize
+                </button>
+              </div>
+            </div>
+            <div class="input-with-button">
+              <input type="number" id="param-seed" class="form-control" min="0" max="18446744073709551615" step="1" value="1070478148268574">
+            </div>
+            <div class="checkbox-row mt-sm">
+              <label class="toggle-switch">
+                <input type="checkbox" id="param-increment-seed">
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="toggle-label">Increment seed for each repeat run</span>
+            </div>
+          </div>
+
+          <!-- Resolution & Dimensions -->
+          <div class="form-card">
+            <div class="form-group">
+              <div class="label-row">
+                <label for="param-resolution" class="form-label">Resolution Preset</label>
+                <span class="field-hint">Multiples of 32 &le; 4096 (0 = canvas native)</span>
+              </div>
+              <select id="param-resolution" class="form-control">
+                <option value="0" selected>0 (Canvas Native Dimensions)</option>
+                <option value="512">512 &times; 512</option>
+                <option value="768">768 &times; 768</option>
+                <option value="1024">1024 &times; 1024 (Standard HD)</option>
+                <option value="1280">1280 &times; 1280</option>
+                <option value="1536">1536 &times; 1536</option>
+                <option value="2048">2048 &times; 2048 (High Res)</option>
+              </select>
+            </div>
+
+            <!-- Custom Size Switch -->
+            <div class="checkbox-row">
+              <label class="toggle-switch">
+                <input type="checkbox" id="param-custom-size">
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="toggle-label">Specify Custom Width &amp; Height</span>
+            </div>
+
+            <!-- Custom Size Input Fields (Revealed when custom_size is checked) -->
+            <div id="custom-size-fields" class="form-grid-2 mt-sm hidden">
+              <div class="form-group">
+                <label for="param-width" class="form-label">Width (px)</label>
+                <input type="number" id="param-width" class="form-control" min="32" max="4096" step="32" value="1024">
+                <span class="field-hint">Multiple of 32 &ge; 32</span>
+              </div>
+              <div class="form-group">
+                <label for="param-height" class="form-label">Height (px)</label>
+                <input type="number" id="param-height" class="form-control" min="32" max="4096" step="32" value="1024">
+                <span class="field-hint">Multiple of 32 &ge; 32</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sampler, Scheduler, Batch Size, Reference Mode -->
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label for="param-sampler" class="form-label">Sampler</label>
+              <select id="param-sampler" class="form-control">
+                <option value="euler" selected>euler (Strictly Supported)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="param-scheduler" class="form-label">Scheduler</label>
+              <select id="param-scheduler" class="form-control">
+                <option value="simple" selected>simple (Default)</option>
+                <option value="normal">normal</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="param-batch-size" class="form-label">Batch Size (&ge; 1)</label>
+              <input type="number" id="param-batch-size" class="form-control" min="1" max="16" step="1" value="1">
+            </div>
+
+            <div class="form-group">
+              <label for="param-reference-mode" class="form-label">Reference Color Mode</label>
+              <select id="param-reference-mode" class="form-control">
+                <option value="rgb" selected>rgb (Default)</option>
+                <option value="rgba">rgba</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- KV Cache Configuration Card -->
+          <div class="form-card">
+            <div class="card-header-toggle">
+              <div class="checkbox-row">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="param-kv-cache" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label font-semibold">Enable Attention KV Caching</span>
+              </div>
+            </div>
+
+            <div id="kv-cache-subcontrols" class="form-grid-2 mt-sm">
+              <div class="form-group">
+                <label for="param-kv-cache-device" class="form-label">KV Cache Device</label>
+                <select id="param-kv-cache-device" class="form-control">
+                  <option value="auto" selected>auto (Recommended)</option>
+                  <option value="gpu">gpu</option>
+                  <option value="cpu">cpu</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="param-kv-cache-reserve-gib" class="form-label">Reserve GiB (&ge; 0.0)</label>
+                <input type="number" id="param-kv-cache-reserve-gib" class="form-control" min="0" max="64" step="0.5" value="1.0">
+                <span class="field-hint">Headroom preserved in VRAM</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------ -->
+        <!-- TAB 3: RUNTIME & HARDWARE                                          -->
+        <!-- ------------------------------------------------------------------ -->
+        <div class="tab-pane" id="tab-pane-runtime" role="tabpanel" aria-labelledby="tab-btn-runtime">
+          
+          <div class="form-grid-2">
+            <!-- Hardware Device -->
+            <div class="form-group">
+              <label for="param-device" class="form-label">Execution Device</label>
+              <select id="param-device" class="form-control">
+                <option value="cuda:0" selected>cuda:0 (GPU Acceleration)</option>
+                <option value="cpu">cpu (Float32, No Offload)</option>
+                <option value="mps">mps (Apple Silicon)</option>
+              </select>
+              <span class="field-hint">CPU requires float32. MPS requires offload=none.</span>
+            </div>
+
+            <!-- Precision Dtype -->
+            <div class="form-group">
+              <label for="param-dtype" class="form-label">Precision Dtype</label>
+              <select id="param-dtype" class="form-control">
+                <option value="bfloat16" selected>bfloat16 (Optimal for Ampere+)</option>
+                <option value="float16">float16</option>
+                <option value="float32">float32 (CPU Required)</option>
+              </select>
+            </div>
+
+            <!-- Offload Mode -->
+            <div class="form-group">
+              <label for="param-offload" class="form-label">Model Offload Mode</label>
+              <select id="param-offload" class="form-control">
+                <option value="model" selected>model (Layer-wise VRAM balance)</option>
+                <option value="none">none (Full VRAM footprint)</option>
+                <option value="sequential">sequential (Max memory saving)</option>
+              </select>
+            </div>
+
+            <!-- VAE Tiling -->
+            <div class="form-group flex-center-v">
+              <div class="checkbox-row mt-md">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="param-vae-tiling">
+                  <span class="toggle-slider"></span>
+                </label>
+                <div>
+                  <span class="toggle-label font-semibold">VAE Tiling</span>
+                  <div class="field-hint">Decode latents in tiles to prevent OOM</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Execution Loops & Repeats -->
+          <div class="form-grid-3">
+            <div class="form-group">
+              <label for="param-repeats" class="form-label">Repeats (&ge; 1)</label>
+              <input type="number" id="param-repeats" class="form-control" min="1" max="100" step="1" value="1">
+            </div>
+
+            <div class="form-group">
+              <label for="param-warmup-runs" class="form-label">Warmup Runs (&ge; 0)</label>
+              <input type="number" id="param-warmup-runs" class="form-control" min="0" max="10" step="1" value="0">
+            </div>
+
+            <div class="form-group">
+              <label for="param-memory-poll-seconds" class="form-label">Poll Secs [0.001, 1.0]</label>
+              <input type="number" id="param-memory-poll-seconds" class="form-control" min="0.001" max="1.0" step="0.005" value="0.02">
+            </div>
+          </div>
+
+          <!-- Output Management -->
+          <div class="form-card">
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="param-output-dir" class="form-label">Output Directory</label>
+                <input type="text" id="param-output-dir" class="form-control" value="outputs">
+                <span class="field-hint">Relative to project root or temp directory</span>
+              </div>
+
+              <div class="form-group">
+                <label for="param-filename-prefix" class="form-label">Filename Prefix</label>
+                <input type="text" id="param-filename-prefix" class="form-control" value="Qwen_image_2.1">
+                <span class="field-hint">Filename only, no directory slashes</span>
+              </div>
+            </div>
+
+            <div class="checkbox-row mt-sm">
+              <label class="toggle-switch">
+                <input type="checkbox" id="param-save-comparison" checked>
+                <span class="toggle-slider"></span>
+              </label>
+              <div>
+                <span class="toggle-label font-semibold">Generate Side-by-Side Comparison Image</span>
+                <div class="field-hint">Outputs a side-by-side PNG comparing Canvas input with generated output</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------ -->
+        <!-- TAB 4: MODEL SELECTION & DOWNLOAD (R3)                             -->
+        <!-- ------------------------------------------------------------------ -->
+        <div class="tab-pane" id="tab-pane-model" role="tabpanel" aria-labelledby="tab-btn-model">
+          
+          <!-- Mode 3: Cached / Discovered Models Quick Selection -->
+          <div class="form-card mb-md">
+            <div class="card-title-row">
+              <h3 class="card-title">1. Discovered &amp; Cached Local Models</h3>
+              <button type="button" id="btn-refresh-models" class="btn btn-ghost btn-xs" title="Scan models directory">
+                <svg class="btn-icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <polyline points="1 20 1 14 7 14"></polyline>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                Rescan models/
+              </button>
+            </div>
+            
+            <div class="input-with-button">
+              <select id="select-cached-model" class="form-control" aria-label="Select cached model">
+                <option value="" disabled selected>Scanning local models directory...</option>
+              </select>
+              <button type="button" id="btn-apply-cached-model" class="btn btn-outline" disabled>
+                Select
+              </button>
+            </div>
+
+            <div id="cached-model-info-box" class="info-callout mt-sm hidden">
+              <div class="info-row"><span class="info-key">Path:</span> <span id="info-model-path" class="info-val font-mono"></span></div>
+              <div class="info-row"><span class="info-key">Type:</span> <span id="info-model-type" class="badge badge-accent"></span></div>
+              <div class="info-row"><span class="info-key">Size:</span> <span id="info-model-size" class="info-val"></span></div>
+            </div>
+          </div>
+
+          <!-- Mode 1: HuggingFace Repo Download -->
+          <div class="form-card mb-md">
+            <div class="card-title-row">
+              <h3 class="card-title">2. Download from HuggingFace Hub</h3>
+              <span id="hf-repo-cache-status" class="badge badge-muted">Not Checked</span>
+            </div>
+
+            <div class="form-group">
+              <label for="param-model-source" class="form-label">HF Repo ID or URL</label>
+              <input type="text" id="param-model-source" class="form-control" value="https://huggingface.co/Qwen/Qwen-Image-2.1" placeholder="e.g. Qwen/Qwen-Image-2.1 or full URL">
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="param-model-filename" class="form-label">Optional Specific Filename / GGUF</label>
+                <input type="text" id="param-model-filename" class="form-control" placeholder="e.g. qwen-image-2.1-q4_k_m.gguf">
+              </div>
+
+              <div class="form-group">
+                <label for="param-model-revision" class="form-label">Branch / Revision</label>
+                <input type="text" id="param-model-revision" class="form-control" value="main" placeholder="main or commit SHA">
+              </div>
+            </div>
+
+            <div class="actions-row mt-sm">
+              <button type="button" id="btn-download-hf-model" class="btn btn-primary btn-sm">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Download Weights
+              </button>
+            </div>
+
+            <!-- Download Progress Display -->
+            <div id="hf-download-progress-container" class="progress-box mt-sm hidden">
+              <div class="progress-header">
+                <span id="hf-download-status-label" class="progress-label">Downloading...</span>
+                <span id="hf-download-percent-badge" class="badge badge-primary">0%</span>
+              </div>
+              <div class="progress-bar-track">
+                <div id="hf-download-bar" class="progress-bar-fill" style="width: 0%;"></div>
+              </div>
+              <div id="hf-download-error" class="text-danger mt-xs hidden"></div>
+            </div>
+          </div>
+
+          <!-- Mode 2: Local File Upload (.gguf & .safetensors) -->
+          <div class="form-card mb-md">
+            <h3 class="card-title">3. Upload Local Model File</h3>
+            <p class="field-hint">Upload <code>.gguf</code> or <code>.safetensors</code> model files directly to local storage.</p>
+
+            <div class="dropzone" id="model-upload-dropzone">
+              <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path>
+                <path d="M12 12v9"></path>
+                <path d="m16 16-4-4-4 4"></path>
+              </svg>
+              <div class="dropzone-text">
+                <strong>Click to choose</strong> or drag &amp; drop a model file here
+              </div>
+              <span class="dropzone-hint">Supports .gguf and .safetensors weights</span>
+              <input type="file" id="model-file-input" class="hidden-file-input" accept=".gguf,.safetensors" aria-label="Upload model file">
+            </div>
+
+            <!-- Upload Progress Display -->
+            <div id="model-upload-progress-container" class="progress-box mt-sm hidden">
+              <div class="progress-header">
+                <span id="model-upload-status-label" class="progress-label">Uploading chunks...</span>
+                <span id="model-upload-percent-badge" class="badge badge-primary">0%</span>
+              </div>
+              <div class="progress-bar-track">
+                <div id="model-upload-bar" class="progress-bar-fill" style="width: 0%;"></div>
+              </div>
+              <div id="model-upload-error" class="text-danger mt-xs hidden"></div>
+            </div>
+          </div>
+
+          <!-- Advanced Model Configuration Fields -->
+          <details class="form-card-collapsible">
+            <summary class="collapsible-summary">Advanced Model Properties</summary>
+            <div class="collapsible-content">
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label for="param-base-model" class="form-label">Base Model</label>
+                  <input type="text" id="param-base-model" class="form-control" value="Qwen/Qwen-Image-2.1">
+                </div>
+
+                <div class="form-group">
+                  <label for="param-gguf-quantization" class="form-label">GGUF Quantization Variant</label>
+                  <input type="text" id="param-gguf-quantization" class="form-control" value="Q4_K_M">
+                </div>
+
+                <div class="form-group">
+                  <label for="param-model-cache-dir" class="form-label">Cache Directory</label>
+                  <input type="text" id="param-model-cache-dir" class="form-control" value="models">
+                </div>
+
+                <div class="form-group">
+                  <label for="param-base-revision" class="form-label">Base Model Revision</label>
+                  <input type="text" id="param-base-revision" class="form-control" placeholder="Optional commit SHA / branch">
+                </div>
+
+                <div class="form-group">
+                  <label for="param-text-encoder-source" class="form-label">Text Encoder Source</label>
+                  <input type="text" id="param-text-encoder-source" class="form-control" placeholder="Diffusers repo / local path (optional)">
+                </div>
+
+                <div class="form-group flex-center-v">
+                  <div class="checkbox-row mt-md">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="param-model-offline">
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label">Offline Mode Only</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+
+        </div>
+      </div>
+
+      <!-- Execution Launch Bar (Fixed at bottom of Config Panel) -->
+      <div class="panel-launch-bar" id="launch-control-bar">
+        <div class="launch-toggles">
+          <div class="checkbox-row" title="Run fast synthetic execution with real output images and records">
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggle-demo-mode" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="toggle-label font-semibold">Demo Mode</span>
+          </div>
+        </div>
+
+        <div class="launch-actions">
+          <button id="btn-cancel-run" class="btn btn-danger btn-md hidden" title="Cancel ongoing execution">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="6" y="6" width="12" height="12"></rect>
+            </svg>
+            Stop
+          </button>
+
+          <button id="btn-run-pipeline" class="btn btn-primary btn-md btn-glow" title="Start image generation pipeline">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span id="btn-run-text">Run Pipeline</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================== -->
+    <!-- COLUMN 3: LIVE TERMINAL, OUTPUT & COMPARISON VIEWER (R4)             -->
+    <!-- ==================================================================== -->
+    <section class="panel panel-output" id="panel-output" aria-labelledby="heading-output">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <svg class="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          <h2 id="heading-output" class="panel-title">Execution Hub</h2>
+        </div>
+
+        <div class="status-indicator-group">
+          <span id="run-status-badge" class="badge badge-muted">Idle</span>
+        </div>
+      </div>
+
+      <!-- Live Execution Progress Bar -->
+      <div class="execution-progress-container" id="execution-progress-container">
+        <div class="progress-details-row">
+          <span id="run-step-counter" class="progress-step-text">Step 0 / 0</span>
+          <span id="run-percent-label" class="progress-percent-text">0%</span>
+        </div>
+        <div class="progress-bar-track">
+          <div id="run-step-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs for Output Views -->
+      <nav class="output-tabs-nav" role="tablist">
+        <button class="output-tab-btn active" id="tab-btn-outputs" role="tab" aria-selected="true" aria-controls="pane-outputs">
+          Generated Output
+        </button>
+        <button class="output-tab-btn" id="tab-btn-comparison" role="tab" aria-selected="false" aria-controls="pane-comparison">
+          Comparison
+        </button>
+        <button class="output-tab-btn" id="tab-btn-logs" role="tab" aria-selected="false" aria-controls="pane-logs">
+          Live Logs
+        </button>
+        <button class="output-tab-btn" id="tab-btn-json" role="tab" aria-selected="false" aria-controls="pane-json">
+          Run Record
+        </button>
+      </nav>
+
+      <!-- Scrollable Output Hub Views -->
+      <div class="output-scroll-area">
+        
+        <!-- ------------------------------------------------------------------ -->
+        <!-- VIEW 1: GENERATED OUTPUT IMAGE GALLERY                             -->
+        <!-- ------------------------------------------------------------------ -->
+        <div class="output-pane active" id="pane-outputs" role="tabpanel" aria-labelledby="tab-btn-outputs">
+          <div id="output-empty-state" class="output-empty-placeholder">
+            <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+            <p>No output generated yet.</p>
+            <span class="field-hint">Select reference images, configure prompt, and click Run Pipeline.</span>
+          </div>
+
+          <div id="output-active-view" class="output-display-card hidden">
+            <!-- Output Main Preview Image -->
+            <div class="output-image-wrapper">
+              <img id="output-primary-image" class="output-main-img" alt="Pipeline Output Image" src="">
+              <div class="output-overlay-actions">
+                <button id="btn-fullscreen-output" class="btn-overlay" title="Open Fullscreen Preview">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <polyline points="9 21 3 21 3 15"></polyline>
+                    <line x1="21" y1="3" x2="14" y2="10"></line>
+                    <line x1="3" y1="21" x2="10" y2="14"></line>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Metadata Information Card -->
+            <div class="output-metadata-bar">
+              <div class="metadata-col">
+                <span class="meta-label">File</span>
+                <span id="output-meta-filename" class="meta-val font-mono">Qwen_image_2.1_0001.png</span>
+              </div>
+              <div class="metadata-col">
+                <span class="meta-label">Dimensions</span>
+                <span id="output-meta-dimensions" class="meta-val">1024 &times; 1024</span>
+              </div>
+              <div class="metadata-col meta-hash-col">
+                <span class="meta-label">SHA-256 Hash</span>
+                <span id="output-meta-sha256" class="hash-badge" title="Click to copy hash">e3b0c44298fc...</span>
+              </div>
+              <div class="metadata-actions">
+                <a id="btn-download-output" class="btn btn-outline btn-xs" download="" href="#" title="Download image">
+                  <svg class="btn-icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  Save
+                </a>
+              </div>
+            </div>
+
+            <!-- Batch Thumbnails Strip (Populated if batch_size > 1 or multiple outputs) -->
+            <div id="batch-thumbnails-strip" class="batch-strip mt-sm hidden">
+              <!-- Dynamically populated thumbnails -->
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------ -->
+        <!-- VIEW 2: INTERACTIVE SIDE-BY-SIDE COMPARISON SLIDER                -->
+        <!-- ------------------------------------------------------------------ -->
+        <div class="output-pane" id="pane-comparison" role="tabpanel" aria-labelledby="tab-btn-comparison">
+          <div class="comparison-toolbar">
+            <div class="btn-group">
+              <button id="btn-mode-split" class="btn btn-xs btn-active" title="Split view slider">Split Slider</button>
+              <button id="btn-mode-side" class="btn btn-xs btn-ghost" title="2-up side-by-side view">Side-by-Side</button>
+            </div>
+            <span class="field-hint">Compares Slot 1 (Canvas) with Generated Output</span>
+          </div>
+
+          <div id="comparison-empty-state" class="output-empty-placeholder">
+            <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <line x1="12" y1="3" x2="12" y2="21"></line>
+              <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+            </svg>
+            <p>Comparison will appear once an execution finishes with "Save Comparison" enabled.</p>
+          </div>
+
+          <!-- Mode A: Interactive Split Slider -->
+          <div id="comparison-split-wrapper" class="comparison-container hidden">
+            <!-- Background Image (Canvas Image / Before) -->
+            <img id="comparison-before-img" class="comparison-img before" alt="Original Canvas Image" src="">
+            <span class="comparison-badge badge-before">Canvas (Slot 1)</span>
+
+            <!-- Foreground Image Clipped (Output Image / After) -->
+            <div id="comparison-clip-wrapper" class="comparison-clip">
+              <img id="comparison-after-img" class="comparison-img after" alt="Generated Output Image" src="">
+              <span class="comparison-badge badge-after">Generated Output</span>
+            </div>
+
+            <!-- Interactive Draggable Split Handle -->
+            <div id="comparison-slider-handle" class="comparison-handle" style="left: 50%;">
+              <div class="handle-line"></div>
+              <div class="handle-circle">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="8 7 3 12 8 17"></polyline>
+                  <polyline points="16 7 21 12 16 17"></polyline>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mode B: 2-Up Side-by-Side Grid -->
+          <div id="comparison-two-up-wrapper" class="comparison-two-up-grid hidden">
+            <div class="two-up-col">
+              <span class="column-tag">Canvas Input (Slot 1)</span>
+              <img id="two-up-before-img" class="two-up-img" alt="Canvas Input">
+            </div>
+            <div class="two-up-col">
+              <span class="column-tag">Generated Output</span>
+              <img id="two-up-after-img" class="two-up-img" alt="Generated Output">
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------ -->
+        <!-- VIEW 3: LIVE STREAMING LOG TERMINAL                                -->
+        <!-- ------------------------------------------------------------------ -->
+        <div class="output-pane" id="pane-logs" role="tabpanel" aria-labelledby="tab-btn-logs">
+          <div class="terminal-toolbar">
+            <div class="checkbox-row">
+              <label class="toggle-switch">
+                <input type="checkbox" id="toggle-log-autoscroll" checked>
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="toggle-label text-xs">Auto-scroll</span>
+            </div>
+
+            <div class="terminal-actions">
+              <button id="btn-copy-logs" class="btn btn-ghost btn-xs" title="Copy terminal log">Copy</button>
+              <button id="btn-clear-logs" class="btn btn-ghost btn-xs" title="Clear terminal">Clear</button>
+            </div>
+          </div>
+
+          <div class="terminal-container" id="terminal-stream-console" role="region" aria-live="polite">
+            <div class="terminal-welcome-line">Qwen Workflow Runner &bull; System Ready</div>
+            <div class="terminal-log-content" id="terminal-log-lines"></div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------ -->
+        <!-- VIEW 4: JSON RUN RECORD INSPECTOR                                  -->
+        <!-- ------------------------------------------------------------------ -->
+        <div class="output-pane" id="pane-json" role="tabpanel" aria-labelledby="tab-btn-json">
+          <div class="json-toolbar">
+            <span id="json-run-id-label" class="font-mono text-xs">Run: None</span>
+            <div class="json-actions">
+              <button id="btn-copy-json" class="btn btn-ghost btn-xs" title="Copy JSON payload">Copy JSON</button>
+              <button id="btn-download-json" class="btn btn-outline btn-xs" title="Download record JSON">Download .json</button>
+            </div>
+          </div>
+
+          <div class="json-container">
+            <pre class="json-code-block"><code id="json-record-code">{\n  "message": "No run record loaded."\n}</code></pre>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- ==================================================================== -->
+  <!-- SLIDE-OVER DRAWER: RUN HISTORY HUB (R4)                             -->
+  <!-- ==================================================================== -->
+  <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+  <aside class="drawer drawer-history" id="drawer-history" aria-hidden="true">
+    <div class="drawer-header">
+      <div class="drawer-title-group">
+        <svg class="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <h2 class="drawer-title">Session Run History</h2>
+      </div>
+      <button id="btn-close-history" class="btn-close" aria-label="Close run history">&times;</button>
+    </div>
+
+    <div class="drawer-body">
+      <div id="history-runs-list" class="history-list">
+        <div class="empty-state-text" id="empty-history-notice">
+          No runs in this session yet.
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL: FULL RESOLUTION IMAGE VIEWER                                 -->
+  <!-- ==================================================================== -->
+  <dialog class="modal-dialog" id="modal-image-preview">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span id="modal-preview-title" class="modal-title font-mono">Image Preview</span>
+        <button id="btn-close-modal" class="btn-close" aria-label="Close preview">&times;</button>
+      </div>
+      <div class="modal-body">
+        <img id="modal-preview-img" class="modal-img" src="" alt="Full preview">
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ==================================================================== -->
+  <!-- FOOTER STATUS BAR                                                    -->
+  <!-- ==================================================================== -->
+  <footer class="app-statusbar">
+    <div class="statusbar-left">
+      <span class="status-item"><strong class="status-key">Host:</strong> localhost</span>
+      <span class="status-item"><strong class="status-key">Runner:</strong> Qwen Image 2.1</span>
+      <span class="status-item"><strong class="status-key">Mode:</strong> <span id="status-bar-mode">Demo</span></span>
+    </div>
+    <div class="statusbar-center">
+      <span id="status-bar-active-task" class="status-task">Idle</span>
+    </div>
+    <div class="statusbar-right">
+      <span class="status-item"><strong class="status-key">Inputs:</strong> <span id="status-bar-inputs-count">0</span></span>
+      <span class="status-item"><strong class="status-key">Models:</strong> <span id="status-bar-models-count">0</span></span>
+      <span class="status-item"><strong class="status-key">Session Runs:</strong> <span id="status-bar-runs-count">0</span></span>
+    </div>
+  </footer>
+
+  <!-- Floating Toast Notifications Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Vanilla ES6 Application Controller -->
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

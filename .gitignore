@@ -1,4 +1,6 @@
 .venv/
+.agents/
+.cache/
 __pycache__/
 *.pyc
 models/*
