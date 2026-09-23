@@ -331,6 +331,11 @@ def get_test_client(inputs_dir: Path | None = None, models_dir: Path | None = No
     try:
         from ui.server import app as server_app
 
+        # The E2E contract suite validates API/UI orchestration with synthetic
+        # outputs. Configure that mode explicitly now that production is the
+        # application default and never silently falls back to DemoBackend.
+        server_app.state.demo_mode = True
+
         if inputs_dir is not None:
             resolved_in = Path(inputs_dir).resolve()
             server_app.state.inputs_dir = resolved_in

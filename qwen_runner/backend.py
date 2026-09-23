@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from .models import ModelStore, parse_model_ref
 from .sampling import sigma_schedule
+from .system import probe_runtime_capabilities
 
 
 class QwenBackend:
@@ -15,14 +16,17 @@ class QwenBackend:
         from .pipeline import WorkflowQwenImage21Pipeline
         c, r = self.config.model, self.config.runtime
         self.torch = torch
+        capability = probe_runtime_capabilities(
+            device=r.device,
+            dtype=r.dtype,
+            offload=r.offload,
+            torch_module=torch,
+        )
+        if not capability['production_backend']['ready']:
+            raise RuntimeError(capability['production_backend']['message'])
         device = torch.device(r.device)
         if device.type == 'cuda':
-            if not torch.cuda.is_available(): raise RuntimeError('CUDA unavailable. Install a CUDA PyTorch wheel, or set CPU + float32 + no offload.')
             torch.cuda.set_device(device)
-            if r.dtype == 'bfloat16' and not torch.cuda.is_bf16_supported():
-                raise ValueError('This CUDA device does not support BF16. Set runtime.dtype to float32 or float16 explicitly.')
-        elif device.type == 'mps' and not torch.backends.mps.is_available():
-            raise RuntimeError('MPS unavailable on this machine')
         dtype = getattr(torch, r.dtype)
         store = ModelStore(c.cache_dir, c.offline)
         source, meta = store.fetch(parse_model_ref(c.source, c.revision, c.filename), quantization=c.gguf_quantization)

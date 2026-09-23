@@ -136,10 +136,10 @@ class SafeTorchWrapper:
 # ============================================================================
 
 class DemoBackend:
-    """High-fidelity Demo Backend for Qwen Workflow Runner.
+    """Synthetic, input-derived preview backend for UI and API testing.
 
-    Produces authentic canvas-sized composited PIL images matching user inputs,
-    computes exact SHA-256 hashes, supports comparisons, and writes valid JSON records.
+    Produces canvas-sized composited PIL images derived from user inputs, computes
+    exact SHA-256 hashes, supports comparisons, and writes valid JSON records.
     Duck-typed to match qwen_runner.backend.QwenBackend interface.
     """
 
@@ -176,7 +176,7 @@ class DemoBackend:
                 "shift": config.generation.shift,
                 "scheduler": config.generation.scheduler,
             },
-            "parity": "Synthetic visual integrity for fast UI feedback & schema validation",
+            "parity": "Synthetic input-derived preview for UI feedback and schema validation; no model inference",
             "kv_cache_policy": "Demo mode simulated lossless prefix cache",
         }
 
@@ -187,7 +187,7 @@ class DemoBackend:
     def generate(
         self, images: List[Image.Image], canvas: Tuple[int, int], seed: int
     ) -> List[Image.Image]:
-        """Generate batch_size authentic, composited PIL images matching canvas dimensions.
+        """Generate labeled synthetic previews matching the requested canvas dimensions.
 
         Composites:
           - Sized base canvas from images[0] (or neutral background if empty)
@@ -274,21 +274,9 @@ class DemoBackend:
         return results
 
 
-def resolve_backend_factory(demo_mode: bool = True, force_qwen: bool = False) -> Type:
-    """Return DemoBackend when demo_mode=True or when CUDA is unavailable; returns QwenBackend otherwise."""
+def resolve_backend_factory(demo_mode: bool = False, force_qwen: bool = False) -> Type:
+    """Resolve the explicitly requested backend without silently changing modes."""
     if demo_mode:
-        return DemoBackend
-    if force_qwen or os.getenv("FORCE_QWEN_BACKEND", "").lower() in ("1", "true"):
-        from qwen_runner.backend import QwenBackend
-        return QwenBackend
-
-    cuda_ok = False
-    try:
-        cuda_ok = hasattr(torch, "cuda") and torch.cuda.is_available()
-    except Exception:
-        cuda_ok = False
-
-    if not cuda_ok:
         return DemoBackend
 
     from qwen_runner.backend import QwenBackend
@@ -562,7 +550,7 @@ class RunnerBridge:
     def submit_run(
         self,
         config: Config,
-        demo_mode: bool = True,
+        demo_mode: bool = False,
         loop: Optional[asyncio.AbstractEventLoop] = None,
     ) -> RunJob:
         """Create and submit a background inference job."""

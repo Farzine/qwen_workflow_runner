@@ -86,7 +86,7 @@ To test the complete workflow without loading model weights into GPU memory, sta
 python ui/app.py --demo
 ```
 
-In demo mode, inference runs instantly via `DemoBackend`, generating real output PNG images, valid comparison composites, and complete `{run_id}.json` execution records.
+Demo mode is an explicit synthetic preview. `DemoBackend` derives a labeled image from the first input and writes valid PNG, comparison, and `{run_id}.json` artifacts, but it does not load or run the Qwen model. Normal startup defaults to production inference. If the selected production runtime is unavailable, the run reports a setup error instead of silently substituting demo output.
 
 ---
 
@@ -206,6 +206,9 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
 
 ### 3. Configuration & Validation
 
+- **`GET /api/system?device=cuda:0&dtype=bfloat16&offload=model`**
+  - Reports Python/PyTorch versions, CUDA and MPS availability, detected devices, selected-device readiness, and whether the server was explicitly started with demo as its default.
+
 - **`POST /api/config/validate`**
   - Validates full or partial runner configuration against `qwen_runner.config.Config.validate()`.
   - Response (Valid): `{"valid": true, "errors": []}`
@@ -216,6 +219,7 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
 - **`POST /api/run`**
   - Submits a new inference run to the background worker queue.
   - Payload: Complete config object matching `Config` schema + optional `"demo_mode": bool`.
+  - `demo_mode` defaults to `false` unless the server was explicitly started with `--demo` or `DEMO_MODE=1`. It must be a JSON boolean. Production requests never fall back to `DemoBackend`.
   - Response:
     ```json
     {

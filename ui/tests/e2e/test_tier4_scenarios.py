@@ -124,6 +124,7 @@ class TestTier4Scenarios(unittest.TestCase):
                 "device": "cpu", "dtype": "float32", "offload": "none",
                 "save_comparison": True,
             },
+            "demo_mode": True,
         }
 
         # Step 4: Validate config
@@ -150,6 +151,7 @@ class TestTier4Scenarios(unittest.TestCase):
         payload = {
             "generation": {"images": ten_refs, "steps": 15},
             "runtime": {"device": "cpu", "dtype": "float32", "offload": "none"},
+            "demo_mode": True,
         }
 
         # Validate
@@ -176,6 +178,7 @@ class TestTier4Scenarios(unittest.TestCase):
                 "steps": 25,
             },
             "runtime": {"device": "cpu", "dtype": "float32", "offload": "none"},
+            "demo_mode": True,
         }
         val = self.client.post("/api/config/validate", json=payload)
         self.assertTrue(val.json()["valid"])
@@ -210,6 +213,7 @@ class TestTier4Scenarios(unittest.TestCase):
             "model": {"filename": "qwen_q5_k_m.gguf", "gguf_quantization": "Q5_K_M"},
             "generation": {"images": [str(self.images[0])]},
             "runtime": {"device": "cpu", "dtype": "float32", "offload": "none"},
+            "demo_mode": True,
         }
         run_resp = self.client.post("/api/run", json=payload)
         self.assertEqual(run_resp.status_code, 200)
@@ -222,6 +226,7 @@ class TestTier4Scenarios(unittest.TestCase):
                 "device": "cpu", "dtype": "float32", "offload": "none",
                 "repeats": 2, "increment_seed": True, "save_comparison": True,
             },
+            "demo_mode": True,
         }
         resp = self.client.post("/api/run", json=payload)
         self.assertEqual(resp.status_code, 200)
@@ -248,6 +253,7 @@ class TestTier4Scenarios(unittest.TestCase):
         valid_payload = {
             "generation": {"images": [str(self.images[0])], "steps": 25, "strength": 0.9},
             "runtime": {"device": "cpu", "dtype": "float32", "offload": "none"},
+            "demo_mode": True,
         }
         val2 = self.client.post("/api/config/validate", json=valid_payload).json()
         self.assertTrue(val2["valid"])
@@ -273,6 +279,7 @@ class TestTier4Scenarios(unittest.TestCase):
             "model": {"source": str(self.models_dir / "custom_finetune.safetensors")},
             "generation": {"images": [str(self.images[0])]},
             "runtime": {"device": "cpu", "dtype": "float32", "offload": "none"},
+            "demo_mode": True,
         }
         run_resp = self.client.post("/api/run", json=payload)
         self.assertEqual(run_resp.status_code, 200)

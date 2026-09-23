@@ -234,6 +234,14 @@ code, pre, .font-mono {
   box-shadow: 0 0 8px var(--accent-rose);
 }
 
+.status-pill.status-warning .status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--accent-amber);
+  box-shadow: 0 0 8px var(--accent-amber);
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -1814,4 +1822,3 @@ code, pre, .font-mono {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
-

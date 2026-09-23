@@ -10,10 +10,12 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import MagicMock, patch
 
 from starlette.testclient import TestClient
 
 from qwen_runner.config import Config, GenerationConfig, ModelConfig, RuntimeConfig
+from qwen_runner.backend import QwenBackend
 from ui.runner_bridge import RunnerBridge, RunJob, resolve_backend_factory, DemoBackend
 from ui.server import app
 
@@ -39,6 +41,66 @@ class TestBackendRunnerBridge(unittest.TestCase):
     def test_resolve_backend_factory_demo_mode(self):
         backend_cls = resolve_backend_factory(demo_mode=True)
         self.assertIs(backend_cls, DemoBackend)
+
+    def test_resolve_backend_factory_real_mode_never_falls_back(self):
+        with patch("ui.runner_bridge.torch.cuda.is_available", return_value=False):
+            backend_cls = resolve_backend_factory(demo_mode=False)
+        self.assertIs(backend_cls, QwenBackend)
+
+    def test_system_capabilities_reports_selected_runtime(self):
+        app.state.demo_mode = False
+        response = self.client.get("/api/system?device=cpu&dtype=float32&offload=none")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["selected_device"]["id"], "cpu")
+        self.assertTrue(payload["production_backend"]["ready"])
+        self.assertEqual(payload["backend"]["default_mode"], "production")
+        self.assertTrue(payload["backend"]["demo_is_synthetic"])
+
+    def test_run_without_mode_defaults_to_production(self):
+        image_path = self.root / "production_default.png"
+        from PIL import Image
+        Image.new("RGB", (32, 32), color=(10, 20, 30)).save(image_path)
+
+        payload = {
+            "generation": {"images": [str(image_path)], "steps": 1},
+            "runtime": {
+                "device": "cpu",
+                "dtype": "float32",
+                "offload": "none",
+                "output_dir": str(self.outputs_dir),
+            },
+        }
+        fake_bridge = MagicMock()
+        fake_bridge.submit_run.return_value.job_id = "production_default_job"
+        app.state.demo_mode = False
+
+        with patch("ui.server.get_runner_bridge", return_value=fake_bridge):
+            response = self.client.post("/api/run", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(fake_bridge.submit_run.call_args.kwargs["demo_mode"])
+
+    def test_run_rejects_non_boolean_demo_mode(self):
+        image_path = self.root / "invalid_mode.png"
+        from PIL import Image
+        Image.new("RGB", (32, 32), color=(10, 20, 30)).save(image_path)
+
+        payload = {
+            "generation": {"images": [str(image_path)], "steps": 1},
+            "runtime": {
+                "device": "cpu",
+                "dtype": "float32",
+                "offload": "none",
+                "output_dir": str(self.outputs_dir),
+            },
+            "demo_mode": "false",
+        }
+        response = self.client.post("/api/run", json=payload)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("boolean", response.json()["detail"])
 
     def test_run_job_reentrant_lock_safe(self):
         cfg = Config(

@@ -49,6 +49,7 @@ if str(UI_DIR) not in sys.path:
 
 from qwen_runner.config import Config, GenerationConfig, ModelConfig, RuntimeConfig
 from qwen_runner.models import ModelStore, parse_model_ref, safe_relative
+from qwen_runner.system import probe_runtime_capabilities
 from ui.runner_bridge import (
     CaptureManager,
     DemoBackend,
@@ -152,6 +153,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.state.demo_mode = os.environ.get("DEMO_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -171,6 +173,11 @@ def is_safe_path(base_dir: Path, target_path: Path) -> bool:
         return False
 
 
+def get_demo_mode_default() -> bool:
+    """Return the explicitly configured server default for synthetic demo runs."""
+    return bool(getattr(app.state, "demo_mode", False))
+
+
 # ============================================================================
 # 1. HEALTHCHECK & ROOT SPA
 # ============================================================================
@@ -179,6 +186,25 @@ def is_safe_path(base_dir: Path, target_path: Path) -> bool:
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok", "timestamp": time.time()}
+
+
+@app.get("/api/system")
+async def system_capabilities(
+    device: str = Query("cuda:0"),
+    dtype: str = Query("bfloat16"),
+    offload: str = Query("model"),
+):
+    """Report runtime readiness without loading model weights."""
+    report = probe_runtime_capabilities(device=device, dtype=dtype, offload=offload)
+    demo_default = get_demo_mode_default()
+    report["backend"] = {
+        "production": "QwenBackend",
+        "demo": "DemoBackend",
+        "default_mode": "demo" if demo_default else "production",
+        "demo_default": demo_default,
+        "demo_is_synthetic": True,
+    }
+    return report
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -897,7 +923,16 @@ async def start_run(payload: Dict[str, Any]):
                 },
             )
 
-    demo_mode = bool(payload.get("demo_mode", True))
+    demo_mode = payload.get("demo_mode", get_demo_mode_default())
+    if not isinstance(demo_mode, bool):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "valid": False,
+                "errors": ["demo_mode must be a boolean"],
+                "detail": "demo_mode must be a boolean",
+            },
+        )
     bridge = get_runner_bridge()
 
     # Synchronize default output directory if configured

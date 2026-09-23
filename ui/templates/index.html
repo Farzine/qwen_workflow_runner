@@ -26,9 +26,9 @@
     </div>
 
     <div class="header-center">
-      <div id="backend-status-pill" class="status-pill status-online" title="Backend Server Status">
+      <div id="backend-status-pill" class="status-pill status-warning" title="Checking backend runtime readiness">
         <span class="status-indicator"></span>
-        <span id="backend-status-text" class="status-text">Connected</span>
+        <span id="backend-status-text" class="status-text">Checking Runtime</span>
       </div>
     </div>
 
@@ -677,12 +677,12 @@
       <!-- Execution Launch Bar (Fixed at bottom of Config Panel) -->
       <div class="panel-launch-bar" id="launch-control-bar">
         <div class="launch-toggles">
-          <div class="checkbox-row" title="Run fast synthetic execution with real output images and records">
+          <div class="checkbox-row" title="Explicitly use a synthetic input-derived preview. This does not run the Qwen model.">
             <label class="toggle-switch">
-              <input type="checkbox" id="toggle-demo-mode" checked>
+              <input type="checkbox" id="toggle-demo-mode">
               <span class="toggle-slider"></span>
             </label>
-            <span class="toggle-label font-semibold">Demo Mode</span>
+            <span class="toggle-label font-semibold">Synthetic Demo</span>
           </div>
         </div>
 
@@ -966,7 +966,7 @@
     <div class="statusbar-left">
       <span class="status-item"><strong class="status-key">Host:</strong> localhost</span>
       <span class="status-item"><strong class="status-key">Runner:</strong> Qwen Image 2.1</span>
-      <span class="status-item"><strong class="status-key">Mode:</strong> <span id="status-bar-mode">Demo</span></span>
+      <span class="status-item"><strong class="status-key">Mode:</strong> <span id="status-bar-mode">Real • Checking runtime</span></span>
     </div>
     <div class="statusbar-center">
       <span id="status-bar-active-task" class="status-task">Idle</span>

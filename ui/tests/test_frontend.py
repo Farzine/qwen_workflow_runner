@@ -129,6 +129,7 @@ class TestParameterCoverage(unittest.TestCase):
     def setUpClass(cls):
         cls.repo_root = Path(__file__).resolve().parent.parent.parent
         cls.index_path = cls.repo_root / "ui" / "templates" / "index.html"
+        cls.js_path = cls.repo_root / "ui" / "static" / "js" / "app.js"
         with open(cls.index_path, encoding="utf-8") as f:
             cls.html = f.read()
 
@@ -169,8 +170,16 @@ class TestParameterCoverage(unittest.TestCase):
             self.assertTrue(found, f"RuntimeConfig field '{field.name}' not found in index.html")
 
     def test_demo_mode_toggle_exposed(self):
-        """Demo mode toggle switch is present in index.html."""
+        """Synthetic demo is exposed as an explicit, unchecked opt-in."""
         self.assertIn('id="toggle-demo-mode"', self.html)
+        self.assertNotRegex(self.html, r'id="toggle-demo-mode"[^>]*\bchecked\b')
+        self.assertIn("Synthetic Demo", self.html)
+
+    def test_frontend_defaults_to_real_backend_and_checks_runtime(self):
+        js = self.js_path.read_text(encoding="utf-8")
+        self.assertIn("demo_mode: false", js)
+        self.assertIn("/api/system", js)
+        self.assertIn("Real Backend Blocked", js)
 
 
 class TestFormControlsAndValidationAttributes(unittest.TestCase):

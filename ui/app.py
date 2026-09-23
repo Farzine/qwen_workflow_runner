@@ -110,9 +110,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 def configure_app(args: argparse.Namespace) -> None:
     """Apply CLI argument overrides to environment variables and app state."""
+    demo_enabled = args.demo or os.environ.get("DEMO_MODE", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    app.state.demo_mode = demo_enabled
     if args.demo:
         os.environ["DEMO_MODE"] = "1"
-        app.state.demo_mode = True
     if args.inputs_dir:
         resolved_inputs = str(Path(args.inputs_dir).resolve())
         os.environ["INPUTS_DIR"] = resolved_inputs

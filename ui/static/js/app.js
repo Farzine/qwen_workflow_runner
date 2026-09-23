@@ -271,7 +271,10 @@
           filename_prefix: "Qwen_image_2.1",
           save_comparison: true,
         },
-        demo_mode: true,
+        demo_mode: false,
+      },
+      system: {
+        capabilities: null,
       },
       models: {
         cached: [],
@@ -313,6 +316,17 @@
     async checkHealth() {
       const res = await fetch("/api/health");
       if (!res.ok) throw new Error(`Health check failed: HTTP ${res.status}`);
+      return await res.json();
+    },
+
+    async getSystemCapabilities(runtime = {}) {
+      const params = new URLSearchParams({
+        device: runtime.device || "cuda:0",
+        dtype: runtime.dtype || "bfloat16",
+        offload: runtime.offload || "model",
+      });
+      const res = await fetch(`/api/system?${params.toString()}`);
+      if (!res.ok) throw new Error(`Runtime capability check failed: HTTP ${res.status}`);
       return await res.json();
     },
 
@@ -1171,6 +1185,10 @@
         }
         Toast.show("MPS selected: offload set to none.", "info");
       }
+
+      App.refreshRuntimeCapabilities(false, false).catch((err) => {
+        console.warn("Runtime capability refresh failed:", err);
+      });
     },
 
     bindModelInputs() {
@@ -1187,6 +1205,10 @@
 
     bindLaunchControls() {
       this.bindCheckbox("toggle-demo-mode", "demo_mode");
+      const demoToggle = document.getElementById("toggle-demo-mode");
+      if (demoToggle) {
+        demoToggle.addEventListener("change", () => App.renderRuntimeStatus());
+      }
     },
 
     syncSliderWithNumber(sliderId, numberId, onUpdate) {
@@ -1734,7 +1756,7 @@
             model: Store.state.config.model,
             generation: Store.state.config.generation,
             runtime: Store.state.config.runtime,
-            demo_mode: Store.state.config.demo_mode ?? true,
+            demo_mode: Store.state.config.demo_mode ?? false,
           };
 
           const res = await ApiClient.startRun(payload);
@@ -2598,6 +2620,66 @@
   // ==========================================================================
 
   const App = {
+    async refreshRuntimeCapabilities(applyServerDefault = false, notifyBlocked = false) {
+      const capabilities = await ApiClient.getSystemCapabilities(Store.state.config.runtime);
+      Store.state.system.capabilities = capabilities;
+
+      if (applyServerDefault) {
+        const demoDefault = Boolean(capabilities.backend && capabilities.backend.demo_default);
+        Store.state.config.demo_mode = demoDefault;
+        const demoToggle = document.getElementById("toggle-demo-mode");
+        if (demoToggle) demoToggle.checked = demoDefault;
+      }
+
+      this.renderRuntimeStatus(capabilities);
+
+      const production = capabilities.production_backend || {};
+      if (notifyBlocked && !Store.state.config.demo_mode && !production.ready) {
+        Toast.show(`Real inference unavailable: ${production.message || "selected runtime is not ready"}`, "warning", 8000);
+      }
+      return capabilities;
+    },
+
+    renderRuntimeStatus(capabilities = Store.state.system.capabilities) {
+      const pill = document.getElementById("backend-status-pill");
+      const text = document.getElementById("backend-status-text");
+      const footerMode = document.getElementById("status-bar-mode");
+      const demoMode = Boolean(Store.state.config.demo_mode);
+
+      if (demoMode) {
+        if (pill) {
+          pill.className = "status-pill status-online";
+          pill.title = "Synthetic demo is enabled. Qwen model inference will not run.";
+        }
+        if (text) text.textContent = "Synthetic Demo";
+        if (footerMode) footerMode.textContent = "Synthetic Demo • No model inference";
+        return;
+      }
+
+      const production = capabilities && capabilities.production_backend;
+      const selected = capabilities && capabilities.selected_device;
+      if (production && production.ready) {
+        if (pill) {
+          pill.className = "status-pill status-online";
+          pill.title = production.message || "Production backend is ready";
+        }
+        if (text) text.textContent = "Real Backend Ready";
+        if (footerMode) footerMode.textContent = `Real • ${(selected && selected.id) || "selected device"}`;
+      } else {
+        const message = (production && production.message) || "Runtime capability information is unavailable.";
+        if (pill) {
+          pill.className = "status-pill status-warning";
+          pill.title = message;
+        }
+        if (text) text.textContent = production ? "Real Backend Blocked" : "Runtime Unknown";
+        if (footerMode) {
+          const deviceName = (selected && selected.id) || Store.state.config.runtime.device;
+          footerMode.textContent = `Real • ${deviceName} unavailable`;
+          footerMode.title = message;
+        }
+      }
+    },
+
     async init() {
       console.log("Qwen Image 2.1 Workflow UI: Starting application controller...");
 
@@ -2613,7 +2695,7 @@
       RunHistory.init();
       Lightbox.init();
 
-      // Check backend health
+      // Check backend connectivity first, then inspect production runtime readiness.
       try {
         await ApiClient.checkHealth();
         Store.state.connected = true;
@@ -2622,11 +2704,6 @@
         const text = document.getElementById("backend-status-text");
         if (pill) pill.className = "status-pill status-online";
         if (text) text.textContent = "Connected";
-
-        const footerMode = document.getElementById("status-bar-mode");
-        if (footerMode) footerMode.textContent = "Demo Mode";
-
-        console.log("Qwen Image 2.1 Workflow UI: Backend connected successfully.");
       } catch (err) {
         console.warn("Backend health check failed:", err);
         const pill = document.getElementById("backend-status-pill");
@@ -2635,6 +2712,16 @@
         if (text) text.textContent = "Disconnected";
 
         Toast.show("Backend server unreachable. Verify server is running on localhost:7878.", "warning");
+        return;
+      }
+
+      try {
+        await this.refreshRuntimeCapabilities(true, true);
+        console.log("Qwen Image 2.1 Workflow UI: Backend connected and runtime inspected.");
+      } catch (err) {
+        console.warn("Runtime capability check failed:", err);
+        this.renderRuntimeStatus(null);
+        Toast.show("Backend connected, but runtime capability inspection failed.", "warning");
       }
     },
   };
