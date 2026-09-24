@@ -283,6 +283,7 @@
       },
       models: {
         cached: [],
+        selectedId: null,
         activeTask: null,
       },
       loras: {
@@ -559,7 +560,7 @@
     "param-device": {
       title: "Execution Device",
       summary: "Exact CPU, MPS, or CUDA device used for model placement, metrics, and inference.",
-      details: [["CUDA", "Uses the selected GPU index; available memory and readiness are shown on this page."], ["CPU", "Requires float32 with no offload and is expected to be very slow."], ["Lifecycle", "Changes apply to the next job because each job builds its own backend."]],
+      details: [["CUDA", "Uses the selected GPU index; available memory and readiness are shown on this page."], ["CPU", "Requires float32 with no offload and is expected to be very slow."], ["Lifecycle", "Changes apply to the next job. A compatible pipeline stays resident on its selected device between jobs."]],
     },
     "param-dtype": {
       title: "Model Precision",
@@ -1845,14 +1846,6 @@
     },
 
     bindModelInputs() {
-      this.bindField("param-model-source", "model.source", "input");
-      this.bindField("param-model-revision", "model.revision", "input");
-      this.bindField("param-model-filename", "model.filename", "input");
-      this.bindField("param-gguf-quantization", "model.gguf_quantization", "input");
-      this.bindField("param-base-model", "model.base_model", "input");
-      this.bindField("param-base-revision", "model.base_revision", "input");
-      this.bindField("param-text-encoder-source", "model.text_encoder_source", "input");
-      this.bindField("param-model-cache-dir", "model.cache_dir", "input");
       this.bindField("param-model-lora-path", "model.lora_path", "change", (v) => v || null);
       this.bindField("param-model-lora-scale", "model.lora_scale", "input", (v) => {
         const parsed = Number.parseFloat(v);
@@ -1988,6 +1981,9 @@
       if (r.memory_poll_seconds < 0.001 || r.memory_poll_seconds > 1.0) {
         errors.push("memory_poll_seconds must be between 0.001 and 1.0.");
       }
+      if (!Store.state.models.selectedId && !c.demo_mode) {
+        errors.push("Select a compatible downloaded model before running inference.");
+      }
 
       // If client errors exist, render directly
       if (errors.length > 0) {
@@ -1998,7 +1994,8 @@
       // Query server validator
       try {
         const payload = {
-          model: c.model,
+          selected_model_id: Store.state.models.selectedId,
+          model: { lora_path: c.model.lora_path, lora_scale: c.model.lora_scale },
           generation: c.generation,
           runtime: c.runtime,
           demo_mode: c.demo_mode,
@@ -2105,6 +2102,7 @@
       if (this.cachedSelect) {
         this.cachedSelect.addEventListener("change", (e) => {
           this.displayCachedModelInfo(e.target.value);
+          if (this.applyCachedBtn) this.applyCachedBtn.disabled = !e.target.value;
         });
       }
 
@@ -2128,9 +2126,28 @@
         }
 
         this.renderCachedSelect(models);
+        if (!models.some((model) => model.id === Store.state.models.selectedId && model.compatible)) {
+          const preferred = models.find((model) => model.compatible && model.type === "diffusers")
+            || models.find((model) => model.compatible);
+          Store.state.models.selectedId = (preferred || {}).id || null;
+        }
+        if (this.cachedSelect) this.cachedSelect.value = Store.state.models.selectedId || "";
+        if (this.applyCachedBtn) this.applyCachedBtn.disabled = !Store.state.models.selectedId;
+        this.displayCachedModelInfo(Store.state.models.selectedId);
+        this.renderActiveModel();
+        ParamForm.triggerValidation();
       } catch (err) {
         console.error("Failed to list models:", err);
+        const status = document.getElementById("model-active-status");
+        if (status) status.textContent = `Model catalog unavailable: ${err.message}`;
       }
+    },
+
+    renderActiveModel() {
+      const status = document.getElementById("model-active-status");
+      if (!status) return;
+      const active = Store.state.models.cached.find((model) => model.id === Store.state.models.selectedId);
+      status.textContent = active ? `Active for next run: ${active.name}` : "No compatible model selected.";
     },
 
     renderCachedSelect(models) {
@@ -2143,16 +2160,18 @@
       for (const m of models) {
         const typeBadge = m.type ? m.type.toUpperCase() : "WEIGHTS";
         const sizeStr = m.size ? ` (${Utils.formatBytes(m.size)})` : "";
-        const label = `[${typeBadge}] ${m.name}${sizeStr}`;
+        const label = `[${typeBadge}] ${m.name}${sizeStr}${m.compatible ? "" : " — incompatible"}`;
 
-        const opt = Utils.el("option", { value: m.path || m.name }, label);
+        const opt = Utils.el("option", { value: m.id || m.path || m.name }, label);
+        opt.disabled = m.compatible === false;
+        if (m.compatibility_reason) opt.title = m.compatibility_reason;
         this.cachedSelect.appendChild(opt);
       }
     },
 
     displayCachedModelInfo(selectedVal) {
       const models = Store.state.models.cached;
-      const model = models.find((m) => m.path === selectedVal || m.name === selectedVal);
+      const model = models.find((m) => m.id === selectedVal || m.path === selectedVal || m.name === selectedVal);
 
       if (!model) {
         if (this.modelInfoBox) this.modelInfoBox.classList.add("hidden");
@@ -2161,7 +2180,9 @@
 
       if (this.modelInfoBox) this.modelInfoBox.classList.remove("hidden");
       if (this.infoPath) this.infoPath.textContent = model.path || model.name;
-      if (this.infoType) this.infoType.textContent = (model.type || "unknown").toUpperCase();
+      if (this.infoType) this.infoType.textContent = model.compatible
+        ? `${(model.type || "unknown").toUpperCase()} · Compatible`
+        : `Incompatible: ${model.compatibility_reason || "unsupported model"}`;
       if (this.infoSize) this.infoSize.textContent = model.size ? Utils.formatBytes(model.size) : "N/A";
     },
 
@@ -2172,25 +2193,16 @@
         return;
       }
 
-      const model = Store.state.models.cached.find((m) => m.path === selectedVal || m.name === selectedVal);
+      const model = Store.state.models.cached.find((m) => m.id === selectedVal);
       if (!model) return;
-
-      const sourceInput = document.getElementById("param-model-source");
-      const filenameInput = document.getElementById("param-model-filename");
-
-      if (model.type === "gguf" || (model.filename && model.filename.endsWith(".gguf"))) {
-        if (filenameInput) {
-          filenameInput.value = model.filename || model.name;
-          Store.state.config.model.filename = filenameInput.value;
-        }
-      } else {
-        if (sourceInput) {
-          sourceInput.value = model.path || model.name;
-          Store.state.config.model.source = sourceInput.value;
-        }
+      if (!model.compatible) {
+        Toast.show(model.compatibility_reason || "This model is incompatible.", "error");
+        return;
       }
-
-      Toast.show(`Applied model: ${model.name}`, "success");
+      Store.state.models.selectedId = model.id;
+      this.displayCachedModelInfo(model.id);
+      this.renderActiveModel();
+      Toast.show(`Selected model: ${model.name}`, "success");
       ParamForm.triggerValidation();
     },
 
@@ -2811,7 +2823,11 @@
           Store.state.config.generation.reference_images = references.map((item) => item.path);
 
           const payload = {
-            model: Store.state.config.model,
+            selected_model_id: Store.state.models.selectedId,
+            model: {
+              lora_path: Store.state.config.model.lora_path,
+              lora_scale: Store.state.config.model.lora_scale,
+            },
             generation: Store.state.config.generation,
             runtime: Store.state.config.runtime,
             demo_mode: Store.state.config.demo_mode ?? false,

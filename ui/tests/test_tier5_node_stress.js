@@ -381,6 +381,7 @@ const modules = sandbox.__APP_MODULES__;
 assert(modules, "Failed to load app.js modules in Tier 5 stress harness");
 
 const { Store, InputBrowser, ParamForm, RunController, ComparisonSlider, OutputViewer, Toast, RunHistory } = modules;
+Store.state.models.selectedId = "model_test_catalog_selection";
 
 // Initialize components
 InputBrowser.init();

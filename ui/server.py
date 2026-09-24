@@ -49,6 +49,7 @@ if str(UI_DIR) not in sys.path:
 
 from qwen_runner.config import Config, GenerationConfig, ModelConfig, RuntimeConfig
 from qwen_runner.models import ModelStore, parse_model_ref, safe_relative
+from ui.model_catalog import discover_models, resolve_selected_model
 from qwen_runner.system import probe_runtime_capabilities
 from ui.runner_bridge import (
     CaptureManager,
@@ -535,65 +536,31 @@ class ModelDownloadRequest(BaseModel):
 
 @app.get("/api/models")
 async def list_models():
-    """List local weight files in models/ and discovered cached manifests."""
-    models_dir = get_models_dir()
-    models_list = []
-    seen_paths = set()
+    """List downloaded models with stable IDs and explicit compatibility."""
+    return {"models": discover_models(get_models_dir())}
 
-    if models_dir.is_dir():
-        for p in sorted(models_dir.iterdir()):
-            if p.name.startswith(".") or p.name == ".uploads":
-                continue
-            if p.is_file():
-                ext = p.suffix.lower()
-                if ext in {".gguf", ".safetensors", ".bin"}:
-                    m_type = "gguf" if ext == ".gguf" else "safetensors"
-                    models_list.append({
-                        "name": p.name,
-                        "repo_id": None,
-                        "path": str(p.resolve()),
-                        "type": m_type,
-                        "is_cached": True,
-                        "filename": p.name,
-                        "size": p.stat().st_size,
-                    })
-                    seen_paths.add(str(p.resolve()))
-            elif p.is_dir() and not p.name.startswith("."):
-                if (p / "model_index.json").is_file():
-                    models_list.append({
-                        "name": p.name,
-                        "repo_id": None,
-                        "path": str(p.resolve()),
-                        "type": "diffusers",
-                        "is_cached": True,
-                        "filename": None,
-                        "size": None,
-                    })
-                    seen_paths.add(str(p.resolve()))
 
-    # Check cached manifests in models/manifests/*.json
-    manifests_dir = models_dir / "manifests"
-    if manifests_dir.is_dir():
-        for manifest_file in manifests_dir.glob("*.json"):
-            try:
-                data = json.loads(manifest_file.read_text(encoding="utf-8"))
-                meta = data.get("metadata", {})
-                load_path = data.get("load_path", "")
-                if all(Path(f["path"]).is_file() for f in data.get("files", [])):
-                    models_list.append({
-                        "name": meta.get("repo_id") or Path(load_path).name,
-                        "repo_id": meta.get("repo_id"),
-                        "path": load_path,
-                        "type": meta.get("format", "hub"),
-                        "is_cached": True,
-                        "filename": meta.get("filename"),
-                        "size": meta.get("downloaded_selection_bytes"),
-                    })
-                    seen_paths.add(load_path)
-            except Exception:
-                pass
-
-    return {"models": models_list}
+def apply_selected_model(config: Config, payload: Dict[str, Any]) -> None:
+    """Resolve a web catalog selection after parsing untrusted request fields."""
+    model_id = payload.get("selected_model_id")
+    config.model.selected_model_id = None
+    if model_id is None:
+        return  # Legacy direct-source API and CLI contract.
+    entry = resolve_selected_model(get_models_dir(), model_id)
+    if entry["repo_id"] and entry["type"] == "gguf":
+        config.model.source = entry["repo_id"]
+        config.model.revision = entry["requested_revision"] or "main"
+        config.model.filename = entry["filename"]
+    else:
+        config.model.source = entry["path"]
+        config.model.revision = None
+        config.model.filename = None
+    config.model.base_model = entry["companion_path"] or entry["path"]
+    config.model.base_revision = None
+    config.model.text_encoder_source = None
+    config.model.cache_dir = str(get_models_dir())
+    config.model.offline = True
+    config.model.selected_model_id = entry["id"]
 
 
 def inspect_lora_file(path: Path) -> Dict[str, Any]:
@@ -1157,6 +1124,7 @@ async def validate_config(payload: Dict[str, Any]):
     check_images = bool(payload.get("check_images", False))
     try:
         config = dict_to_config(payload)
+        apply_selected_model(config, payload)
     except Exception as err:
         return JSONResponse(
             status_code=200,
@@ -1194,6 +1162,7 @@ async def start_run(payload: Dict[str, Any]):
     """Launch asynchronous background inference run."""
     try:
         config = dict_to_config(payload)
+        apply_selected_model(config, payload)
         # Enforce image validation
         config.validate(check_images=True)
     except Exception as err:

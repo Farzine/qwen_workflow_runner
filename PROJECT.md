@@ -70,7 +70,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | M3 | App Startup, CLI & Packaging | Entrypoint script (`ui/app.py`), configurable port fallback, directory overrides, documentation, and dependency profiles | M1, M2 | COMPLETE |
 | M4 | E2E Verification & Adversarial Hardening | Full automated suites plus hardware-gated browser production validation; evidence in `VALIDATION_MATRIX.md` | M1, M2, M3 | COMPLETE |
 | M5 | Persistent Resource Lifecycle | One exclusive cached production pipeline per device, compatible reuse, LoRA switching, runtime telemetry, and explicit shutdown cleanup | M1, M4 | COMPLETE |
-| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | PLANNED |
+| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | IN PROGRESS (selection complete) |
 | M7 | Records, Batch UX & Task Pages | Versioned human-readable metadata, detailed batch state/ETA, and Dashboard/Models/LoRAs/Inference/Batch/History/Outputs views | M6 | PLANNED |
 
 ## Interface Contracts
@@ -80,7 +80,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 - `GET /api/inputs/thumbnail?path=<filepath>`:
   - Returns: cached JPEG/PNG thumbnail image (256px max dimension).
 - `GET /api/models`:
-  - Returns: `{"models": [{"name": "...", "path": "...", "type": "safetensors|gguf|hub", "is_cached": bool}]}`
+  - Returns: `{"models": [{"id": "model_...", "name": "...", "path": "...", "type": "diffusers|safetensors|gguf", "is_cached": bool, "compatible": bool, "compatibility_reason": "...|null", "companion_path": "...|null"}]}`
 - `POST /api/models/download`:
   - Body: `{"repo_id": "...", "filename": "...", "revision": "..."}`
   - Returns: `{"task_id": "..."}` (progress streamed via SSE `/api/models/download/progress/{task_id}`)
@@ -92,10 +92,10 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 - `POST /api/loras/upload`:
   - Validates and atomically stores one LoRA SafeTensors file, then returns its selectable path and metadata.
 - `POST /api/config/validate`:
-  - Body: JSON config payload.
+  - Body: JSON config payload; optional top-level `selected_model_id` selects a compatible downloaded checkpoint and overrides any nested source/base fields.
   - Returns: `{"valid": true}` or `{"valid": false, "errors": ["..."]}`
 - `POST /api/run`:
-  - Body: Complete config JSON payload + `demo_mode: bool`.
+  - Body: Complete config JSON payload + `demo_mode: bool`; the web UI sends top-level `selected_model_id`, while legacy direct-source clients may omit it.
   - Returns: `{"run_id": "...", "stream_url": "/api/run/{run_id}/stream"}`
 - `GET /api/run/{run_id}/stream`:
   - SSE stream: `event: log`, `data: {"text": "..."}`, `event: progress`, `data: {"step": int, "total": int}`, `event: complete`, `data: {...}`

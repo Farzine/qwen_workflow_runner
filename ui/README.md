@@ -207,21 +207,33 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
 ### 2. Model Catalog & Uploads
 
 - **`GET /api/models`**
-  - Lists all cached model checkpoints and GGUF files in `models/`.
+  - Lists downloaded models in the configured `models/` storage with stable IDs,
+    Qwen Image 2.1 compatibility results, and companion-pipeline paths for
+    transformer-only checkpoints. Unsupported or incomplete entries remain
+    visible with `compatible: false` and a `compatibility_reason`.
   - Response:
     ```json
     {
       "models": [
         {
+          "id": "model_4ff66ef0ec9f18e2d3e2",
           "name": "Qwen-Image-2.1",
           "path": "/path/to/models/Qwen-Image-2.1",
-          "type": "safetensors",
-          "size": 14500000000,
-          "is_cached": true
+          "type": "diffusers",
+          "size": 33130000000,
+          "is_cached": true,
+          "compatible": true,
+          "compatibility_reason": null,
+          "companion_path": null
         }
       ]
     }
     ```
+  - The web client sends `selected_model_id` at the top level of
+    `POST /api/config/validate` and `POST /api/run`. The server resolves it
+    against the current catalog and ignores conflicting source/companion
+    fields in `model`; stale or incompatible IDs are rejected. Requests that
+    omit the ID retain the legacy direct-source API contract.
 - **`POST /api/models/download`**
   - Initiates asynchronous background download from Hugging Face Hub.
   - Payload: `{"repo_id": "Qwen/Qwen-Image-2.1", "filename": "...", "revision": "main"}`

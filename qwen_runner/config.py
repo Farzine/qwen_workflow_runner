@@ -16,6 +16,7 @@ class ModelConfig:
     offline: bool = False
     lora_path: str | None = None  # Optional local Qwen Image LoRA SafeTensors file.
     lora_scale: float = 1.0
+    selected_model_id: str | None = None  # Server-resolved catalog identity for web runs.
 
 
 @dataclass

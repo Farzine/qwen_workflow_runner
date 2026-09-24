@@ -32,6 +32,7 @@ The active checkout is `/mnt/lab/farzine/qwen_workflow_runner`. The path origina
 | `qwen_runner/runner.py` | End-to-end orchestration, durable JSON records, output PNG saving, comparisons, and error records. |
 | `ui/app.py` | Uvicorn launcher, CLI flags, directory setup, and port selection. |
 | `ui/server.py` | FastAPI routes for health, inputs, thumbnails, models, validation, runs, SSE, history, and outputs. |
+| `ui/model_catalog.py` | Stable downloaded-model IDs, local Qwen Image 2.1 compatibility inspection, and selected-ID resolution. |
 | `ui/runner_bridge.py` | Background job bridge, stdout/stderr capture, event fan-out, `DemoBackend`, and backend selection. |
 | `ui/templates/index.html` | Single-page UI markup. |
 | `ui/static/js/app.js` | Client state, server-side image browser, ordered selection, forms, run submission, SSE, history, and comparison viewer. |
@@ -58,6 +59,7 @@ No Graphiphy, Graphviz, `dot`, `pyreverse`, `pydeps`, or `madge` executable/tool
 flowchart LR
     Browser[Browser SPA<br/>index.html + app.js] -->|REST JSON| Server[ui.server<br/>FastAPI]
     Browser <-->|SSE events| Server
+    Server --> Catalog[ui.model_catalog<br/>compatible local models]
     Server --> Bridge[ui.runner_bridge<br/>RunnerBridge]
     Bridge --> Manager[qwen_runner.resources<br/>PipelineManager]
     Bridge --> Runner[qwen_runner.runner]
@@ -83,7 +85,7 @@ qwen_runner.backend -> qwen_runner.gguf_loader, models, pipeline, sampling
 qwen_runner.pipeline -> qwen_runner.kv_cache
 qwen_runner.runner -> qwen_runner.backend, images, metrics, sampling
 ui.app -> ui.server
-ui.server -> qwen_runner.config, qwen_runner.models, ui.runner_bridge
+ui.server -> qwen_runner.config, qwen_runner.models, ui.model_catalog, ui.runner_bridge
 ui.runner_bridge -> qwen_runner.backend, qwen_runner.config, qwen_runner.resources, qwen_runner.runner, ui.server
 ```
 
@@ -100,8 +102,8 @@ sequenceDiagram
     participant F as Filesystem
 
     U->>JS: Select/upload ordered inputs and optional references
-    JS->>API: POST /api/run (model, generation, runtime, demo_mode)
-    API->>API: Build Config and validate image paths
+    JS->>API: POST /api/run (selected_model_id, generation, runtime, demo_mode)
+    API->>API: Resolve catalog ID to source and companions; validate paths
     API->>B: submit_run(config, demo_mode)
     B->>B: resolve_backend_factory
     B->>B: acquire exclusive per-device pipeline lease
@@ -140,7 +142,7 @@ Extend the validated Qwen workflow into a production-quality management applicat
 
 ## Active Task
 
-Expanded Phase 9.1 is complete: the web server now owns one persistent compatible production pipeline per device, reuses it under an exclusive job lease, reports live cache state, and explicitly unloads resources during server shutdown.
+Expanded Phase 9.2 is complete: the web catalog assigns stable IDs and compatibility reasons to downloaded models. The browser sends one selected ID, which the server resolves into the authoritative model/companion for validation and inference. Legacy direct-source API/CLI calls remain supported.
 
 ## Completed Tasks
 
@@ -200,6 +202,9 @@ Expanded Phase 9.1 is complete: the web server now owns one persistent compatibl
 - [x] Added FastAPI shutdown draining and explicit Diffusers hook removal, CPU transfer, reference release, garbage collection, CUDA synchronization, and allocator cleanup.
 - [x] Exposed resident model/device/LoRA and cache lifecycle state through `/api/system` and the System page.
 - [x] Proved full-model cache reuse with two real `cuda:0` jobs and a single model load, then verified the manager slot becomes empty after shutdown.
+- [x] Added stable downloaded-model IDs, conservative Qwen Image 2.1 compatibility inspection, and explicit reasons for incompatible local/manifest entries.
+- [x] Made the selected catalog ID authoritative in web validation and run requests; removed advanced source/base authority from the browser while preserving legacy direct-source API and CLI behavior.
+- [x] Verified selected-model resolution with API tests and a real `cuda:1` full-model run whose requested source was deliberately wrong before server resolution.
 
 ## Remaining Tasks
 
@@ -214,7 +219,7 @@ Expanded Phase 9.1 is complete: the web server now owns one persistent compatibl
 - [x] Phase 7: add implementation-backed information controls for all meaningful parameters.
 - [x] Phase 8: run the complete input/reference/LoRA/GPU/inference/UI validation matrix, fix remaining failures, and stabilize documentation.
 - [x] Phase 9.1: add reusable per-device pipeline ownership, LoRA-aware reuse, concurrency protection, lifecycle telemetry, and shutdown cleanup.
-- [ ] Phase 9.2: make a stable, compatible downloaded-model catalog selection authoritative for inference; remove advanced-field authority and expose incompatibility reasons.
+- [x] Phase 9.2: make a stable, compatible downloaded-model catalog selection authoritative for inference; remove advanced-field authority and expose incompatibility reasons.
 - [ ] Phase 9.3: add truthful byte/file-aware Hugging Face download progress, retry/cancel state, and responsive background behavior.
 - [ ] Phase 9.4: add safe model, LoRA, output, and run deletion APIs plus confirmed UI actions and active-resource conflicts.
 - [ ] Phase 9.5: introduce a versioned common run metadata model and human-readable history/output details while preserving legacy record reads.
@@ -329,10 +334,14 @@ Expanded Phase 9.1 is complete: the web server now owns one persistent compatibl
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Current Phase 9.1 checkpoint: branch `main`, commit `be41eb4`, matching `origin/main`; Phase 9.1 changes are uncommitted and listed under **Files Modified**.
+- Phase 9.2 began from clean commit `40c2122` on `main`. This task's source, tests, and documentation are the working-tree changes listed below; check `git status` before continuing.
 - Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
+- Phase 9.2 catalog inspection found one complete compatible full Qwen Image 2.1 Diffusers pipeline and one compatible cached GGUF transformer. A cached SDNQ quantized Diffusers snapshot is intentionally marked incompatible because this runner lacks its loader. Tiny local test files are also marked incompatible.
+- Cached Hugging Face GGUF snapshots can be symlinks to extensionless blobs. Catalog identity and format inspection must use the logical snapshot path; manifest-backed GGUF selection resolves through the manifest's repo/revision/filename so `ModelStore` retains its offline lookup behavior.
+- Complete local single-file transformers require exactly one compatible local Qwen Image 2.1 companion pipeline; the catalog rejects ambiguous/missing companions. The strict tensor-name/shape check remains in the production loader.
+- A real selected-ID run on `cuda:1` resolved a deliberately wrong source to the full local checkpoint and produced a saved, hash-verified output in 16.12 seconds. An earlier `cuda:0` attempt ran out of memory while another process held nearly all VRAM; this was a host-resource conflict, not a model-resolution failure.
 
 ## Reference Implementations
 
@@ -457,7 +466,27 @@ Phase 9.1 additions to the cumulative files above:
 - `README.md`, `ui/README.md`, `PROJECT.md` — documented persistent cache behavior, shutdown semantics, telemetry, and the expanded milestone roadmap.
 - `CONTEXT.md` — recorded the expanded project scope, Phase 9.1 implementation/evidence, remaining phases, and exact continuation point.
 
+Phase 9.2 additions to the cumulative files above:
+
+- `ui/model_catalog.py` — inventories complete local/manifest-backed downloads, assigns stable IDs, checks Qwen Image 2.1 compatibility, and resolves selected IDs.
+- `qwen_runner/config.py`, `ui/server.py` — retain selected model identity in config/records and enforce server-side resolution for validation and runs, preserving direct-source callers without an ID.
+- `ui/static/js/app.js`, `ui/templates/index.html` — select compatible catalog IDs, display active/incompatible state, submit the selected ID for inference, and prevent download/advanced source fields from overriding it.
+- `ui/tests/test_model_catalog.py`, `ui/tests/test_frontend.py`, `ui/tests/test_tier5_frontend_stress.py`, `ui/tests/test_challenger_m2_node.js`, `ui/tests/test_tier5_node_stress.js` — cover ID stability, compatibility visibility, source-override resistance, stale rejection, legacy behavior, browser selection state, and updated frontend contracts.
+- `README.md`, `ui/README.md`, `PROJECT.md` — document the catalog, selected-ID contract, legacy API behavior, and M6 progress.
+- `CONTEXT.md` — record implementation, real model proof, tests, remaining limits, and the Phase 9.3 continuation point.
+
 ## Tests Performed
+
+Phase 9.2 validation:
+
+- `.venv/bin/python -m pytest -q tests` — 38 passed plus 8 parameterized subtests.
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 420 passed, two known Starlette/AnyIO deprecation warnings.
+- `node ui/tests/test_challenger_m2_node.js` and `node ui/tests/test_tier5_node_stress.js` — 34/34 and 15/15 passed, including explicit browser catalog switching and disabled incompatible entries.
+- Local catalog inspection — full Diffusers and cached GGUF entries compatible; unsupported quantized snapshot and tiny test files explicitly incompatible.
+- Real selected-ID production run — one one-step 256×256 `cuda:1` request, output and record at `/tmp/qwen-selected-model-validation/20260924T141051_16177b6923_run_000.json`; record contains `selected_model_id=model_4ff66ef0ec9f18e2d3e2`, resolved full-model source, 16.1212-second inference, success, and matching saved PNG SHA-256. `RunnerBridge.shutdown()` was called.
+- The first `cuda:0` attempt failed with explicit CUDA OOM because a competing process occupied 35.17 GiB; rerun on the available `cuda:1` device succeeded.
+- `.venv/bin/python -m compileall -q qwen_runner ui tests`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
+- Final post-review checks after preserving `ModelConfig` positional field order and handling disappearing GGUF files — core 38 passed plus 8 subtests, selected-model API 3 passed, compilation and diff checks passed.
 
 Phase 9.1 validation:
 
@@ -559,7 +588,8 @@ Phase 9.1 validation:
 
 ## Known Issues
 
-- The model catalog still exposes paths/repository fields rather than a stable authoritative model ID. The advanced model fields can still override the dropdown, and catalog entries do not yet carry explicit Qwen compatibility reasons. This is Phase 9.2.
+- The browser model catalog supports compatible complete Qwen Image 2.1 pipelines and transformer-only checkpoints with one compatible local companion. Unsupported formats and ambiguous companion choices are explicitly rejected. Broader model-family support requires a separate backend/loader design.
+- The full-model selected-ID path was exercised on hardware; selected-ID GGUF loading and a complete browser-to-output run with an alternate model were not repeated in this slice. The catalog's structural check does not replace the loader's exact tensor/shape validation.
 - Hugging Face download progress is currently coarse (start/25%/complete) and does not yet report trustworthy file/byte totals, current file, speed, ETA, retry, or cancellation. This is Phase 9.3.
 - Models, LoRAs, generated outputs, and run records do not yet have complete confirmed backend deletion workflows. This is Phase 9.4.
 - Current durable records are technically detailed schema-version-1 documents. They are not yet normalized into the common human-readable metadata schema requested for single and batch views. This is Phase 9.5.
@@ -578,12 +608,12 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 9.2 as the next independently testable slice:
+Implement Phase 9.3 as the next independently testable slice:
 
-1. Introduce stable server-generated model IDs and explicit compatibility inspection for local Diffusers directories, GGUF/single-file models, and manifest-backed Hugging Face downloads.
-2. Add one authoritative selected-model field to the web request; resolve it server-side to `ModelConfig.source` plus required companion data. Preserve legacy direct source fields for CLI/API callers.
-3. Remove model source/base-model authority from the browser's advanced settings. The selected compatible catalog entry must determine production inference; incompatible entries remain visible with a reason and cannot be selected for a run.
-4. Update validation, durable requested/effective model metadata, API/UI tests, and model-selection documentation. Do not begin download-progress or deletion work in the same slice.
+1. Inspect the current Hugging Face download job, manifest, SSE/polling, and browser progress flows without repeating the full repository audit.
+2. Report truthful preparation/downloading/verifying/completed/failed/cancelled states, byte and file totals only when known, current file, transfer speed, and ETA when measurable.
+3. Add safe retry/cancel behavior where the underlying download library permits it; retain a responsive server/UI and preserve existing manifest/cache behavior.
+4. Test progress math/state transitions, API events, partial/failed downloads, and frontend display. Update `CONTEXT.md` at the clean Phase 9.3 checkpoint.
 
 ## Resume Instructions
 

@@ -205,6 +205,17 @@ Important parameter semantics:
 
 ## Models and cache
 
+The web UI selects an entry from its downloaded-model catalog. The selection
+has a stable ID, and the server resolves that ID to the actual checkpoint and
+companion components for both validation and inference. The download form only
+starts downloads; its source, revision, and filename fields do not change the
+active inference model. Incompatible or incomplete entries remain visible with
+a reason and cannot be selected. A compatible complete Qwen Image 2.1 Diffusers
+pipeline can run directly; a compatible single-file GGUF or SafeTensors
+transformer also needs exactly one compatible local companion pipeline. The
+CLI and existing direct-source API requests remain supported when no catalog
+ID is supplied.
+
 The web server keeps one compatible production pipeline resident per selected
 device. A later request on the same device reuses it when the model, companion
 components, precision, offload mode, and VAE mode match. Prompt, sampling,

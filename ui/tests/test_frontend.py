@@ -136,6 +136,9 @@ class TestParameterCoverage(unittest.TestCase):
     def test_model_config_parameters_exposed(self):
         """Every field in ModelConfig is present in the HTML template."""
         for field in fields(ModelConfig):
+            if field.name == "selected_model_id":
+                self.assertIn('id="select-cached-model"', self.html)
+                continue
             name_dash = field.name.replace("_", "-")
             found = (
                 f'id="param-model-{name_dash}"' in self.html

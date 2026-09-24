@@ -668,6 +668,8 @@
                 Select
               </button>
             </div>
+            <p class="field-hint">The selected compatible download determines the model used for inference. Incompatible entries show a reason and cannot run.</p>
+            <p id="model-active-status" class="field-hint" role="status">Checking downloaded models…</p>
 
             <div id="cached-model-info-box" class="info-callout mt-sm hidden">
               <div class="info-row"><span class="info-key">Path:</span> <span id="info-model-path" class="info-val font-mono"></span></div>
@@ -799,7 +801,7 @@
           </div>
 
           <!-- Advanced Model Configuration Fields -->
-          <details class="form-card-collapsible">
+          <details class="form-card-collapsible" hidden>
             <summary class="collapsible-summary">Advanced Model Properties</summary>
             <div class="collapsible-content">
               <div class="form-grid-2">

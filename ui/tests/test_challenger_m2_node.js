@@ -327,7 +327,7 @@ vm.runInContext(wrappedCode, sandbox);
 const modules = sandbox.__APP_MODULES__;
 assert(modules, "Failed to load app.js modules in test sandbox");
 
-const { Store, InputBrowser, ParamForm, LoRAManager, SystemManager, RunController, ComparisonSlider, Toast, Utils, ApiClient, App } = modules;
+const { Store, InputBrowser, ParamForm, ModelManager, LoRAManager, SystemManager, RunController, ComparisonSlider, Toast, Utils, ApiClient, App } = modules;
 const RunHub = RunController;
 
 // Intercept Toast messages for verification
@@ -1000,6 +1000,33 @@ runTest("System inventory dynamically lists GPUs and applies the selected produc
   assert.strictEqual(Store.state.config.runtime.dtype, "float16");
   assert.strictEqual(Store.state.config.runtime.offload, "sequential");
   App.refreshRuntimeCapabilities = originalRefresh;
+});
+
+runTest("Catalog model selection uses stable IDs and excludes incompatible entries", async () => {
+  const originalList = ApiClient.listModels;
+  const originalSource = Store.state.config.model.source;
+  const models = [
+    { id: "model_a", name: "Model A", path: "/models/a", type: "diffusers", compatible: true },
+    { id: "model_b", name: "Model B", path: "/models/b", type: "diffusers", compatible: true },
+    { id: "model_old", name: "Old", path: "/models/old", type: "diffusers", compatible: false, compatibility_reason: "Wrong pipeline" },
+  ];
+  ApiClient.listModels = async () => ({ models });
+  ModelManager.cachedSelect = domRegistry.get("select-cached-model");
+  ModelManager.applyCachedBtn = domRegistry.get("btn-apply-cached-model");
+  ModelManager.modelInfoBox = domRegistry.get("cached-model-info-box");
+  ModelManager.infoPath = domRegistry.get("info-model-path");
+  ModelManager.infoType = domRegistry.get("info-model-type");
+  ModelManager.infoSize = domRegistry.get("info-model-size");
+  Store.state.models.selectedId = null;
+  await ModelManager.loadModels();
+  assert.strictEqual(Store.state.models.selectedId, "model_a");
+  assert.strictEqual(ModelManager.cachedSelect.children[3].disabled, true);
+  ModelManager.cachedSelect.value = "model_b";
+  ModelManager.applySelectedCachedModel();
+  assert.strictEqual(Store.state.models.selectedId, "model_b");
+  assert(domRegistry.get("model-active-status").textContent.includes("Model B"));
+  assert.strictEqual(Store.state.config.model.source, originalSource);
+  ApiClient.listModels = originalList;
 });
 
 (async function runAll() {
