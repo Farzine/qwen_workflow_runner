@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from PIL import Image
 
-RUNTIME = all(importlib.util.find_spec(name) for name in ('torch', 'diffusers', 'gguf', 'psutil', 'accelerate'))
+RUNTIME = all(importlib.util.find_spec(name) for name in ('torch', 'diffusers', 'gguf', 'psutil', 'accelerate', 'peft'))
 
 
 @unittest.skipUnless(RUNTIME, 'Install requirements.txt to run tiny-model tests')
@@ -98,6 +98,94 @@ class RuntimeTests(unittest.TestCase):
         second = backend.generate(images, (64,64), 42)
         self.assertEqual(second[0].size, (64,64))
         self.assertEqual(len(seen), 3)  # one conditional + conditional/unconditional
+
+    def test_qwen_lora_is_loaded_scaled_activated_and_unloaded(self):
+        import hashlib
+        import torch
+        from peft import LoraConfig
+        from peft.utils import get_peft_model_state_dict
+        from safetensors.torch import save_file
+        from diffusers import AutoencoderKLQwenImage21, FlowMatchEulerDiscreteScheduler
+        from qwen_runner.backend import QwenBackend
+        from qwen_runner.config import Config
+        from qwen_runner.pipeline import WorkflowQwenImage21Pipeline
+
+        class Processor:
+            tokenizer = types.SimpleNamespace(encode=lambda text: [99])
+            def apply_chat_template(self, *args, **kwargs):
+                return [[1]]
+
+        class TextEncoder(torch.nn.Linear):
+            @property
+            def device(self): return self.weight.device
+            @property
+            def dtype(self): return self.weight.dtype
+
+        def make_pipe(transformer):
+            vae = AutoencoderKLQwenImage21(
+                base_dim=8, decoder_base_dim=8, dim_mult=[1, 1, 1, 1, 1],
+                num_res_blocks=1, is_residual=False,
+                latents_mean=[0.] * 64, latents_std=[1.] * 64,
+            )
+            return WorkflowQwenImage21Pipeline(
+                vae=vae,
+                text_encoder=TextEncoder(1, 1),
+                processor=Processor(),
+                transformer=transformer,
+                scheduler=FlowMatchEulerDiscreteScheduler(shift=1, use_dynamic_shifting=False),
+            )
+
+        source = self.tiny_transformer()
+        source.add_adapter(
+            LoraConfig(r=2, lora_alpha=2, target_modules=['to_q']),
+            adapter_name='source',
+        )
+        for name, parameter in source.named_parameters():
+            if 'lora_B' in name:
+                torch.nn.init.constant_(parameter, 0.25)
+        state = get_peft_model_state_dict(source, adapter_name='source')
+
+        with tempfile.TemporaryDirectory() as directory:
+            WorkflowQwenImage21Pipeline.save_lora_weights(
+                directory,
+                transformer_lora_layers=state,
+                weight_name='tiny.safetensors',
+            )
+            path = Path(directory) / 'tiny.safetensors'
+            config = Config()
+            config.model.lora_path = str(path)
+            config.model.lora_scale = 0.7
+            backend = QwenBackend(config)
+            backend.pipe = make_pipe(self.tiny_transformer())
+            backend._apply_configured_lora()
+
+            self.assertEqual(backend.pipe.get_active_adapters(), ['qwen_workflow_lora'])
+            self.assertEqual(backend.metadata['lora']['scale'], 0.7)
+            self.assertTrue(backend.metadata['lora']['applied'])
+            self.assertEqual(backend.metadata['lora']['sha256'], hashlib.sha256(path.read_bytes()).hexdigest())
+
+            layer = backend.pipe.transformer.transformer_blocks[0].attn.to_q
+            sample = torch.randn(2, 32)
+            enabled = layer(sample)
+            backend.pipe.disable_lora()
+            disabled = layer(sample)
+            self.assertFalse(torch.allclose(enabled, disabled))
+            backend.pipe.enable_lora()
+
+            config.model.lora_path = None
+            backend._apply_configured_lora()
+            self.assertEqual(backend.pipe.get_list_adapters(), {})
+            self.assertFalse(backend.metadata['lora']['applied'])
+
+            incompatible = Path(directory) / 'incompatible.safetensors'
+            save_file({
+                'transformer.missing_projection.lora_A.weight': torch.ones(2, 4),
+                'transformer.missing_projection.lora_B.weight': torch.ones(4, 2),
+            }, incompatible)
+            config.model.lora_path = str(incompatible)
+            with self.assertRaisesRegex(RuntimeError, "LoRA loading failed for 'incompatible.safetensors'"):
+                backend._apply_configured_lora()
+            self.assertEqual(backend.pipe.get_list_adapters(), {})
 
     def test_metrics_and_failure_logs(self):
         import torch

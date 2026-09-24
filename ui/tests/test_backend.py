@@ -59,6 +59,40 @@ class TestBackendRunnerBridge(unittest.TestCase):
         self.assertTrue(payload["production_backend"]["ready"])
         self.assertEqual(payload["backend"]["default_mode"], "production")
         self.assertTrue(payload["backend"]["demo_is_synthetic"])
+        self.assertIn("cpu", payload["host"])
+        self.assertIn("memory", payload["host"])
+        self.assertEqual(payload["execution"]["model_lifecycle"], "per_run")
+        self.assertFalse(payload["execution"]["persistent_backend"])
+
+    def test_runtime_snapshot_distinguishes_active_request_and_effective_last_run(self):
+        config = Config()
+        config.model.source = "org/model"
+        config.model.lora_path = "/tmp/style.safetensors"
+        config.runtime.device = "cuda:1"
+        active = RunJob("active-job", config, demo_mode=False)
+        active.status = "running"
+        self.bridge.jobs[active.job_id] = active
+
+        snapshot = self.bridge.runtime_snapshot()
+        self.assertEqual(snapshot["active_job"]["requested_device"], "cuda:1")
+        self.assertEqual(snapshot["active_job"]["requested_model"], "org/model")
+        self.assertEqual(snapshot["active_job"]["requested_lora"], "/tmp/style.safetensors")
+        self.assertFalse(snapshot["persistent_backend"])
+
+        active.status = "completed"
+        active.records = [{
+            "run_id": "effective-run",
+            "status": "success",
+            "model": {"repo_id": "resolved/model"},
+            "backend": {"device": "cuda:1"},
+            "parameters": {"runtime": {"device": "cuda:1"}},
+            "effective_parameters": {"lora": {"applied": True, "filename": "style.safetensors"}},
+            "finished_at": "2026-09-24T00:00:00+00:00",
+        }]
+        snapshot = self.bridge.runtime_snapshot()
+        self.assertIsNone(snapshot["active_job"])
+        self.assertEqual(snapshot["last_run"]["model"]["repo_id"], "resolved/model")
+        self.assertTrue(snapshot["last_run"]["lora"]["applied"])
 
     def test_run_without_mode_defaults_to_production(self):
         image_path = self.root / "production_default.png"
@@ -110,6 +144,101 @@ class TestBackendRunnerBridge(unittest.TestCase):
         buffer = BytesIO()
         Image.new("RGB", (24, 16), color=color).save(buffer, format=image_format)
         return buffer.getvalue()
+
+    @staticmethod
+    def _lora_bytes():
+        import torch
+        from safetensors.torch import save
+        return save({
+            "transformer.blocks.0.attn.to_q.lora_A.weight": torch.ones(2, 4),
+            "transformer.blocks.0.attn.to_q.lora_B.weight": torch.ones(4, 2),
+        })
+
+    def test_lora_upload_discovery_and_config_selection(self):
+        loras_dir = self.root / "loras"
+        loras_dir.mkdir()
+        app.state.loras_dir = loras_dir
+        try:
+            response = self.client.post(
+                "/api/loras/upload",
+                files={"file": ("../../portrait style.safetensors", self._lora_bytes(), "application/octet-stream")},
+            )
+            self.assertEqual(response.status_code, 200)
+            item = response.json()["lora"]
+            saved = Path(item["path"])
+            self.assertTrue(saved.is_file())
+            self.assertTrue(saved.is_relative_to(loras_dir.resolve()))
+            self.assertEqual(item["original_name"], "portrait style.safetensors")
+            self.assertEqual(len(item["sha256"]), 64)
+            self.assertTrue(item["valid"])
+
+            listing = self.client.get("/api/loras")
+            self.assertEqual(listing.status_code, 200)
+            self.assertEqual(len(listing.json()["loras"]), 1)
+            self.assertTrue(listing.json()["loras"][0]["valid"])
+
+            validation = self.client.post("/api/config/validate", json={
+                "model": {"lora_path": str(saved), "lora_scale": 0.65},
+            })
+            self.assertTrue(validation.json()["valid"])
+            self.assertEqual(validation.json()["config"]["model"]["lora_path"], str(saved))
+            self.assertEqual(validation.json()["config"]["model"]["lora_scale"], 0.65)
+
+            outside = self.root / "outside.safetensors"
+            outside.write_bytes(self._lora_bytes())
+            rejected = self.client.post("/api/config/validate", json={
+                "model": {"lora_path": str(outside)},
+            })
+            self.assertFalse(rejected.json()["valid"])
+            self.assertIn("configured LoRA directory", rejected.json()["errors"][0])
+        finally:
+            app.state.loras_dir = None
+
+    def test_lora_upload_rejects_invalid_files_and_size(self):
+        loras_dir = self.root / "loras-invalid"
+        loras_dir.mkdir()
+        app.state.loras_dir = loras_dir
+        try:
+            wrong_extension = self.client.post(
+                "/api/loras/upload",
+                files={"file": ("adapter.bin", self._lora_bytes(), "application/octet-stream")},
+            )
+            self.assertEqual(wrong_extension.status_code, 400)
+
+            corrupt = self.client.post(
+                "/api/loras/upload",
+                files={"file": ("corrupt.safetensors", b"not safe tensors", "application/octet-stream")},
+            )
+            self.assertEqual(corrupt.status_code, 400)
+            self.assertIn("Invalid LoRA SafeTensors", corrupt.json()["detail"])
+
+            import torch
+            from safetensors.torch import save
+            model_weights = save({"transformer.weight": torch.ones(2, 2)})
+            not_lora = self.client.post(
+                "/api/loras/upload",
+                files={"file": ("model.safetensors", model_weights, "application/octet-stream")},
+            )
+            self.assertEqual(not_lora.status_code, 400)
+            self.assertIn("adapter pair", not_lora.json()["detail"])
+
+            unmatched = save({"transformer.blocks.0.attn.to_q.lora_A.weight": torch.ones(2, 4)})
+            unmatched_response = self.client.post(
+                "/api/loras/upload",
+                files={"file": ("unmatched.safetensors", unmatched, "application/octet-stream")},
+            )
+            self.assertEqual(unmatched_response.status_code, 400)
+            self.assertIn("matching LoRA adapter pair", unmatched_response.json()["detail"])
+
+            with patch("ui.server.MAX_LORA_UPLOAD_BYTES", 10):
+                too_large = self.client.post(
+                    "/api/loras/upload",
+                    files={"file": ("large.safetensors", self._lora_bytes(), "application/octet-stream")},
+                )
+            self.assertEqual(too_large.status_code, 413)
+            self.assertEqual(list(loras_dir.iterdir()), [])
+        finally:
+            app.state.loras_dir = None
 
     def test_input_upload_stores_multiple_decoded_images_with_unique_names(self):
         inputs_dir = self.root / "inputs"

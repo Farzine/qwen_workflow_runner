@@ -178,6 +178,13 @@ class DemoBackend:
             },
             "parity": "Synthetic input-derived preview for UI feedback and schema validation; no model inference",
             "kv_cache_policy": "Demo mode simulated lossless prefix cache",
+            "lora": {
+                "enabled": bool(config.model.lora_path),
+                "applied": False,
+                "path": config.model.lora_path,
+                "scale": config.model.lora_scale,
+                "reason": "Synthetic demo mode does not load model adapters",
+            },
         }
 
     def load(self) -> "DemoBackend":
@@ -546,6 +553,59 @@ class RunnerBridge:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qwen_worker")
         self.capture_mgr = CaptureManager.get_instance()
         self._lock = threading.RLock()
+
+    def runtime_snapshot(self) -> Dict[str, Any]:
+        """Describe active and last-run model state without claiming residency.
+
+        The runner creates a backend for each job and does not maintain a
+        persistent model service. This snapshot therefore distinguishes a
+        currently requested configuration from the effective metadata recorded
+        by the latest completed run.
+        """
+        with self._lock:
+            unique_jobs = {job.job_id: job for job in self.jobs.values()}
+        jobs = sorted(unique_jobs.values(), key=lambda item: item.created_dt, reverse=True)
+        active = next((job for job in jobs if job.status in {"queued", "running"}), None)
+        completed = next((job for job in jobs if job.records), None)
+
+        active_job = None
+        if active is not None:
+            active_job = {
+                "job_id": active.job_id,
+                "status": active.status,
+                "demo_mode": bool(active.demo_mode),
+                "requested_device": active.config.runtime.device,
+                "requested_model": active.config.model.source,
+                "requested_lora": active.config.model.lora_path,
+                "created_at": active.created_at,
+            }
+
+        last_run = None
+        if completed is not None and completed.records:
+            record = completed.records[-1]
+            backend = record.get("backend") or {}
+            parameters = record.get("parameters") or {}
+            runtime = parameters.get("runtime") or {}
+            effective = record.get("effective_parameters") or {}
+            last_run = {
+                "run_id": record.get("run_id"),
+                "status": record.get("status"),
+                "model": record.get("model") or {},
+                "device": backend.get("device") or runtime.get("device"),
+                "lora": effective.get("lora") or backend.get("lora") or {},
+                "finished_at": record.get("finished_at"),
+            }
+
+        return {
+            "model_lifecycle": "per_run",
+            "persistent_backend": False,
+            "active_job": active_job,
+            "last_run": last_run,
+            "message": (
+                "Models and LoRAs are loaded for each run. Configuration changes apply "
+                "to the next submitted run and do not mutate an active job."
+            ),
+        }
 
     def submit_run(
         self,

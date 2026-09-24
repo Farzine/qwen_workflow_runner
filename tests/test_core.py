@@ -63,6 +63,33 @@ class ConfigurationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     Config(generation=generation).validate(check_images=False)
 
+    def test_lora_configuration_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'adapter.safetensors'
+            path.write_bytes(b'placeholder')
+            config = Config()
+            image = Path(directory) / 'input.png'
+            Image.new('RGB', (32, 32)).save(image)
+            config.generation.images = [str(image)]
+            config.model.lora_path = str(path)
+            config.model.lora_scale = 0.75
+            config.validate(check_images=False)
+            self.assertEqual(config.as_dict()['model']['lora_scale'], 0.75)
+
+            for scale in (-0.1, 2.1, float('nan')):
+                with self.subTest(scale=scale):
+                    config.model.lora_scale = scale
+                    with self.assertRaisesRegex(ValueError, 'lora_scale'):
+                        config.validate(check_images=False)
+
+            config.model.lora_scale = 1.0
+            config.model.lora_path = str(Path(directory) / 'adapter.bin')
+            with self.assertRaisesRegex(ValueError, 'safetensors'):
+                config.validate(check_images=False)
+            config.model.lora_path = str(Path(directory) / 'missing.safetensors')
+            with self.assertRaisesRegex(FileNotFoundError, 'Missing LoRA'):
+                config.validate(check_images=True)
+
 
 class ImageTests(unittest.TestCase):
     def test_original_resolution_and_rounding(self):

@@ -102,6 +102,27 @@ def get_models_dir() -> Path:
     return p
 
 
+def get_loras_dir() -> Path:
+    """Resolve the directory used for discovered and uploaded LoRA files."""
+    try:
+        state_dir = getattr(app.state, "loras_dir", None)
+        if state_dir:
+            p = Path(state_dir).resolve()
+            p.mkdir(parents=True, exist_ok=True)
+            return p
+    except NameError:
+        pass
+
+    if "LORAS_DIR" in os.environ and os.environ["LORAS_DIR"].strip():
+        p = Path(os.environ["LORAS_DIR"]).resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    p = (PROJECT_ROOT / "models" / "loras").resolve()
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def get_outputs_dir() -> Path:
     """Resolve the active outputs directory dynamically via app.state or environment."""
     try:
@@ -142,6 +163,7 @@ IMAGE_FORMATS_BY_EXTENSION = {
 MAX_IMAGE_UPLOAD_FILES = 10
 MAX_IMAGE_UPLOAD_BYTES = 64 * 1024 * 1024
 MAX_IMAGE_UPLOAD_PIXELS = 100_000_000
+MAX_LORA_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024
 
 # Global background download tasks
 download_tasks: Dict[str, Dict[str, Any]] = {}
@@ -153,6 +175,7 @@ async def lifespan(app: FastAPI):
     """Lifecycle startup and cleanup hook."""
     THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
     get_models_dir().mkdir(parents=True, exist_ok=True)
+    get_loras_dir().mkdir(parents=True, exist_ok=True)
     get_outputs_dir().mkdir(parents=True, exist_ok=True)
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
@@ -215,6 +238,7 @@ async def system_capabilities(
         "demo_default": demo_default,
         "demo_is_synthetic": True,
     }
+    report["execution"] = get_runner_bridge().runtime_snapshot()
     return report
 
 
@@ -568,6 +592,128 @@ async def list_models():
     return {"models": models_list}
 
 
+def inspect_lora_file(path: Path) -> Dict[str, Any]:
+    """Inspect a SafeTensors header without materializing tensor payloads."""
+    try:
+        from safetensors import safe_open
+
+        with safe_open(str(path), framework="pt", device="cpu") as handle:
+            keys = list(handle.keys())
+            metadata = handle.metadata() or {}
+        lora_keys = [key for key in keys if "lora" in key.lower()]
+        lower_keys = [key.lower() for key in lora_keys]
+        unsupported = [
+            key for key in keys
+            if "lora" not in key.lower()
+            and not key.endswith(".alpha")
+            and "dora_scale" not in key
+        ]
+        has_input_projection = any(
+            re.search(r"(?:lora_a|lora_down)(?:\.|$)", key) for key in lower_keys
+        )
+        has_output_projection = any(
+            re.search(r"(?:lora_b|lora_up)(?:\.|$)", key) for key in lower_keys
+        )
+        if len(lora_keys) < 2 or not (has_input_projection and has_output_projection):
+            raise ValueError("checkpoint does not contain a matching LoRA adapter pair (A/B or down/up tensors)")
+        if unsupported:
+            sample = ", ".join(unsupported[:3])
+            raise ValueError(f"checkpoint contains non-LoRA tensors: {sample}")
+        return {
+            "valid": True,
+            "tensor_count": len(keys),
+            "metadata": metadata,
+            "error": None,
+        }
+    except Exception as error:
+        return {
+            "valid": False,
+            "tensor_count": 0,
+            "metadata": {},
+            "error": str(error),
+        }
+
+
+@app.get("/api/loras")
+async def list_loras():
+    """List SafeTensors adapters from the configured LoRA directory."""
+    root = get_loras_dir().resolve()
+    entries = []
+    for path in sorted(root.glob("*.safetensors"), key=lambda item: item.name.lower()):
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        inspection = inspect_lora_file(path)
+        entries.append({
+            "name": path.name,
+            "path": str(path.resolve()),
+            "size": path.stat().st_size,
+            "modified_at": path.stat().st_mtime,
+            **inspection,
+        })
+    return {"directory": str(root), "loras": entries}
+
+
+@app.post("/api/loras/upload")
+async def upload_lora(file: UploadFile = File(...)):
+    """Validate and store one Qwen Image LoRA SafeTensors file."""
+    original_name = Path(file.filename or "").name
+    if not original_name:
+        raise HTTPException(status_code=400, detail="Select a LoRA file to upload")
+    if Path(original_name).suffix.lower() != ".safetensors":
+        raise HTTPException(status_code=400, detail="LoRA uploads must use the .safetensors extension")
+
+    root = get_loras_dir().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(original_name).stem).strip("._-")
+    safe_stem = (safe_stem or "lora")[:100]
+    stored_name = f"{safe_stem}_{uuid.uuid4().hex[:10]}.safetensors"
+    final_path = (root / stored_name).resolve()
+    temp_path = (root / f".{stored_name}.{uuid.uuid4().hex[:6]}.tmp").resolve()
+    if not final_path.is_relative_to(root) or not temp_path.is_relative_to(root):
+        raise HTTPException(status_code=400, detail="Invalid LoRA filename")
+
+    total_read = 0
+    digest = hashlib.sha256()
+    try:
+        with open(temp_path, "wb") as output:
+            while chunk := await file.read(1024 * 1024):
+                total_read += len(chunk)
+                if total_read > MAX_LORA_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"LoRA exceeds the {MAX_LORA_UPLOAD_BYTES // (1024 * 1024)} MiB upload limit",
+                    )
+                digest.update(chunk)
+                output.write(chunk)
+        if total_read == 0:
+            raise HTTPException(status_code=400, detail="LoRA file is empty")
+        inspection = inspect_lora_file(temp_path)
+        if not inspection["valid"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid LoRA SafeTensors file: {inspection['error']}",
+            )
+        temp_path.replace(final_path)
+        return {
+            "success": True,
+            "lora": {
+                "name": stored_name,
+                "original_name": original_name,
+                "path": str(final_path),
+                "size": total_read,
+                "sha256": digest.hexdigest(),
+                **inspection,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"LoRA upload failed: {error}") from error
+    finally:
+        temp_path.unlink(missing_ok=True)
+        await file.close()
+
+
 @app.post("/api/models/upload")
 async def upload_model(
     file: UploadFile = File(...),
@@ -876,7 +1022,7 @@ def dict_to_config(data: Dict[str, Any]) -> Config:
 def collect_validation_errors(config: Config, check_images: bool = False) -> List[str]:
     """Exhaustively validate all constraints and accumulate every error."""
     errors = []
-    g, r = config.generation, config.runtime
+    c, g, r = config.model, config.generation, config.runtime
 
     # 1. Images. Explicit input/reference fields take precedence over the
     # backward-compatible combined images sequence.
@@ -891,6 +1037,23 @@ def collect_validation_errors(config: Config, check_images: bool = False) -> Lis
                 if not Path(p).is_file():
                     label = "image" if explicit_images else "reference image"
                     errors.append(f"Missing {label}: {p}. Supply your images or run scripts/download_examples.py.")
+
+    # Optional local LoRA. API callers may only select files from the
+    # configured LoRA directory; the core Config remains usable from the CLI.
+    if c.lora_path is not None:
+        if not isinstance(c.lora_path, str) or not c.lora_path.strip():
+            errors.append("lora_path must be null or a non-empty local SafeTensors path")
+        elif Path(c.lora_path).suffix.lower() != ".safetensors":
+            errors.append("lora_path must point to a .safetensors file")
+        else:
+            candidate = Path(c.lora_path).resolve()
+            loras_root = get_loras_dir().resolve()
+            if not candidate.is_relative_to(loras_root):
+                errors.append(f"lora_path '{c.lora_path}' must be inside the configured LoRA directory")
+            elif check_images and not candidate.is_file():
+                errors.append(f"Missing LoRA file: {c.lora_path}")
+    if not isinstance(c.lora_scale, (int, float)) or not math.isfinite(c.lora_scale) or not 0 <= c.lora_scale <= 2:
+        errors.append("lora_scale must be finite and between 0 and 2")
 
     # 2. Steps & Batch size
     if not isinstance(g.steps, int) or g.steps < 1 or g.steps > 10000 or not isinstance(g.batch_size, int) or g.batch_size < 1:

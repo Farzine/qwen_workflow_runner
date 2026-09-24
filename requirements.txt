@@ -5,6 +5,7 @@ torchvision>=0.19
 diffusers @ git+https://github.com/huggingface/diffusers.git@fbf49e7f35857f76bc57b177e26f12b03687c668
 transformers==5.17.0
 accelerate==1.15.0
+peft==0.21.0
 huggingface_hub>=0.34
 safetensors>=0.5
 gguf==0.19.0

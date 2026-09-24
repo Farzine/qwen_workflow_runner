@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from .models import ModelStore, parse_model_ref
@@ -9,6 +10,72 @@ class QwenBackend:
     def __init__(self, config):
         self.config = config
         self.metadata = {}
+        self._loaded_lora_adapter = None
+
+    @staticmethod
+    def _file_sha256(path):
+        digest = hashlib.sha256()
+        with open(path, 'rb') as handle:
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _apply_configured_lora(self):
+        """Load one unfused adapter and verify that Diffusers activated it."""
+        c = self.config.model
+        if self._loaded_lora_adapter:
+            self.pipe.unload_lora_weights()
+            self._loaded_lora_adapter = None
+
+        if not c.lora_path:
+            self.metadata['lora'] = {
+                'enabled': False,
+                'applied': False,
+                'path': None,
+                'scale': float(c.lora_scale),
+            }
+            return
+
+        path = Path(c.lora_path).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f'LoRA file not found: {path}')
+        if path.suffix.lower() != '.safetensors':
+            raise ValueError(f'LoRA must be a .safetensors file: {path}')
+
+        adapter_name = 'qwen_workflow_lora'
+        try:
+            self.pipe.load_lora_weights(
+                str(path.parent),
+                weight_name=path.name,
+                adapter_name=adapter_name,
+                local_files_only=True,
+                use_safetensors=True,
+            )
+            self.pipe.set_adapters(adapter_name, adapter_weights=float(c.lora_scale))
+            active = list(self.pipe.get_active_adapters())
+            available = self.pipe.get_list_adapters()
+            if adapter_name not in active:
+                raise RuntimeError(f'Diffusers loaded the adapter but did not activate {adapter_name!r}')
+        except Exception as error:
+            try:
+                self.pipe.unload_lora_weights()
+            except Exception:
+                pass
+            raise RuntimeError(f"LoRA loading failed for '{path.name}': {error}") from error
+
+        self._loaded_lora_adapter = adapter_name
+        self.metadata['lora'] = {
+            'enabled': True,
+            'applied': True,
+            'path': str(path),
+            'filename': path.name,
+            'sha256': self._file_sha256(path),
+            'adapter_name': adapter_name,
+            'scale': float(c.lora_scale),
+            'active_adapters': active,
+            'available_adapters': available,
+            'fused': False,
+        }
 
     def load(self):
         import torch
@@ -70,6 +137,7 @@ class QwenBackend:
             overrides['processor'] = Qwen3VLProcessor.from_pretrained(str(encoder_root / 'processor'), local_files_only=True)
             self.metadata['text_encoder_override'] = encoder_meta
         self.pipe = WorkflowQwenImage21Pipeline.from_pretrained(str(base), torch_dtype=dtype, local_files_only=True, **overrides)
+        self._apply_configured_lora()
         # Sigmas already include Comfy's flow shift; do not shift/stretch them again.
         self.pipe.scheduler = FlowMatchEulerDiscreteScheduler(num_train_timesteps=1000, shift=1.0, use_dynamic_shifting=False)
         if r.vae_tiling: self.pipe.vae.enable_tiling()
@@ -82,6 +150,8 @@ class QwenBackend:
             vae={"class": type(self.pipe.vae).__name__, "path": str(base / 'vae')},
             transformer=type(self.pipe.transformer).__name__,
             precision=r.dtype,
+            device=str(device),
+            offload=r.offload,
             scheduler_config=dict(self.pipe.scheduler.config),
             parity='Workflow logic reproduced in Diffusers; not bitwise parity with Comfy int8_convrot weights or its kernels',
             kv_cache_policy='Lossless prefix cache; auto keeps CUDA reserve then spills to CPU; synchronous CPU transfers, no Comfy prefetch',

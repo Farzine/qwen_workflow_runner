@@ -107,6 +107,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
         self.assertFalse(args.demo)
         self.assertIsNone(args.inputs_dir)
         self.assertIsNone(args.models_dir)
+        self.assertIsNone(args.loras_dir)
         self.assertIsNone(args.outputs_dir)
         self.assertFalse(args.reload)
 
@@ -131,10 +132,12 @@ class TestCLIArgumentParsing(unittest.TestCase):
         args = parse_args([
             "--inputs-dir", "/tmp/custom_inputs",
             "--models-dir", "/tmp/custom_models",
+            "--loras-dir", "/tmp/custom_loras",
             "--outputs-dir", "/tmp/custom_outputs",
         ])
         self.assertEqual(args.inputs_dir, "/tmp/custom_inputs")
         self.assertEqual(args.models_dir, "/tmp/custom_models")
+        self.assertEqual(args.loras_dir, "/tmp/custom_loras")
         self.assertEqual(args.outputs_dir, "/tmp/custom_outputs")
 
     def test_all_flags_combined(self):
@@ -146,6 +149,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
             "--reload",
             "--inputs-dir", "/data/inputs",
             "--models-dir", "/data/models",
+            "--loras-dir", "/data/loras",
             "--outputs-dir", "/data/outputs",
         ])
         self.assertEqual(args.host, "192.168.1.100")
@@ -154,6 +158,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
         self.assertTrue(args.reload)
         self.assertEqual(args.inputs_dir, "/data/inputs")
         self.assertEqual(args.models_dir, "/data/models")
+        self.assertEqual(args.loras_dir, "/data/loras")
         self.assertEqual(args.outputs_dir, "/data/outputs")
 
 
@@ -165,6 +170,7 @@ class TestAppConfiguration(unittest.TestCase):
             "DEMO_MODE": os.environ.get("DEMO_MODE"),
             "INPUTS_DIR": os.environ.get("INPUTS_DIR"),
             "MODELS_DIR": os.environ.get("MODELS_DIR"),
+            "LORAS_DIR": os.environ.get("LORAS_DIR"),
             "OUTPUTS_DIR": os.environ.get("OUTPUTS_DIR"),
         }
 
@@ -187,6 +193,7 @@ class TestAppConfiguration(unittest.TestCase):
         args = parse_args([
             "--inputs-dir", "/tmp/test_inputs",
             "--models-dir", "/tmp/test_models",
+            "--loras-dir", "/tmp/test_loras",
             "--outputs-dir", "/tmp/test_outputs",
         ])
         configure_app(args)
@@ -195,6 +202,9 @@ class TestAppConfiguration(unittest.TestCase):
 
         self.assertEqual(os.environ.get("MODELS_DIR"), str(Path("/tmp/test_models").resolve()))
         self.assertEqual(getattr(app.state, "models_dir", None), str(Path("/tmp/test_models").resolve()))
+
+        self.assertEqual(os.environ.get("LORAS_DIR"), str(Path("/tmp/test_loras").resolve()))
+        self.assertEqual(getattr(app.state, "loras_dir", None), str(Path("/tmp/test_loras").resolve()))
 
         self.assertEqual(os.environ.get("OUTPUTS_DIR"), str(Path("/tmp/test_outputs").resolve()))
         self.assertEqual(getattr(app.state, "outputs_dir", None), str(Path("/tmp/test_outputs").resolve()))
@@ -212,6 +222,7 @@ class TestCLIHelpAndExecution(unittest.TestCase):
         self.assertIn("--demo", help_text)
         self.assertIn("--inputs-dir", help_text)
         self.assertIn("--models-dir", help_text)
+        self.assertIn("--loras-dir", help_text)
         self.assertIn("--outputs-dir", help_text)
         self.assertIn("--reload", help_text)
         self.assertIn("7878", help_text)
@@ -301,4 +312,3 @@ class TestMainExecution(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

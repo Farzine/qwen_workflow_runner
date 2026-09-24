@@ -8,8 +8,9 @@ The Qwen Workflow Runner Web UI is a high-performance, single-command web applic
 Browser (Vanilla SPA HTML/CSS/JS)
   ├── 1. Input Browser: Folder tree, thumbnail grid, 1-10 drag/click ordered selector
   ├── 2. Parameter Form: ModelConfig, GenerationConfig, RuntimeConfig with live client validation
-  ├── 3. Model Selector: HF repo (with download progress), local upload (.gguf/.safetensors), cached dropdown
-  ├── 4. Run & Output Hub: Launch button, live SSE log/progress stream, output gallery, side-by-side comparison, JSON viewer/download, run history
+  ├── 3. Model & LoRA Selector: HF repo, local model upload, cached model dropdown, validated LoRA upload/selection
+  ├── 4. System Configuration: live CPU/RAM/GPU inventory and dynamic production-device selection
+  ├── 5. Run & Output Hub: Launch button, live SSE log/progress stream, output gallery, side-by-side comparison, JSON viewer/download, run history
   │
   ▼ [HTTP REST & SSE]
 Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
@@ -39,7 +40,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | 11 | Flow Shift Control | Flow model shift factor [-10.0, 10.0] with default 0.69 | M1, M2 | R2, survey |
 | 12 | KV Cache Configuration | KV cache toggle, device selection ('auto', 'gpu', 'cpu'), and reserve GiB | M1, M2 | R2, survey |
 | 13 | Reference Color Mode | Reference mode selector ('rgb' or 'rgba') | M1, M2 | R2, survey |
-| 14 | Hardware & Precision Dtype | Device ('cuda:0', 'cpu', 'mps') and dtype ('bfloat16', 'float16', 'float32') | M1, M2 | R2, survey |
+| 14 | System & Device Configuration | Dynamic CPU/MPS/CUDA choices, per-GPU memory, software/host inventory, readiness, dtype/offload, and next-run application | M1, M2 | R2, survey |
 | 15 | Offload & VAE Tiling | Offload mode ('none', 'model', 'sequential') and VAE tiling toggle | M1, M2 | R2, survey |
 | 16 | Repeats, Warmup & Polling | Repeats (>=1), warmup_runs (>=0), memory_poll_seconds (0.001-1.0) | M1, M2 | R2, survey |
 | 17 | Output Path & Prefix | Output directory string and filename prefix (strictly filename, no slashes) | M1, M2 | R2, survey |
@@ -50,6 +51,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | 22 | Local File Uploader | Drag-and-drop file upload for `.gguf` and `.safetensors` to `models/` directory | M1, M2 | R3, survey |
 | 23 | Cached Models Dropdown | Dropdown listing all cached/discovered models in `models/` for quick reuse | M1, M2 | R3, survey |
 | 24 | GGUF Variant Selector | Quantization variant selector / filename field for GGUF repos | M1, M2 | R3, survey |
+| 24a | LoRA Adapter Manager | Discover, validate, upload, select, scale, apply, and record one Qwen Image 2.1 adapter | M1, M2 | R3, survey |
 | 25 | Background Inference Runner | Non-blocking execution of `qwen_runner.runner.run(config)` | M1, M2 | R4, survey |
 | 26 | Live Log & Progress Stream | Server-Sent Events stream of runner logs, status, and step progress | M1, M2 | R4, survey |
 | 27 | Output Image Viewer | Displays output images with filename, dimensions, and SHA-256 hash badge | M1, M2 | R4, survey |
@@ -81,6 +83,10 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 - `POST /api/models/upload`:
   - Form multipart upload: file (`.gguf` or `.safetensors`). Saves directly to `models/`.
   - Returns: `{"success": true, "filename": "...", "path": "..."}`
+- `GET /api/loras`:
+  - Returns valid and invalid `.safetensors` adapters discovered in the configured LoRA directory.
+- `POST /api/loras/upload`:
+  - Validates and atomically stores one LoRA SafeTensors file, then returns its selectable path and metadata.
 - `POST /api/config/validate`:
   - Body: JSON config payload.
   - Returns: `{"valid": true}` or `{"valid": false, "errors": ["..."]}`

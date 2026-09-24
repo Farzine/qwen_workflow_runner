@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import platform
+import os
+from pathlib import Path
 import sys
 import warnings
 from typing import Any
@@ -10,6 +12,44 @@ from typing import Any
 
 SUPPORTED_DTYPES = {"bfloat16", "float16", "float32"}
 SUPPORTED_OFFLOAD_MODES = {"none", "model", "sequential"}
+
+
+def _host_inventory() -> dict[str, Any]:
+    """Return JSON-safe CPU and memory information without requiring PyTorch."""
+    cpu_name = platform.processor() or platform.machine() or "Unknown CPU"
+    try:
+        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
+            if line.lower().startswith("model name") and ":" in line:
+                cpu_name = line.split(":", 1)[1].strip() or cpu_name
+                break
+    except (OSError, UnicodeError):
+        pass
+    cpu: dict[str, Any] = {
+        "name": cpu_name,
+        "architecture": platform.machine() or None,
+        "logical_cores": os.cpu_count(),
+        "physical_cores": None,
+    }
+    memory: dict[str, Any] = {
+        "total_bytes": None,
+        "available_bytes": None,
+        "used_bytes": None,
+        "percent_used": None,
+    }
+    try:
+        import psutil
+
+        cpu["physical_cores"] = psutil.cpu_count(logical=False)
+        virtual = psutil.virtual_memory()
+        memory.update({
+            "total_bytes": int(virtual.total),
+            "available_bytes": int(virtual.available),
+            "used_bytes": int(virtual.used),
+            "percent_used": float(virtual.percent),
+        })
+    except Exception:
+        pass
+    return {"cpu": cpu, "memory": memory}
 
 
 def _unavailable_report(device: str, dtype: str, offload: str, message: str) -> dict[str, Any]:
@@ -24,6 +64,7 @@ def _unavailable_report(device: str, dtype: str, offload: str, message: str) -> 
     return {
         "python": {"version": platform.python_version(), "executable": sys.executable},
         "platform": platform.platform(),
+        "host": _host_inventory(),
         "torch": {"version": None, "cuda_runtime": None},
         "cuda": {"available": False, "device_count": 0, "devices": [], "diagnostics": []},
         "mps": {"available": False},
@@ -79,17 +120,42 @@ def probe_runtime_capabilities(
         for index in range(cuda_count):
             try:
                 props = torch.cuda.get_device_properties(index)
-                cuda_devices.append(
-                    {
-                        "id": f"cuda:{index}",
-                        "type": "cuda",
-                        "index": index,
-                        "name": props.name,
-                        "total_memory_bytes": int(props.total_memory),
-                        "compute_capability": f"{props.major}.{props.minor}",
-                        "available": True,
-                    }
-                )
+                total_memory = int(props.total_memory)
+                free_memory = None
+                runtime_total = None
+                try:
+                    free_memory, runtime_total = torch.cuda.mem_get_info(index)
+                    free_memory = int(free_memory)
+                    runtime_total = int(runtime_total)
+                except Exception as error:
+                    diagnostics.append(
+                        f"Could not inspect cuda:{index} free memory: {type(error).__name__}: {error}"
+                    )
+                process_allocated = None
+                process_reserved = None
+                try:
+                    process_allocated = int(torch.cuda.memory_allocated(index))
+                    process_reserved = int(torch.cuda.memory_reserved(index))
+                except Exception as error:
+                    diagnostics.append(
+                        f"Could not inspect cuda:{index} process memory: {type(error).__name__}: {error}"
+                    )
+                effective_total = runtime_total or total_memory
+                used_memory = effective_total - free_memory if free_memory is not None else None
+                cuda_devices.append({
+                    "id": f"cuda:{index}",
+                    "type": "cuda",
+                    "index": index,
+                    "name": props.name,
+                    "total_memory_bytes": effective_total,
+                    "free_memory_bytes": free_memory,
+                    "used_memory_bytes": used_memory,
+                    "process_allocated_bytes": process_allocated,
+                    "process_reserved_bytes": process_reserved,
+                    "compute_capability": f"{props.major}.{props.minor}",
+                    "multiprocessor_count": getattr(props, "multi_processor_count", None),
+                    "available": True,
+                })
             except Exception as error:
                 diagnostics.append(
                     f"Could not inspect cuda:{index}: {type(error).__name__}: {error}"
@@ -183,10 +249,22 @@ def probe_runtime_capabilities(
         "ready": ready,
         "message": message,
     }
+    if selected_type == "cuda":
+        selected_index = parsed_device.index if parsed_device.index is not None else 0
+        selected_match = next((item for item in cuda_devices if item["index"] == selected_index), None)
+        if selected_match:
+            selected.update({
+                key: selected_match.get(key)
+                for key in (
+                    "index", "total_memory_bytes", "free_memory_bytes", "used_memory_bytes",
+                    "process_allocated_bytes", "process_reserved_bytes", "compute_capability",
+                )
+            })
 
     return {
         "python": {"version": platform.python_version(), "executable": sys.executable},
         "platform": platform.platform(),
+        "host": _host_inventory(),
         "torch": {
             "version": str(getattr(torch, "__version__", "unknown")),
             "cuda_runtime": getattr(getattr(torch, "version", None), "cuda", None),

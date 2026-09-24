@@ -238,6 +238,8 @@
           text_encoder_source: null,
           cache_dir: "models",
           offline: false,
+          lora_path: null,
+          lora_scale: 1.0,
         },
         generation: {
           input_images: [],
@@ -282,6 +284,9 @@
       models: {
         cached: [],
         activeTask: null,
+      },
+      loras: {
+        available: [],
       },
       run: {
         status: "idle", // idle, running, completed, error
@@ -374,6 +379,23 @@
     async listModels() {
       const res = await fetch("/api/models");
       if (!res.ok) throw new Error(`Failed to list models: HTTP ${res.status}`);
+      return await res.json();
+    },
+
+    async listLoras() {
+      const res = await fetch("/api/loras");
+      if (!res.ok) throw new Error(`Failed to list LoRA adapters: HTTP ${res.status}`);
+      return await res.json();
+    },
+
+    async uploadLora(file) {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/loras/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "LoRA upload failed" }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
       return await res.json();
     },
 
@@ -1172,6 +1194,7 @@
         { btn: "tab-btn-prompt", pane: "tab-pane-prompt" },
         { btn: "tab-btn-generation", pane: "tab-pane-generation" },
         { btn: "tab-btn-runtime", pane: "tab-pane-runtime" },
+        { btn: "tab-btn-system", pane: "tab-pane-system" },
         { btn: "tab-btn-model", pane: "tab-pane-model" },
       ];
 
@@ -1196,6 +1219,19 @@
           });
         }
       });
+
+      const requestedPane = window.location && window.location.hash
+        ? `tab-pane-${window.location.hash.slice(1)}`
+        : "";
+      const requestedTab = tabMap.find((item) => item.pane === requestedPane);
+      if (requestedTab) {
+        const button = document.getElementById(requestedTab.btn);
+        if (button && typeof button.click === "function") button.click();
+        const pane = document.getElementById(requestedTab.pane);
+        if (pane && typeof pane.scrollIntoView === "function") {
+          setTimeout(() => pane.scrollIntoView({ block: "start" }), 0);
+        }
+      }
     },
 
     bindPromptControls() {
@@ -1365,6 +1401,11 @@
       this.bindField("param-base-revision", "model.base_revision", "input");
       this.bindField("param-text-encoder-source", "model.text_encoder_source", "input");
       this.bindField("param-model-cache-dir", "model.cache_dir", "input");
+      this.bindField("param-model-lora-path", "model.lora_path", "change", (v) => v || null);
+      this.bindField("param-model-lora-scale", "model.lora_scale", "input", (v) => {
+        const parsed = Number.parseFloat(v);
+        return Number.isFinite(parsed) ? parsed : 1.0;
+      });
       this.bindCheckbox("param-model-offline", "model.offline");
     },
 
@@ -1862,7 +1903,387 @@
 
 
   // ==========================================================================
-  // 8. R4: RUN EXECUTION & LIVE SSE STREAMING
+  // 8. LORA ADAPTER MANAGEMENT
+  // ==========================================================================
+
+  const LoRAManager = {
+    select: null,
+    scaleInput: null,
+    activeStatus: null,
+    refreshBtn: null,
+    clearBtn: null,
+    dropzone: null,
+    fileInput: null,
+    uploadStatus: null,
+
+    init() {
+      this.select = document.getElementById("param-model-lora-path");
+      this.scaleInput = document.getElementById("param-model-lora-scale");
+      this.activeStatus = document.getElementById("lora-active-status");
+      this.refreshBtn = document.getElementById("btn-refresh-loras");
+      this.clearBtn = document.getElementById("btn-clear-lora");
+      this.dropzone = document.getElementById("lora-upload-dropzone");
+      this.fileInput = document.getElementById("lora-file-input");
+      this.uploadStatus = document.getElementById("lora-upload-status");
+
+      if (this.refreshBtn) this.refreshBtn.addEventListener("click", () => this.loadLoras(true));
+      if (this.clearBtn) this.clearBtn.addEventListener("click", () => this.clearSelection());
+      if (this.select) this.select.addEventListener("change", () => this.applySelection());
+      if (this.scaleInput) this.scaleInput.addEventListener("input", () => this.renderActiveStatus());
+
+      this.bindUploadDropzone();
+      this.loadLoras(false);
+    },
+
+    async loadLoras(showToast = false) {
+      try {
+        const data = await ApiClient.listLoras();
+        Store.state.loras.available = data.loras || [];
+        this.renderOptions();
+        if (showToast) Toast.show(`Found ${Store.state.loras.available.length} LoRA adapter(s).`, "success");
+      } catch (err) {
+        console.error("Failed to list LoRA adapters:", err);
+        this.setUploadStatus(`Could not refresh adapters: ${err.message}`, true);
+        if (showToast) Toast.show(`LoRA refresh failed: ${err.message}`, "error");
+      }
+    },
+
+    renderOptions() {
+      if (!this.select) return;
+      const selectedPath = Store.state.config.model.lora_path || "";
+      this.select.innerHTML = "";
+      this.select.appendChild(Utils.el("option", { value: "" }, "No LoRA"));
+
+      for (const item of Store.state.loras.available) {
+        const size = item.size ? ` · ${Utils.formatBytes(item.size)}` : "";
+        const suffix = item.valid ? size : ` · invalid: ${item.error || "unsupported adapter"}`;
+        const option = Utils.el("option", { value: item.path }, `${item.name}${suffix}`);
+        option.value = item.path;
+        option.disabled = !item.valid;
+        this.select.appendChild(option);
+      }
+
+      const selectedExists = Store.state.loras.available.some(
+        (item) => item.valid && item.path === selectedPath
+      );
+      if (selectedPath && selectedExists) {
+        this.select.value = selectedPath;
+      } else if (selectedPath) {
+        Store.state.config.model.lora_path = null;
+        this.select.value = "";
+      }
+      this.renderActiveStatus();
+    },
+
+    applySelection() {
+      Store.state.config.model.lora_path = this.select && this.select.value ? this.select.value : null;
+      this.renderActiveStatus();
+      ParamForm.triggerValidation();
+    },
+
+    clearSelection() {
+      if (this.select) this.select.value = "";
+      Store.state.config.model.lora_path = null;
+      this.renderActiveStatus();
+      ParamForm.triggerValidation();
+      Toast.show("LoRA selection cleared.", "info");
+    },
+
+    renderActiveStatus() {
+      if (!this.activeStatus) return;
+      const path = Store.state.config.model.lora_path;
+      const scale = Number(Store.state.config.model.lora_scale);
+      if (!path) {
+        this.activeStatus.textContent = "No LoRA selected. Production inference will use the base model.";
+        this.activeStatus.classList.remove("is-active");
+        return;
+      }
+      const item = Store.state.loras.available.find((entry) => entry.path === path);
+      const name = item ? item.name : path.split(/[\\/]/).pop();
+      this.activeStatus.textContent = `Selected: ${name} · strength ${Number.isFinite(scale) ? scale : 1}`;
+      this.activeStatus.classList.add("is-active");
+    },
+
+    bindUploadDropzone() {
+      if (!this.dropzone || !this.fileInput) return;
+      const openPicker = () => this.fileInput.click();
+      this.dropzone.addEventListener("click", openPicker);
+      this.dropzone.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openPicker();
+        }
+      });
+      this.fileInput.addEventListener("change", (event) => {
+        const file = event.target.files[0];
+        if (file) this.uploadFile(file);
+      });
+      this.dropzone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        this.dropzone.classList.add("dragover");
+      });
+      this.dropzone.addEventListener("dragleave", () => this.dropzone.classList.remove("dragover"));
+      this.dropzone.addEventListener("drop", (event) => {
+        event.preventDefault();
+        this.dropzone.classList.remove("dragover");
+        const file = event.dataTransfer.files[0];
+        if (file) this.uploadFile(file);
+      });
+    },
+
+    async uploadFile(file) {
+      if (!file.name.toLowerCase().endsWith(".safetensors")) {
+        const message = "LoRA adapters must use the .safetensors format.";
+        this.setUploadStatus(message, true);
+        Toast.show(message, "error");
+        return;
+      }
+      if (file.size === 0) {
+        const message = "The selected LoRA file is empty.";
+        this.setUploadStatus(message, true);
+        Toast.show(message, "error");
+        return;
+      }
+
+      this.setUploadStatus(`Validating and uploading ${file.name}…`, false);
+      try {
+        const data = await ApiClient.uploadLora(file);
+        await this.loadLoras(false);
+        const uploaded = data.lora;
+        Store.state.config.model.lora_path = uploaded.path;
+        if (this.select) this.select.value = uploaded.path;
+        this.renderActiveStatus();
+        ParamForm.triggerValidation();
+        this.setUploadStatus(`${uploaded.name} is ready and selected.`, false);
+        Toast.show(`LoRA uploaded and selected: ${uploaded.name}`, "success");
+      } catch (err) {
+        console.error("LoRA upload failed:", err);
+        this.setUploadStatus(`Upload failed: ${err.message}`, true);
+        Toast.show(`LoRA upload failed: ${err.message}`, "error");
+      } finally {
+        if (this.fileInput) this.fileInput.value = "";
+      }
+    },
+
+    setUploadStatus(message, isError) {
+      if (!this.uploadStatus) return;
+      this.uploadStatus.textContent = message;
+      this.uploadStatus.classList.toggle("error", Boolean(isError));
+    },
+  };
+
+
+  // ==========================================================================
+  // 9. SYSTEM INVENTORY & DEVICE CONFIGURATION
+  // ==========================================================================
+
+  const SystemManager = {
+    deviceSelect: null,
+    dtypeSelect: null,
+    offloadSelect: null,
+    applyBtn: null,
+    refreshBtn: null,
+
+    init() {
+      this.deviceSelect = document.getElementById("param-device");
+      this.dtypeSelect = document.getElementById("param-dtype");
+      this.offloadSelect = document.getElementById("param-offload");
+      this.applyBtn = document.getElementById("btn-apply-system");
+      this.refreshBtn = document.getElementById("btn-refresh-system");
+      if (this.applyBtn) this.applyBtn.addEventListener("click", () => this.applyConfiguration());
+      if (this.refreshBtn) this.refreshBtn.addEventListener("click", () => this.refreshInventory());
+    },
+
+    async applyConfiguration() {
+      const runtime = Store.state.config.runtime;
+      if (this.deviceSelect) runtime.device = this.deviceSelect.value;
+      if (this.dtypeSelect) runtime.dtype = this.dtypeSelect.value;
+      if (this.offloadSelect) runtime.offload = this.offloadSelect.value;
+
+      if (runtime.device === "cpu") {
+        runtime.dtype = "float32";
+        runtime.offload = "none";
+        if (this.dtypeSelect) this.dtypeSelect.value = "float32";
+        if (this.offloadSelect) this.offloadSelect.value = "none";
+      } else if (runtime.device.startsWith("mps")) {
+        runtime.offload = "none";
+        if (this.offloadSelect) this.offloadSelect.value = "none";
+      }
+
+      if (this.applyBtn) this.applyBtn.disabled = true;
+      try {
+        const capabilities = await App.refreshRuntimeCapabilities(false, false);
+        ParamForm.triggerValidation();
+        const production = capabilities.production_backend || {};
+        if (production.ready) {
+          Toast.show(`Configuration ready for ${runtime.device}. It will be used by the next run.`, "success");
+        } else {
+          Toast.show(`Configuration blocked: ${production.message || "runtime unavailable"}`, "error", 8000);
+        }
+      } catch (err) {
+        Toast.show(`System configuration failed: ${err.message}`, "error");
+      } finally {
+        if (this.applyBtn) this.applyBtn.disabled = false;
+      }
+    },
+
+    async refreshInventory() {
+      if (this.refreshBtn) this.refreshBtn.disabled = true;
+      try {
+        await App.refreshRuntimeCapabilities(false, false);
+        Toast.show("System inventory refreshed.", "success", 2000);
+      } catch (err) {
+        Toast.show(`System inventory refresh failed: ${err.message}`, "error");
+      } finally {
+        if (this.refreshBtn) this.refreshBtn.disabled = false;
+      }
+    },
+
+    render(capabilities) {
+      if (!capabilities) return;
+      this.renderDeviceOptions(capabilities.devices || []);
+      this.renderReadiness(capabilities);
+      this.renderHost(capabilities);
+      this.renderGpuInventory((capabilities.cuda && capabilities.cuda.devices) || []);
+      this.renderLifecycle(capabilities);
+    },
+
+    renderDeviceOptions(devices) {
+      if (!this.deviceSelect) return;
+      const selected = Store.state.config.runtime.device;
+      this.deviceSelect.innerHTML = "";
+      for (const device of devices) {
+        let label = `${device.id} — ${device.name}`;
+        if (device.type === "cuda" && device.total_memory_bytes) {
+          const free = device.free_memory_bytes === null || device.free_memory_bytes === undefined
+            ? "free memory unknown"
+            : `${Utils.formatBytes(device.free_memory_bytes)} free`;
+          label += ` · ${free} / ${Utils.formatBytes(device.total_memory_bytes)}`;
+        }
+        const option = Utils.el("option", { value: device.id }, label);
+        option.value = device.id;
+        this.deviceSelect.appendChild(option);
+      }
+      if (!devices.some((device) => device.id === selected)) {
+        const unavailable = Utils.el("option", { value: selected }, `${selected} — unavailable`);
+        unavailable.value = selected;
+        this.deviceSelect.appendChild(unavailable);
+      }
+      this.deviceSelect.value = selected;
+    },
+
+    renderReadiness(capabilities) {
+      const card = document.getElementById("system-readiness-card");
+      const status = document.getElementById("system-readiness-status");
+      const message = document.getElementById("system-readiness-message");
+      const production = capabilities.production_backend || {};
+      const selected = capabilities.selected_device || {};
+      if (card) {
+        card.classList.toggle("ready", Boolean(production.ready));
+        card.classList.toggle("blocked", !production.ready);
+      }
+      if (status) status.textContent = production.ready
+        ? `${selected.id || "Selected device"} is ready`
+        : `${selected.id || "Selected device"} is blocked`;
+      if (message) message.textContent = production.message || "No runtime diagnostic was returned.";
+    },
+
+    renderHost(capabilities) {
+      const host = capabilities.host || {};
+      const cpu = host.cpu || {};
+      const memory = host.memory || {};
+      const setText = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value;
+      };
+      const physical = cpu.physical_cores ? `${cpu.physical_cores} physical` : "physical count unknown";
+      const logical = cpu.logical_cores ? `${cpu.logical_cores} logical` : "logical count unknown";
+      setText("system-cpu-name", cpu.name || "Unknown CPU");
+      setText("system-cpu-cores", `${physical} · ${logical}`);
+      setText("system-ram-total", memory.total_bytes ? Utils.formatBytes(memory.total_bytes) : "Unknown");
+      setText("system-ram-available", memory.available_bytes
+        ? `${Utils.formatBytes(memory.available_bytes)} available · ${memory.percent_used}% used`
+        : "Availability unknown");
+      setText("system-torch-version", `PyTorch ${(capabilities.torch && capabilities.torch.version) || "unavailable"}`);
+      setText("system-cuda-version", capabilities.torch && capabilities.torch.cuda_runtime
+        ? `CUDA runtime ${capabilities.torch.cuda_runtime}`
+        : "CUDA runtime unavailable");
+      setText("system-python-version", `Python ${(capabilities.python && capabilities.python.version) || "unknown"}`);
+      setText("system-platform", capabilities.platform || "Unknown platform");
+    },
+
+    renderGpuInventory(devices) {
+      const list = document.getElementById("system-device-list");
+      const count = document.getElementById("system-gpu-count");
+      if (count) count.textContent = `${devices.length} detected`;
+      if (!list) return;
+      list.innerHTML = "";
+      if (!devices.length) {
+        list.appendChild(Utils.el("div", { class: "empty-state-text" }, "No CUDA GPU is available to this PyTorch runtime."));
+        return;
+      }
+      for (const device of devices) {
+        const total = device.total_memory_bytes || 0;
+        const used = device.used_memory_bytes;
+        const free = device.free_memory_bytes;
+        const percent = total && used !== null && used !== undefined
+          ? Math.min(100, Math.max(0, used / total * 100))
+          : 0;
+        const selected = device.id === Store.state.config.runtime.device;
+        const card = Utils.el(
+          "div",
+          { class: `system-device-card${selected ? " selected" : ""}` },
+          Utils.el(
+            "div",
+            { class: "system-device-heading" },
+            Utils.el("strong", { class: "system-device-name" }, `${device.id} — ${device.name}`),
+            Utils.el("span", { class: `badge ${selected ? "badge-accent" : "badge-muted"}` }, selected ? "Selected" : `CC ${device.compute_capability || "?"}`)
+          ),
+          Utils.el(
+            "div",
+            { class: "system-device-memory-row" },
+            Utils.el("span", {}, free === null || free === undefined ? "Free memory unknown" : `${Utils.formatBytes(free)} free`),
+            Utils.el("span", {}, total ? `${Utils.formatBytes(total)} total` : "Total memory unknown")
+          ),
+          Utils.el(
+            "div",
+            { class: "system-memory-track", attrs: { "aria-label": `${device.id} memory used`, role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(percent)) } },
+            Utils.el("div", { class: "system-memory-fill", style: { width: `${percent}%` } })
+          )
+        );
+        list.appendChild(card);
+      }
+    },
+
+    renderLifecycle(capabilities) {
+      const execution = capabilities.execution || {};
+      const active = execution.active_job;
+      const last = execution.last_run;
+      const backend = capabilities.backend || {};
+      const setText = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value;
+      };
+      setText("system-backend-mode", backend.default_mode === "demo" ? "Synthetic demo default" : "Production default");
+      if (active) {
+        setText("system-model-state", `${active.status}: ${active.requested_model}`);
+        setText("system-lora-state", active.requested_lora ? `Requested: ${active.requested_lora.split(/[\\/]/).pop()}` : "No LoRA requested");
+      } else if (last) {
+        const model = last.model || {};
+        const lora = last.lora || {};
+        setText("system-model-state", `Last run: ${model.repo_id || model.source || last.run_id || "unknown"}`);
+        setText("system-lora-state", lora.applied ? `Applied: ${lora.filename || lora.path || "adapter"}` : "No applied LoRA in last run");
+      } else {
+        setText("system-model-state", "No active run");
+        setText("system-lora-state", "No run state available");
+      }
+      setText("system-lifecycle-message", execution.message || "Models are loaded per run.");
+    },
+  };
+
+
+  // ==========================================================================
+  // 10. R4: RUN EXECUTION & LIVE SSE STREAMING
   // ==========================================================================
 
   const RunController = {
@@ -2837,6 +3258,7 @@
       }
 
       this.renderRuntimeStatus(capabilities);
+      SystemManager.render(capabilities);
 
       const production = capabilities.production_backend || {};
       if (notifyBlocked && !Store.state.config.demo_mode && !production.ready) {
@@ -2891,7 +3313,9 @@
       Toast.init();
       InputBrowser.init();
       ParamForm.init();
+      SystemManager.init();
       ModelManager.init();
+      LoRAManager.init();
       RunController.init();
       TerminalViewer.init();
       OutputViewer.init();

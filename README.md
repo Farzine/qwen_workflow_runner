@@ -131,6 +131,7 @@ python run.py --input-images inputs/person-a.png inputs/person-b.png --reference
 python run.py --model https://huggingface.co/Qwen/Qwen-Image-2.1/tree/main
 python run.py --model https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF
 python run.py --model abenzerps/Qwen-Image-2.1-GGUF --filename qwen-image-2.1-Q8_0.gguf
+python run.py --lora models/loras/portrait.safetensors --lora-scale 0.8
 python run.py --offline
 python run.py --dry-run
 ```
@@ -154,6 +155,8 @@ from qwen_runner.runner import run
 config = Config()
 config.model.source = "https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF"
 config.model.gguf_quantization = "Q4_K_M"
+config.model.lora_path = "models/loras/portrait.safetensors"
+config.model.lora_scale = 0.8
 config.generation.images = ["inputs/person.png", "inputs/shirt.png"]
 config.generation.prompt = (
     "Put the shirt from <image2> on the person in <image1>. "
@@ -188,6 +191,10 @@ Important parameter semantics:
   is supported too.
 - **Sampler/scheduler:** Euler with `simple` reproduces the submitted graph.
   Euler with `normal` is also implemented. Other values raise a clear error.
+- **Device selection:** `runtime.device` is authoritative. CUDA selections call
+  `torch.cuda.set_device()` and the same device is passed to pipeline placement
+  or model/sequential CPU offload. The web UI System tab discovers available
+  GPUs and shows live memory/readiness before applying a choice to the next run.
 - **KV cache:** `kv_cache=False` recomputes the prefix each step.
   `kv_cache_device="auto"` keeps a configurable CUDA memory reserve, then
   stores additional cache layers on CPU; `"cpu"` and `"gpu"` are explicit.
@@ -212,7 +219,16 @@ Supported sources:
 Only compatible **Qwen Image 2.1** checkpoints reproduce this graph. Older
 Qwen-Image, Qwen-Image-Edit and Edit-2511 architectures are rejected rather than
 silently using the wrong pipeline. This project is not a universal loader for
-arbitrary Hugging Face models, LoRAs or Comfy-specific quantized safetensors.
+arbitrary Hugging Face models or Comfy-specific quantized safetensors.
+
+One Qwen Image LoRA can be loaded from a local `.safetensors` file. The adapter
+is kept unfused and activated through Diffusers/PEFT so `lora_scale` remains
+explicit and is recorded in each run. A scale of `0` disables the adapter's
+effect, `1` uses its trained strength, and values up to `2` are accepted. The
+web UI discovers and validates files in `models/loras/` by default and supports
+uploading an adapter into that directory. A SafeTensors header check cannot
+prove architecture compatibility; an incompatible adapter fails during model
+loading with the adapter filename and Diffusers error in the diagnostic.
 
 For the supplied GGUF repository, changing only `source` selects its single
 Q4_K_M file. Set `filename` to choose another variant. If multiple files match,
@@ -361,6 +377,11 @@ complete local model snapshot. The loader never silently switches models.
 
 **GGUF tensor mismatch:** the file belongs to another architecture or layout.
 Use a compatible Qwen 2.1 checkpoint; do not bypass strict validation.
+
+**LoRA loading failed:** verify that the adapter targets the Qwen Image 2.1
+transformer and is a Diffusers/PEFT-compatible `.safetensors` file. Selecting a
+file only takes effect on the next production model load; synthetic demo mode
+records the selection but does not apply model adapters.
 
 **HF 401/403:** authenticate and obtain access to the repository, if required.
 The project does not bypass access restrictions.

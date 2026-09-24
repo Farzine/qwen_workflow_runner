@@ -26,7 +26,7 @@ def atomic_json(path, value):
 
 def environment(torch=None, device=None):
     packages = {}
-    for name in ('torch', 'diffusers', 'transformers', 'accelerate', 'gguf', 'huggingface_hub', 'Pillow', 'psutil'):
+    for name in ('torch', 'diffusers', 'transformers', 'accelerate', 'peft', 'gguf', 'huggingface_hub', 'Pillow', 'psutil'):
         try:
             dist = metadata.distribution(name)
             packages[name] = {"version": dist.version}
@@ -118,6 +118,12 @@ def run(config, backend_factory=None):
                         "sigmas": sigma_schedule(config.generation.steps, config.generation.strength, config.generation.shift, config.generation.scheduler) + [0.0],
                         "negative_prompt_active": config.generation.cfg != 1,
                         "noise_device": "cpu", "noise_dtype": "float32",
+                        "lora": backend.metadata.get('lora', {
+                            "enabled": bool(config.model.lora_path),
+                            "applied": False,
+                            "path": config.model.lora_path,
+                            "scale": config.model.lora_scale,
+                        }),
                     },
                     "setup_seconds": setup_seconds, "setup_shared_across_runs": True,
                     "environment": runtime_environment, "workflow_sha256": workflow_hash,

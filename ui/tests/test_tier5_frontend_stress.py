@@ -2,7 +2,7 @@
 
 Audits:
 1. DOM Element IDs:
-   - Exactly 179 unique IDs in ui/templates/index.html.
+   - Exactly 208 unique IDs in ui/templates/index.html.
    - Naming conventions, uniqueness, and complete alignment with ui/static/js/app.js.
    - ARIA accessibility: tab controls, tabpanel associations, modal/drawer roles, form labels.
 2. Offline Font Stack & Resource Integrity:
@@ -75,7 +75,7 @@ class DOMAuditor(html.parser.HTMLParser):
 
 
 class TestDOMIntegrityAndA11y(unittest.TestCase):
-    """Verifies DOM integrity, exact 179 IDs, accessibility, and offline compliance."""
+    """Verifies DOM integrity, exact 208 IDs, accessibility, and offline compliance."""
 
     @classmethod
     def setUpClass(cls):
@@ -90,17 +90,17 @@ class TestDOMIntegrityAndA11y(unittest.TestCase):
         cls.auditor = DOMAuditor()
         cls.auditor.feed(cls.html_content)
 
-    def test_exact_179_dom_ids_uniqueness_and_kebab_case(self):
-        """Audits that index.html contains exactly 179 IDs with zero duplicates and proper syntax."""
+    def test_exact_208_dom_ids_uniqueness_and_kebab_case(self):
+        """Audits that index.html contains exactly 208 IDs with zero duplicates and proper syntax."""
         ids = self.auditor.ids
         self.assertEqual(
             len(ids),
-            179,
-            f"Expected exactly 179 IDs in index.html, found {len(ids)}",
+            208,
+            f"Expected exactly 208 IDs in index.html, found {len(ids)}",
         )
         self.assertEqual(
             len(set(ids)),
-            179,
+            208,
             f"Duplicate IDs detected: {[i for i in ids if ids.count(i) > 1]}",
         )
 
@@ -129,7 +129,7 @@ class TestDOMIntegrityAndA11y(unittest.TestCase):
         )
 
     def test_aria_tab_and_tabpanel_relationships(self):
-        """Verifies that all 8 tabs have valid aria-controls referencing existing panels."""
+        """Verifies that all configuration/output tabs reference existing panels."""
         html_ids = set(self.auditor.ids)
         tabs = self.auditor.tabs
         self.assertGreaterEqual(len(tabs), 8, f"Expected at least 8 ARIA tabs, found {len(tabs)}")

@@ -315,7 +315,7 @@ const wrappedCode = appJsCode.replace(
   /\}\)\(\);?\s*$/,
   `  globalThis.__APP_MODULES__ = {
        Utils, Toast, Store, ApiClient, Lightbox, InputBrowser,
-       ParamForm, ModelManager, RunController,
+       ParamForm, ModelManager, LoRAManager, SystemManager, RunController,
        TerminalViewer, OutputViewer, ComparisonSlider, JsonInspector, RunHistory, App
      };
    })();`
@@ -327,7 +327,7 @@ vm.runInContext(wrappedCode, sandbox);
 const modules = sandbox.__APP_MODULES__;
 assert(modules, "Failed to load app.js modules in test sandbox");
 
-const { Store, InputBrowser, ParamForm, RunController, ComparisonSlider, Toast, Utils, ApiClient } = modules;
+const { Store, InputBrowser, ParamForm, LoRAManager, SystemManager, RunController, ComparisonSlider, Toast, Utils, ApiClient, App } = modules;
 const RunHub = RunController;
 
 // Intercept Toast messages for verification
@@ -903,6 +903,103 @@ runTest("Special characters in image paths: URL encoding and escape safety", () 
 
   const card = InputBrowser.selectedSlotsList.children[0];
   assert.strictEqual(card.querySelector(".slot-filename").textContent, "photo & edit (v2) [final].png");
+});
+
+runTest("LoRA discovery, selection, strength, upload, and clear state stay synchronized", async () => {
+  const first = {
+    name: "portrait.safetensors",
+    path: "/models/loras/portrait.safetensors",
+    size: 4096,
+    valid: true,
+  };
+  const uploaded = {
+    name: "lighting.safetensors",
+    path: "/models/loras/lighting.safetensors",
+    size: 8192,
+    valid: true,
+  };
+  let available = [first];
+  const originalList = ApiClient.listLoras;
+  const originalUpload = ApiClient.uploadLora;
+  ApiClient.listLoras = async () => ({ loras: available });
+  ApiClient.uploadLora = async () => {
+    available = [first, uploaded];
+    return { lora: uploaded };
+  };
+
+  LoRAManager.select = domRegistry.get("param-model-lora-path");
+  LoRAManager.scaleInput = domRegistry.get("param-model-lora-scale");
+  LoRAManager.activeStatus = domRegistry.get("lora-active-status");
+  LoRAManager.uploadStatus = domRegistry.get("lora-upload-status");
+  LoRAManager.fileInput = domRegistry.get("lora-file-input");
+  Store.state.config.model.lora_path = null;
+  Store.state.config.model.lora_scale = 1.0;
+
+  await LoRAManager.loadLoras(false);
+  assert.strictEqual(LoRAManager.select.children.length, 2);
+  LoRAManager.select.value = first.path;
+  LoRAManager.applySelection();
+  assert.strictEqual(Store.state.config.model.lora_path, first.path);
+
+  Store.state.config.model.lora_scale = 0.65;
+  LoRAManager.renderActiveStatus();
+  assert(LoRAManager.activeStatus.textContent.includes("portrait.safetensors"));
+  assert(LoRAManager.activeStatus.textContent.includes("0.65"));
+
+  await LoRAManager.uploadFile({ name: "lighting.safetensors", size: 8192 });
+  assert.strictEqual(Store.state.config.model.lora_path, uploaded.path);
+  assert(LoRAManager.uploadStatus.textContent.includes("ready and selected"));
+  LoRAManager.clearSelection();
+  assert.strictEqual(Store.state.config.model.lora_path, null);
+
+  ApiClient.listLoras = originalList;
+  ApiClient.uploadLora = originalUpload;
+});
+
+runTest("System inventory dynamically lists GPUs and applies the selected production device", async () => {
+  SystemManager.init();
+  const capabilities = {
+    python: { version: "3.10.12" },
+    platform: "Linux-test",
+    torch: { version: "2.11.0", cuda_runtime: "12.6" },
+    host: {
+      cpu: { name: "Test CPU", physical_cores: 8, logical_cores: 16 },
+      memory: { total_bytes: 64 * 1024 ** 3, available_bytes: 48 * 1024 ** 3, percent_used: 25 },
+    },
+    devices: [
+      { id: "cpu", type: "cpu", name: "CPU", available: true },
+      { id: "cuda:0", type: "cuda", name: "GPU Zero", total_memory_bytes: 24 * 1024 ** 3, free_memory_bytes: 12 * 1024 ** 3 },
+      { id: "cuda:1", type: "cuda", name: "GPU One", total_memory_bytes: 24 * 1024 ** 3, free_memory_bytes: 20 * 1024 ** 3 },
+    ],
+    cuda: {
+      devices: [
+        { id: "cuda:0", type: "cuda", name: "GPU Zero", total_memory_bytes: 24 * 1024 ** 3, free_memory_bytes: 12 * 1024 ** 3, used_memory_bytes: 12 * 1024 ** 3, compute_capability: "8.6" },
+        { id: "cuda:1", type: "cuda", name: "GPU One", total_memory_bytes: 24 * 1024 ** 3, free_memory_bytes: 20 * 1024 ** 3, used_memory_bytes: 4 * 1024 ** 3, compute_capability: "8.6" },
+      ],
+    },
+    selected_device: { id: "cuda:0", ready: true },
+    production_backend: { ready: true, message: "cuda:0 is ready" },
+    backend: { default_mode: "production" },
+    execution: { persistent_backend: false, active_job: null, last_run: null, message: "Models are loaded per run." },
+  };
+  Store.state.config.runtime.device = "cuda:0";
+  SystemManager.render(capabilities);
+  assert.strictEqual(domRegistry.get("param-device").children.length, 3);
+  assert.strictEqual(domRegistry.get("system-gpu-count").textContent, "2 detected");
+  assert.strictEqual(domRegistry.get("system-device-list").children.length, 2);
+  assert(domRegistry.get("system-cpu-name").textContent.includes("Test CPU"));
+  assert(domRegistry.get("system-ram-total").textContent.includes("GB"));
+
+  const originalRefresh = App.refreshRuntimeCapabilities;
+  App.refreshRuntimeCapabilities = async () => capabilities;
+  domRegistry.get("param-device").value = "cuda:1";
+  domRegistry.get("param-dtype").value = "float16";
+  domRegistry.get("param-offload").value = "sequential";
+  await SystemManager.applyConfiguration();
+  assert.strictEqual(Store.state.config.runtime.device, "cuda:1");
+  assert.strictEqual(Store.state.config.runtime.dtype, "float16");
+  assert.strictEqual(Store.state.config.runtime.offload, "sequential");
+  App.refreshRuntimeCapabilities = originalRefresh;
 });
 
 (async function runAll() {

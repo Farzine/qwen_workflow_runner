@@ -23,8 +23,9 @@ A high-performance, modern, production-grade Web UI and API application server f
 The Web UI integrates seamlessly with `qwen_runner` to provide an intuitive visual studio for generative editing:
 
 - **Input & Reference Workspace**: Scans configured input folders, accepts validated multi-file uploads and drag-and-drop, and keeps 1–10 ordered process inputs separate from up to nine shared conditioning references.
-- **Comprehensive Parameter Form**: Full controls exposing all 38 parameters across `ModelConfig`, `GenerationConfig`, and `RuntimeConfig` with real-time client-side validation, range hints, and preset management.
-- **Model Management**: Live asynchronous downloading of Hugging Face repositories with SSE progress streaming, chunked drag-and-drop local file uploads (`.gguf`, `.safetensors`), and cached model catalog.
+- **Comprehensive Parameter Form**: Controls exposing every parameter across `ModelConfig`, `GenerationConfig`, and `RuntimeConfig` with real-time client-side validation, range hints, and preset management.
+- **Model and LoRA Management**: Live asynchronous downloading of Hugging Face repositories, chunked local model uploads, cached model discovery, and a separate validated LoRA catalog with upload, selection, and strength controls.
+- **System Configuration**: Live CPU/RAM and GPU inventory, per-GPU total/free/used memory, PyTorch/CUDA versions, runtime readiness, and dynamic device selection for the next production run.
 - **Execution & Output Hub**: Non-blocking background execution with real-time SSE streaming logs, step progress bar, output gallery with byte-accurate SHA-256 badges, interactive split-view comparison slider, 2-up side-by-side mode, expandable JSON record viewer with export, and session run history.
 - **Zero CDN Dependencies**: Self-contained Vanilla JS and CSS3 design; 100% offline-ready in air-gapped laboratory environments.
 
@@ -33,6 +34,7 @@ Browser (Vanilla SPA HTML5 / CSS3 / ES2020)
   ├── Input Browser (folder tree, uploads, process-input tray, reference tray)
   ├── Parameter Form (ModelConfig, GenerationConfig, RuntimeConfig with live validation)
   ├── Model Hub (HF downloader with SSE progress, chunked uploader, cached models)
+  ├── System Page (live host/GPU inventory, device, precision, offload, runtime state)
   └── Execution Hub (SSE live logs, output gallery, split comparison slider, JSON viewer)
         │
         ▼ HTTP REST & SSE Streaming
@@ -101,6 +103,7 @@ Demo mode is an explicit synthetic preview. `DemoBackend` derives a labeled imag
 | `--demo` | `flag` | `False` | Run with synthetic demo backend | `--demo` |
 | `--inputs-dir` | `str` | `None` | Path override for input reference images | `--inputs-dir /data/inputs` |
 | `--models-dir` | `str` | `None` | Path override for model storage directory | `--models-dir /data/models` |
+| `--loras-dir` | `str` | `None` | Path override for discovered and uploaded LoRA adapters | `--loras-dir /data/loras` |
 | `--outputs-dir`| `str` | `None` | Path override for output images & records | `--outputs-dir /data/outputs` |
 | `--reload` | `flag` | `False` | Enable auto-reload for local development | `--reload` |
 
@@ -111,7 +114,7 @@ Demo mode is an explicit synthetic preview. `DemoBackend` derives a labeled imag
 python ui/app.py --host 127.0.0.1 --port 9000 --demo
 
 # Specify custom dataset and output directories
-python ui/app.py --inputs-dir /mnt/lab/farzine/inputs --outputs-dir /mnt/lab/farzine/outputs
+python ui/app.py --inputs-dir /mnt/lab/farzine/inputs --loras-dir /mnt/lab/farzine/loras --outputs-dir /mnt/lab/farzine/outputs
 
 # Launch in developer mode with live reload
 python ui/app.py --reload --port 7878
@@ -140,6 +143,7 @@ Directory paths and operational modes can also be configured via environment var
 |---|---|---|
 | `INPUTS_DIR` | `/mnt/lab/farzine/inputs` (or `inputs/`) | Root directory scanned by the input browser |
 | `MODELS_DIR` | `models/` | Storage location for cached weights and uploads |
+| `LORAS_DIR` | `models/loras/` | Storage location for discovered and uploaded `.safetensors` adapters |
 | `OUTPUTS_DIR` | `outputs/` | Target location for output images and JSON records |
 | `DEMO_MODE` | `0` (or `False`) | Set to `1` or `true` to force synthetic demo backend |
 | `UI_STATE_DIR` | `None` | Optional unified base directory for inputs, models, and outputs |
@@ -209,17 +213,39 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
   - Multipart chunked upload for `.gguf` and `.safetensors` files directly into `models/`.
   - Form fields: `file` (UploadFile), `upload_id` (str), `chunk_index` (int), `total_chunks` (int).
 
-### 3. Configuration & Validation
+### 3. LoRA Catalog & Upload
+
+- **`GET /api/loras`**
+  - Lists `.safetensors` files in the configured LoRA directory, including size, modification time, SafeTensors metadata, tensor count, and validation errors.
+  - Invalid files remain visible but cannot be selected in the browser.
+- **`POST /api/loras/upload`**
+  - Accepts one `.safetensors` multipart file, streams it with a 4 GiB limit, validates its SafeTensors header and LoRA tensor keys, and atomically stores it under a sanitized collision-safe name.
+  - A successful upload is refreshed into the catalog and selected automatically.
+
+The selected file path and strength are sent as `model.lora_path` and
+`model.lora_scale`. Production inference loads and activates the adapter before
+device placement. Synthetic demo mode reports the requested adapter as not
+applied because it does not load a model.
+
+### 4. Configuration & Validation
 
 - **`GET /api/system?device=cuda:0&dtype=bfloat16&offload=model`**
-  - Reports Python/PyTorch versions, CUDA and MPS availability, detected devices, selected-device readiness, and whether the server was explicitly started with demo as its default.
+  - Reports Python/PyTorch/CUDA versions, CPU and system RAM, CUDA and MPS availability, per-GPU total/free/used and process memory, selected-device readiness, server backend defaults, and active/last-run model and LoRA state where available.
+  - The model lifecycle is per run. Applying a device configuration changes the next submitted request; it does not move or mutate an active pipeline.
+
+The browser’s **System** tab builds its device list from this response. Selecting
+CPU automatically uses `float32` with no offload; selecting MPS disables
+offload. CUDA choices retain the selected precision and offload mode and are
+sent as `runtime.device`, `runtime.dtype`, and `runtime.offload`. The production
+backend validates the combination, calls `torch.cuda.set_device()` for CUDA,
+and passes that exact device to pipeline placement or Accelerate offload.
 
 - **`POST /api/config/validate`**
   - Validates full or partial runner configuration against `qwen_runner.config.Config.validate()`.
   - Response (Valid): `{"valid": true, "errors": []}`
   - Response (Invalid): `{"valid": false, "errors": ["Steps must be >= 1", "..."]}`
 
-### 4. Workflow Execution & Streaming
+### 5. Workflow Execution & Streaming
 
 - **`POST /api/run`**
   - Submits a new inference run to the background worker queue.
@@ -243,7 +269,7 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
     - `event: complete`: `{"status": "success|partial_success|error", "outputs": [...], "comparisons": [...], "records": [...], "errors": [...]}`
     - `event: error`: `{"status": "FAILED", "error": "CUDA out of memory"}`
 
-### 5. Outputs & History
+### 6. Outputs & History
 
 - **`GET /api/runs`**
   - Returns list of all execution records in the current session.

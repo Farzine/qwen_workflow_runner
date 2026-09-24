@@ -3,7 +3,7 @@
 Verifies:
 - Root single-page application serving (GET /)
 - Static asset delivery (CSS, JS) with appropriate media types
-- Parameter coverage for all 38 dataclass fields from ModelConfig, GenerationConfig, and RuntimeConfig
+- Parameter coverage for every dataclass field from ModelConfig, GenerationConfig, and RuntimeConfig
 - Zero external CDN dependencies (offline capability)
 - Form control ranges, options, and validation attributes
 - 100% ID alignment between index.html and app.js
@@ -29,8 +29,8 @@ class TestFrontendServing(unittest.TestCase):
         cls.client = TestClient(app)
         cls.repo_root = Path(__file__).resolve().parent.parent.parent
         cls.index_path = cls.repo_root / "ui" / "templates" / "index.html"
-        cls.css_path = cls.repo_root / "ui" / "static" / "css" / "style.css"
         cls.js_path = cls.repo_root / "ui" / "static" / "js" / "app.js"
+        cls.css_path = cls.repo_root / "ui" / "static" / "css" / "style.css"
 
     def test_root_serves_html_with_title_and_panels(self):
         """GET / returns HTTP 200, Content-Type text/html, and contains core UI panels."""
@@ -123,7 +123,7 @@ class TestZeroCDNDependencies(unittest.TestCase):
 
 
 class TestParameterCoverage(unittest.TestCase):
-    """Verifies that all 38 dataclass parameters are exposed in the HTML form."""
+    """Verifies that every dataclass parameter is exposed in the HTML form."""
 
     @classmethod
     def setUpClass(cls):
@@ -189,6 +189,7 @@ class TestFormControlsAndValidationAttributes(unittest.TestCase):
     def setUpClass(cls):
         cls.repo_root = Path(__file__).resolve().parent.parent.parent
         cls.index_path = cls.repo_root / "ui" / "templates" / "index.html"
+        cls.js_path = cls.repo_root / "ui" / "static" / "js" / "app.js"
         with open(cls.index_path, encoding="utf-8") as f:
             cls.html = f.read()
 
@@ -211,10 +212,19 @@ class TestFormControlsAndValidationAttributes(unittest.TestCase):
         self.assertIn('id="schedule-calc-ratio"', self.html)
 
     def test_device_and_hardware_options(self):
-        """Device options include cuda:0, cpu, and mps."""
+        """Device selector has a safe bootstrap choice and is populated from the API."""
         self.assertIn('value="cuda:0"', self.html)
         self.assertIn('value="cpu"', self.html)
-        self.assertIn('value="mps"', self.html)
+        js = self.js_path.read_text(encoding="utf-8")
+        self.assertIn("renderDeviceOptions", js)
+        self.assertIn("capabilities.devices", js)
+
+    def test_dedicated_system_configuration_controls(self):
+        self.assertIn('id="tab-btn-system"', self.html)
+        self.assertIn('id="tab-pane-system"', self.html)
+        self.assertIn('id="btn-apply-system"', self.html)
+        self.assertIn('id="system-device-list"', self.html)
+        self.assertIn('id="system-model-state"', self.html)
 
     def test_dtype_options(self):
         """Dtype options include bfloat16, float16, and float32."""

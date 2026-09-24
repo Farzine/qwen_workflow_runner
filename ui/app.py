@@ -88,6 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Custom models directory path for cached model weights and uploads.",
     )
     parser.add_argument(
+        "--loras-dir",
+        type=str,
+        default=None,
+        help="Custom directory for discovered and uploaded LoRA SafeTensors files.",
+    )
+    parser.add_argument(
         "--outputs-dir",
         type=str,
         default=None,
@@ -124,6 +130,10 @@ def configure_app(args: argparse.Namespace) -> None:
         resolved_models = str(Path(args.models_dir).resolve())
         os.environ["MODELS_DIR"] = resolved_models
         app.state.models_dir = resolved_models
+    if args.loras_dir:
+        resolved_loras = str(Path(args.loras_dir).resolve())
+        os.environ["LORAS_DIR"] = resolved_loras
+        app.state.loras_dir = resolved_loras
     if args.outputs_dir:
         resolved_outputs = str(Path(args.outputs_dir).resolve())
         os.environ["OUTPUTS_DIR"] = resolved_outputs

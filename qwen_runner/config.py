@@ -14,6 +14,8 @@ class ModelConfig:
     text_encoder_source: str | None = None  # Diffusers-layout repo/local folder.
     cache_dir: str = "models"
     offline: bool = False
+    lora_path: str | None = None  # Optional local Qwen Image LoRA SafeTensors file.
+    lora_scale: float = 1.0
 
 
 @dataclass
@@ -108,7 +110,7 @@ class Config:
         return list(inputs), list(references)
 
     def validate(self, check_images=True):
-        g, r = self.generation, self.runtime
+        c, g, r = self.model, self.generation, self.runtime
         input_images, reference_images = self.resolved_image_inputs()
         explicit_images = g.input_images is not None or g.reference_images is not None
         if check_images:
@@ -116,6 +118,15 @@ class Config:
                 if not Path(p).is_file():
                     label = "image" if explicit_images else "reference image"
                     raise FileNotFoundError(f"Missing {label}: {p}. Supply your images or run scripts/download_examples.py.")
+        if c.lora_path is not None:
+            if not isinstance(c.lora_path, str) or not c.lora_path.strip():
+                raise ValueError("lora_path must be null or a non-empty local SafeTensors path")
+            if Path(c.lora_path).suffix.lower() != ".safetensors":
+                raise ValueError("lora_path must point to a .safetensors file")
+            if check_images and not Path(c.lora_path).is_file():
+                raise FileNotFoundError(f"Missing LoRA file: {c.lora_path}")
+        if not isinstance(c.lora_scale, (int, float)) or not math.isfinite(c.lora_scale) or not 0 <= c.lora_scale <= 2:
+            raise ValueError("lora_scale must be finite and between 0 and 2")
         if g.steps < 1 or g.steps > 10000 or g.batch_size < 1:
             raise ValueError("steps must be 1–10000 and batch_size must be positive")
         if not math.isfinite(g.cfg) or g.cfg < 0:

@@ -63,8 +63,9 @@ cast to model precision during Euler accumulation.
    and custom color-profile UI are not recreated. The full run metadata is
    stored in JSON. Outputs are ordinary 8-bit PNGs.
 6. **Architecture scope:** this is the Qwen Image 2.1 graph. Earlier Qwen Image
-   and Qwen Image Edit architectures, LoRAs, masks and unrelated custom nodes
-   are not silently accepted. One to ten ordered references are supported.
+   and Qwen Image Edit architectures, masks and unrelated custom nodes are not
+   silently accepted. One compatible Qwen Image 2.1 transformer LoRA can be
+   applied through Diffusers/PEFT. One to ten ordered references are supported.
 
 These bounds are recorded or explained so a successful load is not mistaken
 for a demonstrated pixel-for-pixel reproduction. `original.json` remains the

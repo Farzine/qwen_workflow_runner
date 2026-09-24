@@ -133,7 +133,7 @@ Make the application a reliable production image-generation workflow: run real Q
 
 ## Active Task
 
-Phase 4 — implement LoRA discovery, upload, selection, application, and active-state reporting as the next independently testable vertical slice. The Phase 3 browser input/reference workflow is complete.
+Phase 6 — reorganize and polish the production workflow UI, with emphasis on responsive navigation, accessible states, long lists, and clear loading/progress behavior. Phase 5 system/device configuration is complete.
 
 ## Completed Tasks
 
@@ -166,6 +166,16 @@ Phase 4 — implement LoRA discovery, upload, selection, application, and active
 - [x] Replaced the combined browser tray with independent ordered process-input and shared-reference state, controls, previews, counts, reordering, removal, and role-aware upload/drop behavior.
 - [x] Made the browser emit only explicit `input_images`/`reference_images`, retain non-enumerable migration aliases for embedded integrations, display every successful batch artifact, and preserve outputs during `partial_success` failures.
 - [x] Restored narrow-screen access to the input panel and validated desktop/narrow rendering with headless Chrome in addition to DOM, accessibility, API, and JavaScript state-machine coverage.
+- [x] Added optional LoRA path/strength configuration, CLI overrides, validation, and durable requested/effective adapter metadata.
+- [x] Added confined LoRA directory discovery plus streamed, size-limited, atomic SafeTensors upload with A/B or down/up tensor-pair validation and actionable invalid-file diagnostics.
+- [x] Applied one named, unfused Qwen transformer LoRA through Diffusers/PEFT, verified activation and strength, supported explicit unload/replacement, and included the adapter SHA-256 in run records.
+- [x] Added a separate browser LoRA catalog with refresh, upload/drop, selection, strength, clear state, invalid-entry visibility, and production/demo application messaging.
+- [x] Proved actual adapter application with a real tiny Qwen Image 2.1 transformer and completed the core, API, DOM, and JavaScript regression suites.
+- [x] Extended the shared runtime probe with CPU/RAM inventory and live per-GPU total/free/used plus process-allocated/reserved memory without loading model weights.
+- [x] Added a dedicated System tab with dynamically discovered CPU, MPS, and CUDA choices, readiness diagnostics, software/host summaries, GPU memory cards, and explicit next-run configuration application.
+- [x] Exposed truthful per-run model lifecycle state, including active requested model/device/LoRA and effective last-run metadata when held by the current server process.
+- [x] Recorded production device/offload metadata and verified both RTX A6000 GPUs accept BF16 allocation and report ready through the same probe used by `QwenBackend`.
+- [x] Completed Phase 5 core, API, DOM, JavaScript, full UI regression, and live desktop/narrow rendering validation.
 
 ## Remaining Tasks
 
@@ -174,8 +184,8 @@ Phase 4 — implement LoRA discovery, upload, selection, application, and active
 - [x] Phase 2.3: verify actual transformation quality, parameter propagation, image conditioning, persistence, and UI display with the full model.
 - [x] Phase 3.1: introduce separate ordered `input_images` and `reference_images` request concepts; define each input as an independently generated output while applying the chosen reference set.
 - [x] Phase 3: add multi-file image upload, drag-and-drop, previews, ordering, individual removal, validation, and clear empty/error states.
-- [ ] Phase 4: add LoRA directory discovery, validated upload, selection, active-state reporting, backend loading/application, metadata, and tests.
-- [ ] Phase 5: add system/GPU inventory and configuration API/page; validate and honor manual device selection.
+- [x] Phase 4: add LoRA directory discovery, validated upload, selection, active-state reporting, backend loading/application, metadata, and tests.
+- [x] Phase 5: add system/GPU inventory and configuration API/page; validate and honor manual device selection.
 - [ ] Phase 6: reorganize the UI around the production workflow and improve responsive behavior, accessibility, loading, progress, and long-list states.
 - [ ] Phase 7: add implementation-backed information controls for all meaningful parameters.
 - [ ] Phase 8: run the complete input/reference/LoRA/GPU/inference/UI validation matrix, fix remaining failures, and stabilize documentation.
@@ -197,6 +207,8 @@ Phase 4 — implement LoRA discovery, upload, selection, application, and active
 - The previous CUDA 13 package directories are preserved at `.venv/runtime-backups/cu130-20260923/site-packages` for local rollback.
 - Filesystem-sandboxed commands cannot see `/dev/nvidia*`; GPU diagnostics and inference must run with host device access. This isolation explained the earlier sandboxed `nvidia-smi` failure.
 - GPU 0 was using about 40 GiB during the smoke test, so the validated run explicitly selected the otherwise free `cuda:1` device.
+- `/api/system` now reports the host CPU name/core counts, system RAM, Python/PyTorch/CUDA versions, dynamically available CPU/MPS/CUDA devices, compute capability, and per-GPU total/free/used and process memory. Probe failures remain diagnostic data rather than crashing the endpoint.
+- The browser System tab builds its selector from that report. Apply Configuration writes the selected device/dtype/offload into the exact `RuntimeConfig` sent by the next run; CPU is normalized to float32/no-offload and MPS to no-offload.
 
 ### Inputs and references
 
@@ -207,16 +219,18 @@ Phase 4 — implement LoRA discovery, upload, selection, application, and active
 
 ### LoRA and device management
 
-- The current documentation explicitly lists LoRA as unsupported.
-- The custom pipeline inherits Diffusers' Qwen Image LoRA loader support, but `QwenBackend` never calls it and configuration/API/UI have no LoRA fields.
-- The UI device selector remains a static list (`cuda:0`, CPU, MPS). `/api/system` now reports runtime/device readiness and the header shows the selected state, but dynamic GPU options, detailed memory information, and the dedicated system page remain for Phase 5.
+- One local Qwen Image adapter is now supported. The UI discovers `.safetensors` files from `models/loras/` (or `LORAS_DIR`/`--loras-dir`), preserves invalid discoveries with diagnostics, validates uploads, and submits the selected absolute path plus a 0–2 strength.
+- `QwenBackend` loads the adapter locally under the fixed name `qwen_workflow_lora`, calls `set_adapters` with the requested strength, verifies it is active, keeps it unfused, and records its path, filename, hash, scale, active/available adapter state, and application status. Demo mode explicitly records that a selected adapter was not applied.
+- PEFT 0.21.0 is now an explicit runtime dependency. A real tiny Qwen transformer test proves that enabling the saved adapter changes transformer-layer output and that clearing the selection unloads it. Full pretrained inference with a user-supplied production LoRA remains part of the final validation matrix because no compatible LoRA asset is bundled.
+- The static device list has been replaced. Only devices reported by the runtime are offered, while a configured unavailable device remains visible with a blocked diagnostic. The page shows both A6000s independently and the selected choice is used by `QwenBackend` through `torch.cuda.set_device` and exact pipeline/offload placement.
+- The runner has no persistent model server: it builds a backend per job. System state therefore distinguishes an active job's requested configuration from effective metadata held for the latest in-process completed run and explicitly says changes apply to the next job.
 
 ### Validation and maintainability
 
 - The completed-job SSE hang was caused by running Starlette `TestClient` inside the restricted command sandbox. The exact test and full UI suite pass with the local IPC/loopback access already required by these tests; no streaming code change was needed.
 - Backend choice is explicit. The new runtime probe validates the selected device/dtype/offload combination before model loading and returns the same actionable message used by `QwenBackend`.
 - Parameter hints exist for several fields, but there is no complete, consistent help system based on actual implementation behavior.
-- The UI suite contains 406 tests after Phase 3.1 and completes in about 20 seconds when local loopback sockets are permitted.
+- The UI suite contains 413 tests after Phase 5 and completes in about 20 seconds when local loopback sockets are permitted.
 
 ## Important Technical Findings
 
@@ -249,11 +263,19 @@ Phase 4 — implement LoRA discovery, upload, selection, application, and active
 - When explicit image mode is active, `Config.as_dict()` serializes the inactive legacy `images` field as `[]`; API responses and durable records therefore cannot imply that ignored default example paths participated in inference.
 - A request with two inputs and two references expands deterministically in input order. Each repeat uses one seed for all inputs; `increment_seed` advances between repeats. Tests prove the backend `load()` hook runs once across the expanded batch and each backend call receives exactly `[current_input, *references]`.
 - Legacy corrupt-image requests still decode before backend loading and write `*_setup_error.json`. Explicit multi-input requests decode per input, write a durable error record for a corrupt item, continue ordinary `Exception` failures, and retain successful later outputs. Process-level interruptions continue to propagate.
+- Installed Diffusers `0.41.0.dev0` exposes `QwenImageLoraLoaderMixin` on `WorkflowQwenImage21Pipeline`. Its supported lifecycle is `load_lora_weights(..., adapter_name=...)`, `set_adapters(..., adapter_weights=...)`, `get_active_adapters()`, `get_list_adapters()`, and `unload_lora_weights()`.
+- The production loader passes the adapter directory and exact filename with `local_files_only=True` and `use_safetensors=True`; it never treats an adapter as a full transformer checkpoint and never contacts the Hub for a local selection.
+- SafeTensors upload validation reads only the header/key inventory, requires a matching LoRA A/B or down/up pair, and rejects ordinary model tensors. This catches corrupt and obviously wrong files early, while architecture/shape compatibility remains authoritatively checked by Diffusers during model loading.
+- A PEFT-generated adapter saved through `WorkflowQwenImage21Pipeline.save_lora_weights` loaded into a real tiny `QwenImage21Transformer2DModel`, became the sole active adapter at strength 0.7, changed the layer output, produced matching SHA-256 metadata, and unloaded without residual adapters.
+- The live Phase 5 probe reported a 12th Gen Intel i9-12900K (16 physical/24 logical cores), about 125.6 GiB RAM, PyTorch `2.11.0+cu126`, CUDA runtime 12.6, and two RTX A6000 GPUs with compute capability 8.6 and about 47.4 GiB each.
+- At validation time `cuda:0` reported about 33.8 GiB free and `cuda:1` about 45.8 GiB free. A BF16 tensor allocation completed after explicitly calling `torch.cuda.set_device` on each GPU, and both selected-device reports returned production `ready: true`.
+- `QwenBackend.load` already honored `runtime.device`; Phase 5 made that contract visible and testable. It calls `torch.cuda.set_device(device)` before loading, passes the same device to Accelerate model/sequential offload or `pipe.to(device)`, and now records `device` and `offload` in backend metadata.
+- `RunnerBridge.runtime_snapshot` intentionally does not claim persistent residency. It reports queued/running requested state and effective metadata from the most recent in-memory completed run, while documenting that model/LoRA changes apply to the next job.
 
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Current Phase 3.2 checkpoint: branch `main`, commit `40b16c2`, matching `origin/main`, with only the Phase 3.2 files listed below modified.
+- Current Phase 5 checkpoint: branch `main`, commit `c1b1bb9`, matching `origin/main`, with the uncommitted Phase 4 and Phase 5 files listed below modified. Phase 3.2 was committed as `c1b1bb9` before these checkpoints were finalized.
 - There were only two commits: the initial implementation and a Tier 5 frontend/adversarial test addition.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -282,7 +304,7 @@ Useful concepts to adapt are the separation of base input from optional referenc
 | --- | --- | --- | --- |
 | Input processing | Iterates independent base images | Core/API and browser expand ordered `input_images` into independent durable generations and results | Real full-model multi-input validation remains in the final matrix. |
 | References | Separate optional reference field | Browser and API keep ordered shared `reference_images` separate and preserve `[input, *references]` conditioning order | The transport and UI distinction are complete; adherence quality remains model/prompt dependent. |
-| LoRA | Sends optional `adapter_name` | Unsupported and never loaded | Add local discovery/upload plus explicit Diffusers loading and metadata. |
+| LoRA | Sends optional `adapter_name` | Discovers/uploads one local SafeTensors adapter, applies it through Diffusers/PEFT, and records effective state | Full pretrained testing requires a compatible user adapter; invalid/load failures are explicit. |
 | Device/model | Remote service owns them | Local `QwenBackend` owns them | Local capability reporting and strict device errors are required. |
 | Execution | Always requests remote inference | Production by default; synthetic demo requires explicit opt-in | Continue validating the real backend through the complete UI/API path. |
 | Result | Downloads service output | Saves backend PIL output | Current persistence can remain after backend selection is fixed. |
@@ -319,6 +341,30 @@ Phase 3.2 additions to the cumulative files above:
 - `ui/tests/test_backend.py` — added valid multi-upload, atomic rejection, content mismatch, empty/unsupported input, traversal-name confinement, count, and size-limit coverage.
 - `ui/tests/test_frontend.py`, `ui/tests/test_tier5_frontend_stress.py` — updated the DOM/accessibility contract for the new controls.
 - `ui/tests/test_challenger_m2_node.js`, `ui/tests/test_tier5_node_stress.js` — migrated assertions to explicit roles and added upload destination, request JSON, independent limits, and partial-success output tests.
+
+Phase 4 additions to the cumulative files above:
+
+- `requirements.txt` — added the PEFT 0.21.0 runtime dependency required by the Diffusers LoRA loader.
+- `qwen_runner/config.py`, `run.py` — added optional `lora_path`/`lora_scale` configuration, validation, serialization, and `--lora`/`--lora-scale` overrides.
+- `qwen_runner/backend.py` — added local adapter loading, strength activation, active-state verification, unloading, clear load failures, and file-hash/application metadata.
+- `qwen_runner/runner.py`, `ui/runner_bridge.py` — added PEFT environment provenance and durable effective LoRA state, including truthful not-applied metadata in synthetic demo mode.
+- `ui/server.py`, `ui/app.py` — added configurable LoRA storage, discovery, SafeTensors inspection, streamed atomic upload, API path confinement, and validation.
+- `ui/templates/index.html`, `ui/static/js/app.js`, `ui/static/css/style.css` — added the separate adapter catalog, upload/drop control, selector, strength control, active state, client API methods, and responsive styling.
+- `tests/test_core.py`, `tests/test_runtime.py` — added configuration boundaries and a real tiny-Qwen adapter lifecycle/output-effect test.
+- `ui/tests/test_app.py`, `ui/tests/test_backend.py`, `ui/tests/test_frontend.py`, `ui/tests/test_challenger_m2_node.js`, `ui/tests/test_tier5_frontend_stress.py`, `ui/tests/test_tier5_adversarial.py` — added CLI/API/upload/selection coverage and updated DOM/state-machine contracts.
+- `README.md`, `ui/README.md`, `PROJECT.md`, `workflow/PORTING_NOTES.md` — documented supported adapter scope, commands, API endpoints, directory controls, scale semantics, metadata, demo behavior, and limitations.
+
+Phase 5 additions to the cumulative files above:
+
+- `qwen_runner/system.py` — added CPU/core and RAM inventory plus per-GPU free/used/process memory, selected-device memory details, and resilient diagnostics.
+- `qwen_runner/backend.py` — recorded the effective production device and offload mode alongside existing pipeline metadata.
+- `ui/runner_bridge.py`, `ui/server.py` — added truthful per-run active/last model and LoRA state to `/api/system` without implying a persistent resident model.
+- `ui/templates/index.html` — moved device/dtype/offload controls into a dedicated System tab with readiness, CPU/RAM/software, GPU inventory, Apply Configuration, and lifecycle sections.
+- `ui/static/js/app.js` — added dynamic device options, system rendering, compatibility normalization, inventory refresh, explicit next-run application, lifecycle rendering, and `#system` deep-link support.
+- `ui/static/css/style.css` — added GPU memory cards, readiness states, system summary/lifecycle layouts, scrollable tab navigation, and narrow-screen stacking.
+- `tests/test_system.py`, `ui/tests/test_backend.py` — added deterministic GPU-memory inventory, host capacity, API state, and active/effective runtime lifecycle coverage.
+- `ui/tests/test_frontend.py`, `ui/tests/test_tier5_frontend_stress.py`, `ui/tests/test_challenger_m2_node.js` — updated the DOM contract and added dynamic two-GPU selection/application state testing.
+- `README.md`, `ui/README.md`, `PROJECT.md` — documented the System tab, expanded endpoint contract, next-run lifecycle, and authoritative backend device placement.
 
 ## Tests Performed
 
@@ -374,12 +420,29 @@ Phase 3.2 additions to the cumulative files above:
 - Phase 3.2 `.venv/bin/python -m pytest -q tests` — 28 passed plus 5 parameterized subtests in 2.43 seconds.
 - Headless Chrome validation against a temporary local demo server — rendered and visually inspected the live UI at 1440x1000 and 390x844; the second narrow pass confirmed a wrapped header, visible runtime state, and accessible input/upload/role controls.
 - Final Phase 3.2 `.venv/bin/python -m compileall -q qwen_runner ui run.py benchmark.py`, `.venv/bin/python -m pip check`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
+- Phase 4 targeted UI/API/app tests — 6 passed before browser integration, covering upload/discovery, invalid adapters, selection confinement, and `--loras-dir` configuration.
+- Phase 4 `.venv/bin/python -m pytest -q tests` — 30 passed plus 8 parameterized subtests in 2.32 seconds, including real tiny-Qwen LoRA loading, scaling, output effect, hash metadata, unload behavior, and an actionable incompatible-target load failure with adapter cleanup.
+- Phase 4 `node ui/tests/test_challenger_m2_node.js` — 32/32 passed, including catalog discovery, selection, strength display, uploaded-adapter auto-selection, and clearing.
+- Phase 4 `node ui/tests/test_tier5_node_stress.js` — 15/15 passed.
+- Final Phase 4 host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — all 411 passed in 20.34 seconds; only the known Starlette/AnyIO deprecation warnings remain.
+- `.venv/bin/python run.py --dry-run --lora models/loras/example.safetensors --lora-scale 0.5` — passed and serialized the selected path and scale; dry-run intentionally did not check file existence or load the model.
+- Phase 4 live-server render check — the SPA, styles, JavaScript, `/api/loras`, model/input/history APIs, health probe, and runtime probe all loaded successfully in headless Chrome at 1440x1000.
+- Final Phase 4 `.venv/bin/python -m compileall -q qwen_runner ui run.py benchmark.py`, `.venv/bin/python -m pip check`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
+- Phase 5 targeted system/DOM tests — 22 passed, covering CPU readiness, invalid devices, deterministic CUDA memory inventory, every configuration field, the dedicated page, exact unique IDs, labels, tabs, and JS/HTML alignment.
+- Phase 5 `.venv/bin/python -m pytest -q tests` — 31 passed plus 8 parameterized subtests in 2.43 seconds.
+- Phase 5 `node ui/tests/test_challenger_m2_node.js` — 33/33 passed, including two dynamically discovered GPUs, host/software rendering, and applying `cuda:1` with float16/sequential offload into submitted runtime state.
+- Phase 5 `node ui/tests/test_tier5_node_stress.js` — 15/15 passed.
+- Phase 5 host GPU validation — both RTX A6000s completed a small BF16 allocation after explicit device selection and returned production-ready reports with live free/used memory.
+- Final Phase 5 host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — all 413 passed in 21.09 seconds; only the known Starlette/AnyIO deprecation warnings remain.
+- Phase 5 headless Chrome validation — the live `#system` view rendered at 1440x1000 with both GPU cards, readiness, CPU/RAM/software data, selection, Apply Configuration, and lifecycle content; the 390x844 stacked layout retained scroll access through the input panel to configuration.
+- Final Phase 5 `.venv/bin/python -m compileall -q qwen_runner ui run.py benchmark.py`, `.venv/bin/python -m pip check`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
 
 ## Known Issues
 
 - Real production execution is proven through the API, SSE, history, persistence, and file-serving path. A real browser automation pass with full model inference remains deferred to final end-to-end stabilization.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
-- Multi-reference transport is proven, but adherence is weak in the tested hairstyle transfer. Multiple process inputs and separate references are validated through the core, synthetic API/SSE path, browser state machine, and live responsive rendering; a real full-model multi-input batch initiated through browser controls remains for final end-to-end stabilization. LoRA application remains unimplemented. Selected-GPU execution is proven on both `cuda:0` and `cuda:1`.
+- Multi-reference transport is proven, but adherence is weak in the tested hairstyle transfer. Multiple process inputs and separate references are validated through the core, synthetic API/SSE path, browser state machine, and live responsive rendering; a real full-model multi-input batch initiated through browser controls remains for final end-to-end stabilization. LoRA application is proven with a real tiny Qwen transformer, while full pretrained inference with a compatible user LoRA remains in the final validation matrix. Selected-GPU execution is proven on both `cuda:0` and `cuda:1`.
+- The System page reports memory at probe time; values can change immediately when other processes allocate VRAM. Applying configuration affects the next submitted job because the single-worker runner does not mutate an active pipeline.
 - `resolution=0` intentionally preserves native reference sizes. Very large references can consume nearly all GPU memory, take several minutes, and produce unusable output when the output canvas is much smaller; the UI needs a stronger warning or safer production default during the input/reference redesign.
 - Starlette 1.6 warns that its HTTPX fallback is deprecated. Installing `httpx2` 2.13.1 made TestClient unusable in this environment, so it was removed; current tests pass with HTTPX 0.28.1 when host IPC/loopback is available.
 - The user-provided primary checkout path was absent; work is occurring in the actual Git checkout at `/mnt/lab/farzine/qwen_workflow_runner`.
@@ -390,13 +453,13 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 4 as a complete LoRA vertical slice:
+Implement Phase 6 as a focused production-workflow UI/UX slice:
 
-1. Inspect the installed Diffusers Qwen LoRA loader methods and current model lifecycle to define supported file formats, adapter naming, loading, scaling, replacement/unload, and offload/device behavior from actual APIs.
-2. Add configuration fields and validation for an optional selected LoRA plus strength, preserving a clear no-LoRA default and recording the effective adapter state in durable run metadata.
-3. Add confined LoRA directory discovery and validated upload endpoints with extension/size/path protections and actionable errors.
-4. Apply the selected LoRA in `QwenBackend.load`, prove it is actually activated, and ensure repeated jobs/model reuse do not accidentally retain a prior adapter.
-5. Add browser discovery/upload/selection/active-state controls, then test existing, uploaded, invalid, absent, and load-failure cases without beginning the full system-page redesign.
+1. Audit the live desktop and narrow layouts, navigation depth, validation banner behavior, scroll/focus order, empty/loading/error states, long filenames, and large input/reference/LoRA lists using the existing screenshots and test harnesses.
+2. Define a clearer workflow hierarchy across Inputs, References, Generation, Model/LoRA, System, Run, and Results without changing the completed backend contracts.
+3. Improve responsive navigation so narrow users can reach configuration/results quickly instead of scrolling through the full input panel; preserve accessible labels, keyboard operation, and visible status.
+4. Refine loading/progress, success/error, empty, truncation, and many-item presentation with small CSS/markup/controller changes rather than a wholesale framework rewrite.
+5. Validate desktop and narrow viewports, keyboard/tab behavior, long names, maximum image lists, system/model states, and the complete 413-test API/UI baseline before moving to parameter help.
 
 ## Resume Instructions
 

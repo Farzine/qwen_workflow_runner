@@ -222,6 +222,9 @@
         <button class="tab-btn" id="tab-btn-runtime" role="tab" aria-selected="false" aria-controls="tab-pane-runtime">
           Runtime
         </button>
+        <button class="tab-btn" id="tab-btn-system" role="tab" aria-selected="false" aria-controls="tab-pane-system">
+          System
+        </button>
         <button class="tab-btn" id="tab-btn-model" role="tab" aria-selected="false" aria-controls="tab-pane-model">
           Model &amp; Weights
         </button>
@@ -455,39 +458,7 @@
         <!-- ------------------------------------------------------------------ -->
         <div class="tab-pane" id="tab-pane-runtime" role="tabpanel" aria-labelledby="tab-btn-runtime">
           
-          <div class="form-grid-2">
-            <!-- Hardware Device -->
-            <div class="form-group">
-              <label for="param-device" class="form-label">Execution Device</label>
-              <select id="param-device" class="form-control">
-                <option value="cuda:0" selected>cuda:0 (GPU Acceleration)</option>
-                <option value="cpu">cpu (Float32, No Offload)</option>
-                <option value="mps">mps (Apple Silicon)</option>
-              </select>
-              <span class="field-hint">CPU requires float32. MPS requires offload=none.</span>
-            </div>
-
-            <!-- Precision Dtype -->
-            <div class="form-group">
-              <label for="param-dtype" class="form-label">Precision Dtype</label>
-              <select id="param-dtype" class="form-control">
-                <option value="bfloat16" selected>bfloat16 (Optimal for Ampere+)</option>
-                <option value="float16">float16</option>
-                <option value="float32">float32 (CPU Required)</option>
-              </select>
-            </div>
-
-            <!-- Offload Mode -->
-            <div class="form-group">
-              <label for="param-offload" class="form-label">Model Offload Mode</label>
-              <select id="param-offload" class="form-control">
-                <option value="model" selected>model (Layer-wise VRAM balance)</option>
-                <option value="none">none (Full VRAM footprint)</option>
-                <option value="sequential">sequential (Max memory saving)</option>
-              </select>
-            </div>
-
-            <!-- VAE Tiling -->
+          <div class="form-card">
             <div class="form-group flex-center-v">
               <div class="checkbox-row mt-md">
                 <label class="toggle-switch">
@@ -550,7 +521,101 @@
         </div>
 
         <!-- ------------------------------------------------------------------ -->
-        <!-- TAB 4: MODEL SELECTION & DOWNLOAD (R3)                             -->
+        <!-- TAB 4: SYSTEM & DEVICE CONFIGURATION                              -->
+        <!-- ------------------------------------------------------------------ -->
+        <div class="tab-pane" id="tab-pane-system" role="tabpanel" aria-labelledby="tab-btn-system">
+          <div class="system-page-header">
+            <div>
+              <h3 class="card-title">System Configuration</h3>
+              <p class="field-hint">Choose the device used by the next production run and inspect live host capacity.</p>
+            </div>
+            <button type="button" id="btn-refresh-system" class="btn btn-secondary btn-sm">Refresh inventory</button>
+          </div>
+
+          <div id="system-readiness-card" class="system-readiness-card" role="status" aria-live="polite">
+            <strong id="system-readiness-status">Checking runtime…</strong>
+            <span id="system-readiness-message">Waiting for the server capability report.</span>
+          </div>
+
+          <div class="form-card">
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label for="param-device" class="form-label">Execution Device</label>
+                <select id="param-device" class="form-control">
+                  <option value="cuda:0" selected>cuda:0 (Detecting…)</option>
+                  <option value="cpu">CPU</option>
+                </select>
+                <span class="field-hint">The selected device is passed directly to the production backend.</span>
+              </div>
+              <div class="form-group">
+                <label for="param-dtype" class="form-label">Precision Dtype</label>
+                <select id="param-dtype" class="form-control">
+                  <option value="bfloat16" selected>bfloat16 (Ampere+)</option>
+                  <option value="float16">float16</option>
+                  <option value="float32">float32 (CPU required)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="param-offload" class="form-label">Model Offload Mode</label>
+                <select id="param-offload" class="form-control">
+                  <option value="model" selected>model (balanced)</option>
+                  <option value="none">none (full device memory)</option>
+                  <option value="sequential">sequential (lowest VRAM)</option>
+                </select>
+              </div>
+            </div>
+            <div class="system-apply-row">
+              <span class="field-hint">Changes apply to the next submitted run. An active job keeps its original configuration.</span>
+              <button type="button" id="btn-apply-system" class="btn btn-primary btn-sm">Apply Configuration</button>
+            </div>
+          </div>
+
+          <div class="system-summary-grid">
+            <article class="system-stat-card">
+              <span class="system-stat-label">CPU</span>
+              <strong id="system-cpu-name">Detecting…</strong>
+              <span id="system-cpu-cores" class="system-stat-detail">—</span>
+            </article>
+            <article class="system-stat-card">
+              <span class="system-stat-label">System RAM</span>
+              <strong id="system-ram-total">—</strong>
+              <span id="system-ram-available" class="system-stat-detail">— available</span>
+            </article>
+            <article class="system-stat-card">
+              <span class="system-stat-label">PyTorch / CUDA</span>
+              <strong id="system-torch-version">—</strong>
+              <span id="system-cuda-version" class="system-stat-detail">—</span>
+            </article>
+            <article class="system-stat-card">
+              <span class="system-stat-label">Python / Platform</span>
+              <strong id="system-python-version">—</strong>
+              <span id="system-platform" class="system-stat-detail">—</span>
+            </article>
+          </div>
+
+          <div class="form-card">
+            <div class="card-title-row">
+              <h3 class="card-title">Available GPUs</h3>
+              <span id="system-gpu-count" class="badge badge-muted">0 detected</span>
+            </div>
+            <div id="system-device-list" class="system-device-list">
+              <div class="empty-state-text">GPU inventory is loading.</div>
+            </div>
+          </div>
+
+          <div class="form-card">
+            <h3 class="card-title">Model Lifecycle</h3>
+            <div class="system-lifecycle-grid">
+              <div><span class="system-stat-label">Backend mode</span><strong id="system-backend-mode">Production</strong></div>
+              <div><span class="system-stat-label">Model state</span><strong id="system-model-state">No active run</strong></div>
+              <div><span class="system-stat-label">LoRA state</span><strong id="system-lora-state">No active LoRA</strong></div>
+            </div>
+            <p id="system-lifecycle-message" class="field-hint mt-sm">Models are loaded per run.</p>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------ -->
+        <!-- TAB 5: MODEL SELECTION & DOWNLOAD (R3)                             -->
         <!-- ------------------------------------------------------------------ -->
         <div class="tab-pane" id="tab-pane-model" role="tabpanel" aria-labelledby="tab-btn-model">
           
@@ -661,6 +726,49 @@
               </div>
               <div id="model-upload-error" class="text-danger mt-xs hidden"></div>
             </div>
+          </div>
+
+          <!-- LoRA Adapter Selection and Upload -->
+          <div class="form-card mb-md lora-manager-card">
+            <div class="card-title-row">
+              <div>
+                <h3 class="card-title">4. LoRA Adapter</h3>
+                <p class="field-hint">Select one validated transformer adapter. The selected adapter is loaded for production inference.</p>
+              </div>
+              <button type="button" id="btn-refresh-loras" class="btn btn-secondary btn-sm">Refresh</button>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label for="param-model-lora-path" class="form-label">Available LoRA</label>
+                <select id="param-model-lora-path" class="form-control">
+                  <option value="">No LoRA</option>
+                </select>
+                <span class="field-hint">Invalid or incompatible SafeTensors files remain visible with a diagnostic and cannot be selected.</span>
+              </div>
+              <div class="form-group">
+                <label for="param-model-lora-scale" class="form-label">LoRA Strength</label>
+                <input type="number" id="param-model-lora-scale" class="form-control" min="0" max="2" step="0.05" value="1.0">
+                <span class="field-hint">0 disables its effect, 1 uses the trained strength, and values up to 2 amplify it.</span>
+              </div>
+            </div>
+
+            <div class="lora-state-row">
+              <p id="lora-active-status" class="lora-active-status" role="status">No LoRA selected. Production inference will use the base model.</p>
+              <button type="button" id="btn-clear-lora" class="btn btn-ghost btn-sm">Clear selection</button>
+            </div>
+
+            <div class="dropzone lora-dropzone" id="lora-upload-dropzone" role="button" tabindex="0" aria-label="Upload LoRA SafeTensors file">
+              <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path>
+                <path d="M12 12v9"></path>
+                <path d="m16 16-4-4-4 4"></path>
+              </svg>
+              <div class="dropzone-text"><strong>Click to choose</strong> or drag &amp; drop a LoRA file here</div>
+              <span class="dropzone-hint">Only validated .safetensors adapters are accepted</span>
+              <input type="file" id="lora-file-input" class="hidden-file-input" accept=".safetensors" aria-label="Choose LoRA SafeTensors file">
+            </div>
+            <p id="lora-upload-status" class="lora-upload-status" role="status" aria-live="polite"></p>
           </div>
 
           <!-- Advanced Model Configuration Fields -->

@@ -8,7 +8,7 @@ Comprehensive white-box adversarial verification covering:
    /api/models/download, and /api/outputs/
 4. Model upload edge cases (0-byte chunks, oversized chunks, out-of-order chunks,
    non-allowed file extensions, path traversal upload_id)
-5. Extreme boundary values for all 38 parameters
+5. Extreme boundary values for all configuration parameters
 6. Thread pool lifecycle and background runner exception resilience
 7. App launcher CLI and port probe boundary stress
 """
@@ -608,20 +608,20 @@ class TestTier5ModelUploadBoundaries(BaseTier5AdversarialTestCase):
 
 
 # ============================================================================
-# SECTION 5: EXTREME BOUNDARY VALUES FOR ALL 38 PARAMETERS
+# SECTION 5: EXTREME BOUNDARY VALUES FOR CONFIGURATION PARAMETERS
 # ============================================================================
 
 class TestTier5All38ParameterBoundaries(BaseTier5AdversarialTestCase):
-    """Exhaustive boundary testing across all 38 Model, Generation, and Runtime parameters."""
+    """Boundary testing across Model, Generation, and Runtime parameters."""
 
-    def test_model_config_9_parameters_boundaries(self):
+    def test_model_config_parameters_boundaries(self):
         """Validate ModelConfig fields: source, revision, filename, gguf_quantization, etc."""
         # 1. source: valid HF URL vs local folder vs arbitrary string
         cfg_dict = {"model": {"source": "https://huggingface.co/Qwen/Qwen-Image-2.1"}}
         r = self.client.post("/api/config/validate", json=cfg_dict)
         self.assertEqual(r.status_code, 200)
 
-        # 2-9. Other ModelConfig fields
+        # Other ModelConfig fields
         model_payload = {
             "model": {
                 "source": "Qwen/Qwen-Image-2.1",

@@ -51,6 +51,8 @@ def main():
     image_group.add_argument('--input-images', nargs='+', help='Ordered process inputs; creates one inference record per input')
     parser.add_argument('--reference-images', nargs='*', help='Shared ordered references used with every --input-images item')
     parser.add_argument('--filename', help='Exact GGUF or floating-point transformer filename')
+    parser.add_argument('--lora', help='Local Qwen Image LoRA .safetensors file')
+    parser.add_argument('--lora-scale', type=float, help='LoRA strength from 0 to 2')
     parser.add_argument('--offline', action='store_true')
     parser.add_argument('--dry-run', action='store_true', help='Validate settings without importing torch or downloading models')
     parser.add_argument('--check', action='store_true', help='Check installed runtime capabilities without downloading models')
@@ -63,6 +65,8 @@ def main():
             parser.error('--reference-images requires --input-images')
         CONFIG.generation.reference_images = args.reference_images
     if args.filename: CONFIG.model.filename = args.filename
+    if args.lora: CONFIG.model.lora_path = args.lora
+    if args.lora_scale is not None: CONFIG.model.lora_scale = args.lora_scale
     if args.offline: CONFIG.model.offline = True
     if args.dry_run:
         CONFIG.validate(check_images=False)
@@ -70,6 +74,7 @@ def main():
         print('Configuration valid. Input files, model compatibility and hardware were not checked.')
     elif args.check:
         import torch, diffusers, transformers
+        from peft import LoraConfig
         required = ['QwenImage21Pipeline', 'QwenImage21Transformer2DModel', 'AutoencoderKLQwenImage21']
         missing = [name for name in required if not hasattr(diffusers, name)]
         if not hasattr(transformers, 'Qwen3VLForConditionalGeneration'): missing.append('Qwen3VLForConditionalGeneration')
@@ -77,7 +82,7 @@ def main():
         from qwen_runner.pipeline import WorkflowQwenImage21Pipeline
         from qwen_runner.runner import environment
         print(json.dumps(environment(torch, CONFIG.runtime.device), indent=2))
-        print('Runtime classes available. No model inference was performed.')
+        print(f'Runtime classes available, including PEFT {LoraConfig.__name__}. No model inference was performed.')
     else:
         from qwen_runner.runner import run
         run(CONFIG)
