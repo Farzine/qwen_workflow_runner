@@ -395,6 +395,57 @@ class TestInteractiveComponentIDs(unittest.TestCase):
         self.assertNotIn("position: absolute", declarations)
         self.assertNotIn("position: fixed", declarations)
 
+    def test_parameter_help_covers_every_user_facing_configuration_control(self):
+        """Implementation help is complete, accessible, and attached without adding static ID debt."""
+        expected = {
+            "param-prompt", "param-negative-prompt", "param-steps", "param-cfg",
+            "param-strength", "param-shift", "param-seed", "param-increment-seed",
+            "param-resolution", "param-custom-size", "param-width", "param-height",
+            "param-sampler", "param-scheduler", "param-batch-size", "param-reference-mode",
+            "param-kv-cache", "param-kv-cache-device", "param-kv-cache-reserve-gib",
+            "param-vae-tiling", "param-repeats", "param-warmup-runs",
+            "param-memory-poll-seconds", "param-output-dir", "param-filename-prefix",
+            "param-save-comparison", "param-device", "param-dtype", "param-offload",
+            "param-model-source", "param-model-filename", "param-model-revision",
+            "param-model-lora-path", "param-model-lora-scale", "param-base-model",
+            "param-gguf-quantization", "param-model-cache-dir", "param-base-revision",
+            "param-text-encoder-source", "param-model-offline", "toggle-demo-mode",
+        }
+        help_block = self.js.split("const PARAMETER_HELP = Object.freeze({", 1)[1].split("\n  });", 1)[0]
+        actual = set(re.findall(r'^    "([^"]+)": \{$', help_block, re.MULTILINE))
+        self.assertEqual(actual, expected)
+        for control_id in expected:
+            self.assertIn(f'id="{control_id}"', self.html, f"Help targets missing control {control_id}")
+
+        self.assertIn('class="parameter-help-popover hidden" role="tooltip" aria-hidden="true"', self.html)
+        self.assertIn('"aria-controls": "parameter-help-popover"', self.js)
+        self.assertIn('"aria-describedby": "parameter-help-popover"', self.js)
+        self.assertIn('button.addEventListener("focus"', self.js)
+        self.assertIn('event.key === "Escape"', self.js)
+        self.assertIn("ParameterHelp.init();", self.js)
+        self.assertIn(".parameter-help-button:focus-visible", self.css)
+        self.assertIn(".parameter-help-popover", self.css)
+
+    def test_parameter_help_documents_verified_edge_cases(self):
+        """Help text captures implementation details that materially affect correctness and resources."""
+        required_phrases = [
+            "CFG is not exactly 1",
+            "does not blend or preserve input pixels directly",
+            "Steps divided by strength",
+            "Large references can exhaust VRAM",
+            "spills it to CPU",
+            "Warmups still write JSON and image files",
+            "process inputs within a repeat share it",
+            "Requires float32 with no offload",
+            "selected models and LoRAs are not applied",
+        ]
+        for phrase in required_phrases:
+            self.assertIn(phrase, self.js)
+
+        self.assertIn("CFG &ne; 1 only", self.html)
+        self.assertIn("0 keeps native conditioning sizes and can exhaust VRAM", self.html)
+        self.assertIn("float32 (highest memory)", self.html)
+
     def test_all_js_get_element_by_id_calls_match_html(self):
         """Every element ID queried in app.js exists in index.html."""
         html_ids = set(re.findall(r'id=[\'"]([^\s\'"]+)[\'"]', self.html))

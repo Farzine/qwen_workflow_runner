@@ -420,6 +420,353 @@
     },
   };
 
+
+  // ==========================================================================
+  // 5. IMPLEMENTATION-BACKED PARAMETER HELP
+  // ==========================================================================
+
+  const PARAMETER_HELP = Object.freeze({
+    "param-prompt": {
+      title: "Positive Prompt",
+      summary: "Text instructions and image tokens are encoded together to condition generation.",
+      details: [["Use", "<image1> is the current process input; <image2> onward follow the ordered reference list."], ["Trade-off", "Specific instructions improve control, while conflicting or very long instructions can weaken adherence."]],
+    },
+    "param-negative-prompt": {
+      title: "Negative Prompt",
+      summary: "Describes content to suppress through a second conditioning pass.",
+      details: [["Activation", "This implementation uses it only when the text is non-empty and CFG is not exactly 1."], ["Trade-off", "It adds another model prediction per denoising step and therefore increases inference work."]],
+    },
+    "param-steps": {
+      title: "Denoising Steps",
+      summary: "Number of Euler updates applied to the generated latent.",
+      details: [["Higher", "Usually allows more refinement but increases inference time almost linearly; gains eventually diminish."], ["Lower", "Runs faster but may leave composition or fine detail underdeveloped."], ["Range", "Validated from 1 to 10,000; default 25. Steps divided by strength must remain at most 10,000."]],
+    },
+    "param-cfg": {
+      title: "CFG Scale",
+      summary: "Scales the difference between positive and negative conditioning predictions.",
+      details: [["Higher", "Strengthens that guidance but can overconstrain the result or amplify artifacts."], ["Lower", "Reduces guidance; values below 1 invert or weaken the positive-versus-negative difference."], ["Activation", "CFG 1 disables the negative pass. Other values require a non-empty negative prompt to have an effect."]],
+    },
+    "param-strength": {
+      title: "Denoise Strength",
+      summary: "Chooses the tail of the flow schedule used to denoise an empty generated latent.",
+      details: [["Higher", "Starts from a noisier point and permits broader generation."], ["Lower", "Starts later in the schedule and generally limits variation, but it does not blend or preserve input pixels directly."], ["Range", "Greater than 0 through 1. Steps divided by strength must remain at most 10,000."]],
+    },
+    "param-shift": {
+      title: "Flow Shift",
+      summary: "Transforms every sigma in the flow-matching schedule.",
+      details: [["Higher", "Raises intermediate sigma values, retaining stronger noise later in denoising."], ["Lower", "Reduces intermediate sigma values and moves the trajectory toward lower-noise states sooner."], ["Range", "Validated from -10 to 10; the workflow default is 0.69 and changes are model-sensitive."]],
+    },
+    "param-seed": {
+      title: "Seed",
+      summary: "Initializes the deterministic CPU float32 noise used for generation.",
+      details: [["Same value", "Reproduces the same starting noise when the model, inputs, parameters, and runtime are unchanged."], ["Different value", "Changes the generated composition and details."], ["Range", "Unsigned 64-bit integer from 0 through 18,446,744,073,709,551,615."]],
+    },
+    "param-increment-seed": {
+      title: "Increment Seed",
+      summary: "Advances the configured seed once per measured repeat.",
+      details: [["Enabled", "Repeat 1 uses the base seed, repeat 2 uses seed + 1, wrapping at 64 bits."], ["Input batches", "All process inputs within the same repeat share that repeat's seed."]],
+    },
+    "param-resolution": {
+      title: "Reference Resolution",
+      summary: "Resizes every conditioning image to approximately this square-pixel budget while preserving aspect ratio.",
+      details: [["Higher", "Retains more conditioning detail but increases VAE, attention, memory, and processing cost."], ["Lower", "Reduces memory and latency but may lose fine reference detail."], ["Native (0)", "Keeps original image dimensions rounded to multiples of 32. Large references can exhaust VRAM or degrade results; use a bounded preset unless native size is intentional."]],
+    },
+    "param-custom-size": {
+      title: "Custom Output Canvas",
+      summary: "Overrides the generated canvas dimensions instead of using the first process input's resized dimensions.",
+      details: [["Enabled", "Width and height below control only the generated canvas; reference resizing still follows Reference Resolution."], ["Trade-off", "Larger canvases increase latent and attention memory sharply and take longer to generate."]],
+    },
+    "param-width": {
+      title: "Output Width",
+      summary: "Generated canvas width when Custom Output Canvas is enabled.",
+      details: [["Higher", "Produces more horizontal pixels at greater memory and compute cost."], ["Lower", "Uses less memory and runs faster with less spatial detail."], ["Range", "Positive multiple of 32, up to the UI limit of 4096."]],
+    },
+    "param-height": {
+      title: "Output Height",
+      summary: "Generated canvas height when Custom Output Canvas is enabled.",
+      details: [["Higher", "Produces more vertical pixels at greater memory and compute cost."], ["Lower", "Uses less memory and runs faster with less spatial detail."], ["Range", "Positive multiple of 32, up to the UI limit of 4096."]],
+    },
+    "param-sampler": {
+      title: "Sampler",
+      summary: "Numerical method used for each denoising update.",
+      details: [["Supported", "Euler is the only implemented sampler and unsupported values are rejected rather than ignored."], ["Behavior", "It consumes the explicit sigma schedule produced by Strength, Shift, and Scheduler."]],
+    },
+    "param-scheduler": {
+      title: "Sigma Scheduler",
+      summary: "Controls how denoising sigma values are spaced before the flow shift is applied.",
+      details: [["Simple", "Samples the 10,000-point Comfy-compatible training schedule by index."], ["Normal", "Interpolates evenly through the shifted sigma range."], ["Trade-off", "The schedules can change texture and convergence; neither adds steps or reduces the configured step count."]],
+    },
+    "param-batch-size": {
+      title: "Batch Size",
+      summary: "Number of output images generated together for each process input and repeat.",
+      details: [["Higher", "Produces more alternatives per model call but increases latent and model memory, often substantially."], ["Lower", "Uses less memory; batch size 1 is the safest production default."], ["Interaction", "Total outputs are process inputs × repeats × batch size, excluding warmups from the completion gallery."]],
+    },
+    "param-reference-mode": {
+      title: "Reference Color Mode",
+      summary: "Pillow conversion applied to every process and reference image before model preprocessing.",
+      details: [["RGB", "Matches the connected Comfy LoadImage IMAGE output and discards alpha."], ["RGBA", "Preserves an alpha channel during loading; downstream processor and VAE behavior determines how it contributes."], ["Trade-off", "RGB is the verified default and avoids unexpected transparency handling."]],
+    },
+    "param-kv-cache": {
+      title: "Transformer KV Cache",
+      summary: "Caches the unchanged conditioning prefix across denoising steps without quantizing it.",
+      details: [["Enabled", "Can reduce repeated transformer work but consumes GPU or system memory."], ["Disabled", "Recomputes the prefix every step, reducing cache storage at the cost of longer inference."], ["Scope", "The cache is lossless and is rebuilt for each generation call."]],
+    },
+    "param-kv-cache-device": {
+      title: "KV Cache Device",
+      summary: "Chooses where lossless transformer prefix keys and values are stored.",
+      details: [["Auto", "Keeps a layer on CUDA only when enough free memory remains after the configured reserve and safety allowance; otherwise spills it to CPU."], ["GPU", "Always stores the cache on the compute device for speed and higher VRAM use."], ["CPU", "Stores it in system RAM and transfers it back synchronously, lowering VRAM use but increasing latency."]],
+    },
+    "param-kv-cache-reserve-gib": {
+      title: "KV Cache VRAM Reserve",
+      summary: "CUDA headroom preserved by the automatic KV-cache placement policy.",
+      details: [["Higher", "Causes auto mode to spill cache layers to CPU sooner, reducing out-of-memory risk but slowing transfers."], ["Lower", "Keeps more cache layers on GPU for speed with less safety headroom."], ["Scope", "Used only by Auto on CUDA; default 1 GiB."]],
+    },
+    "param-vae-tiling": {
+      title: "VAE Tiling",
+      summary: "Enables tiled VAE decoding instead of decoding the complete latent at once.",
+      details: [["Enabled", "Reduces peak decode memory and can prevent out-of-memory failures on large canvases."], ["Trade-off", "May decode more slowly and can introduce tile-boundary differences."], ["Use", "Enable when VAE decoding fails or high-resolution output is close to the memory limit."]],
+    },
+    "param-repeats": {
+      title: "Measured Repeats",
+      summary: "Runs the complete input batch this many times after warmups while reusing one loaded model.",
+      details: [["Higher", "Creates more measured samples and durable records but multiplies total runtime and output storage."], ["Lower", "One repeat is appropriate for normal generation."], ["Interaction", "Increment Seed changes the seed between repeats; process inputs within a repeat share it."]],
+    },
+    "param-warmup-runs": {
+      title: "Warmup Runs",
+      summary: "Runs the complete input batch before measured repeats to warm kernels and caches.",
+      details: [["Higher", "Can make later benchmark timings more representative but adds full inference time."], ["Artifacts", "Warmups still write JSON and image files, although the completion gallery excludes their outputs."], ["Default", "Zero avoids extra generation work for interactive use."]],
+    },
+    "param-memory-poll-seconds": {
+      title: "Memory Poll Interval",
+      summary: "Sampling interval used by the inference memory monitor.",
+      details: [["Lower", "Samples peaks more frequently but increases monitoring overhead."], ["Higher", "Reduces polling overhead but may miss brief allocation peaks."], ["Range", "0.001 to 1 second; default 0.02 seconds."]],
+    },
+    "param-output-dir": {
+      title: "Output Directory",
+      summary: "Directory used for generated PNGs, comparisons, and durable JSON run records.",
+      details: [["Web safety", "The API accepts locations only within the project, configured outputs root, or system temporary directory."], ["Behavior", "Relative paths resolve from the project process working directory and are created when needed."]],
+    },
+    "param-filename-prefix": {
+      title: "Filename Prefix",
+      summary: "Prefix placed before generated run IDs and output indexes.",
+      details: [["Allowed", "A non-empty filename component without forward or backward slashes."], ["Behavior", "Run IDs and numeric image indexes are appended automatically to avoid collisions."]],
+    },
+    "param-save-comparison": {
+      title: "Comparison Image",
+      summary: "Saves a side-by-side PNG of the process input and first generated image for each input attempt.",
+      details: [["Enabled", "Adds a review artifact and extra image resize/write work."], ["Disabled", "Generated outputs and JSON records are still saved normally."]],
+    },
+    "param-device": {
+      title: "Execution Device",
+      summary: "Exact CPU, MPS, or CUDA device used for model placement, metrics, and inference.",
+      details: [["CUDA", "Uses the selected GPU index; available memory and readiness are shown on this page."], ["CPU", "Requires float32 with no offload and is expected to be very slow."], ["Lifecycle", "Changes apply to the next job because each job builds its own backend."]],
+    },
+    "param-dtype": {
+      title: "Model Precision",
+      summary: "Torch dtype used when loading model components and running inference.",
+      details: [["bfloat16", "Verified default on the host's Ampere GPUs; keeps a wider exponent range than float16."], ["float16", "Similar storage with different numeric range and device-dependent stability."], ["float32", "Uses roughly twice the model memory; required for CPU execution."]],
+    },
+    "param-offload": {
+      title: "Model Offload Mode",
+      summary: "Controls how model components move between CPU memory and the selected accelerator.",
+      details: [["None", "Keeps the full pipeline on the selected device for speed and highest accelerator-memory use."], ["Model", "Moves whole components as needed for a balance of speed and memory."], ["Sequential", "Offloads more granularly for the lowest accelerator-memory use and highest transfer overhead."]],
+    },
+    "param-model-source": {
+      title: "Primary Model Source",
+      summary: "Hugging Face repository, local Diffusers directory, or supported single transformer file to resolve.",
+      details: [["Diffusers", "A complete QwenImage21Pipeline layout can load directly."], ["Single file", "GGUF or floating-point SafeTensors uses Base Model for companion tokenizer, encoder, scheduler, and VAE components."], ["Compatibility", "Older Qwen Image/Edit pipeline classes and Comfy int8_convrot weights are intentionally rejected."]],
+    },
+    "param-model-filename": {
+      title: "Specific Model Filename",
+      summary: "Selects one file from a model repository instead of resolving a complete Diffusers directory.",
+      details: [["Use", "Provide the exact GGUF or floating-point SafeTensors filename when the repository contains multiple weights."], ["Blank", "The resolver uses the repository layout or the configured GGUF quantization preference."]],
+    },
+    "param-model-revision": {
+      title: "Model Revision",
+      summary: "Branch, tag, or commit used when resolving the primary model source.",
+      details: [["Pinned commit", "Improves reproducibility and prevents upstream changes from altering later runs."], ["Branch", "Tracks updates and may download different files over time."], ["Offline", "The requested revision must already exist in the local cache."]],
+    },
+    "param-model-lora-path": {
+      title: "LoRA Adapter",
+      summary: "Optional local Qwen Image transformer adapter loaded for production inference.",
+      details: [["Selected", "The adapter is loaded unfused, activated under one fixed name, and recorded with its SHA-256."], ["No LoRA", "Uses only the base transformer."], ["Compatibility", "Upload validation checks tensor pairs; Diffusers performs the authoritative architecture and shape check during loading."]],
+    },
+    "param-model-lora-scale": {
+      title: "LoRA Strength",
+      summary: "Weight passed to Diffusers when activating the selected adapter.",
+      details: [["Higher", "Amplifies the learned adapter contribution and may exaggerate its style or produce artifacts."], ["Lower", "Reduces the adapter contribution; 0 effectively disables its effect while keeping the selection."], ["Range", "Validated from 0 through 2; 1 uses the adapter's trained scale."]],
+    },
+    "param-base-model": {
+      title: "Companion Base Model",
+      summary: "Complete Qwen Image 2.1 model used to supply components missing from a single transformer file.",
+      details: [["Used for", "GGUF and single-file SafeTensors sources need its model index, VAE, scheduler, processor, and usually text encoder."], ["Ignored for", "A complete primary Diffusers directory already contains its companion components."]],
+    },
+    "param-gguf-quantization": {
+      title: "GGUF Quantization Preference",
+      summary: "Filename preference used when resolving a GGUF repository without an exact filename.",
+      details: [["Lower-bit variants", "Usually reduce storage and model memory with potential quality or compatibility trade-offs."], ["Selection", "Use the variant token present in the desired repository filename, such as Q4_K_M."]],
+    },
+    "param-model-cache-dir": {
+      title: "Model Cache Directory",
+      summary: "Local root used for downloaded model snapshots, manifests, and resolution.",
+      details: [["Local path", "Changing it can make existing cached weights undiscoverable until copied or downloaded again."], ["Storage", "Full Qwen Image 2.1 snapshots are large; ensure the target filesystem has adequate free space."]],
+    },
+    "param-base-revision": {
+      title: "Companion Model Revision",
+      summary: "Optional branch, tag, or commit for the companion Base Model.",
+      details: [["Use", "Pin it when a single-file transformer must be paired with reproducible companion components."], ["Blank", "Uses the model resolver's default revision."]],
+    },
+    "param-text-encoder-source": {
+      title: "Text Encoder Override",
+      summary: "Optional Diffusers-layout source that replaces the companion model's text encoder and processor.",
+      details: [["Expected layout", "Must provide compatible text_encoder and processor subdirectories."], ["Trade-off", "An incompatible override fails model loading; leave blank to use the verified companion components."]],
+    },
+    "param-model-offline": {
+      title: "Offline Mode",
+      summary: "Restricts model resolution to local files and cached snapshots.",
+      details: [["Enabled", "Prevents Hub downloads and fails clearly when a requested model or revision is absent."], ["Disabled", "Allows the model store to retrieve missing repository files when network access is available."]],
+    },
+    "toggle-demo-mode": {
+      title: "Synthetic Demo Mode",
+      summary: "Runs a fast input-derived preview backend instead of loading or executing Qwen Image 2.1.",
+      details: [["Enabled", "Resizes and blends the first input with overlays for UI testing; selected models and LoRAs are not applied."], ["Disabled", "Uses the production Qwen backend and reports setup or inference failures directly."], ["Caution", "Demo output can resemble the input and must not be used to judge model transformation quality."]],
+    },
+  });
+
+  const ParameterHelp = {
+    popover: null,
+    title: null,
+    summary: null,
+    details: null,
+    activeButton: null,
+    closeTimer: null,
+
+    init() {
+      this.popover = document.querySelector(".parameter-help-popover");
+      if (!this.popover) return;
+      this.popover.id = "parameter-help-popover";
+      this.title = this.popover.querySelector(".parameter-help-title");
+      this.summary = this.popover.querySelector(".parameter-help-summary");
+      this.details = this.popover.querySelector(".parameter-help-details");
+
+      for (const [controlId, help] of Object.entries(PARAMETER_HELP)) {
+        const control = document.getElementById(controlId);
+        if (!control) continue;
+        const label = document.querySelector(`label[for="${controlId}"]`);
+        let anchor = label;
+        if (!anchor && typeof control.closest === "function") {
+          const row = control.closest(".checkbox-row");
+          anchor = row && row.querySelector(".toggle-label");
+        }
+        if (!anchor || !anchor.parentNode) continue;
+
+        const button = Utils.el(
+          "button",
+          {
+            type: "button",
+            class: "parameter-help-button",
+            dataset: { helpFor: controlId },
+            attrs: {
+              "aria-label": `Show help for ${help.title}`,
+              "aria-controls": "parameter-help-popover",
+              "aria-describedby": "parameter-help-popover",
+              "aria-expanded": "false",
+            },
+          },
+          Utils.el("span", { attrs: { "aria-hidden": "true" } }, "i")
+        );
+        anchor.parentNode.insertBefore(button, anchor.nextSibling);
+        button.addEventListener("mouseenter", () => this.open(button));
+        button.addEventListener("mouseleave", () => this.scheduleClose());
+        button.addEventListener("focus", () => this.open(button));
+        button.addEventListener("blur", () => this.scheduleClose());
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (this.activeButton === button && !this.popover.classList.contains("hidden")) this.close();
+          else this.open(button);
+        });
+      }
+
+      this.popover.addEventListener("mouseenter", () => this.cancelClose());
+      this.popover.addEventListener("mouseleave", () => this.scheduleClose());
+      document.addEventListener("pointerdown", (event) => {
+        if (this.popover.classList.contains("hidden")) return;
+        if (this.popover.contains(event.target) || (event.target.closest && event.target.closest(".parameter-help-button"))) return;
+        this.close();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !this.popover.classList.contains("hidden")) {
+          const button = this.activeButton;
+          this.close();
+          if (button && typeof button.focus === "function") button.focus();
+        }
+      });
+      if (typeof window.addEventListener === "function") {
+        window.addEventListener("resize", () => this.close());
+        window.addEventListener("scroll", () => this.close(), true);
+      }
+    },
+
+    open(button) {
+      const help = PARAMETER_HELP[button.dataset.helpFor];
+      if (!help || !this.popover) return;
+      this.cancelClose();
+      if (this.activeButton && this.activeButton !== button) {
+        this.activeButton.setAttribute("aria-expanded", "false");
+      }
+      this.activeButton = button;
+      if (this.title) this.title.textContent = help.title;
+      if (this.summary) this.summary.textContent = help.summary;
+      if (this.details) {
+        this.details.innerHTML = "";
+        const fragment = document.createDocumentFragment();
+        for (const [term, description] of help.details) {
+          fragment.appendChild(Utils.el("div", { class: "parameter-help-detail" },
+            Utils.el("dt", {}, term), Utils.el("dd", {}, description)));
+        }
+        this.details.appendChild(fragment);
+      }
+      button.setAttribute("aria-expanded", "true");
+      this.popover.classList.remove("hidden");
+      this.popover.setAttribute("aria-hidden", "false");
+      this.position(button);
+    },
+
+    position(button) {
+      const rect = button.getBoundingClientRect();
+      const margin = 12;
+      const width = Math.min(this.popover.offsetWidth || 360, window.innerWidth - margin * 2);
+      let left = rect.left + rect.width / 2 - width / 2;
+      left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+      let top = rect.bottom + 8;
+      const height = this.popover.offsetHeight || 220;
+      if (top + height > window.innerHeight - margin) top = Math.max(margin, rect.top - height - 8);
+      this.popover.style.left = `${Math.round(left)}px`;
+      this.popover.style.top = `${Math.round(top)}px`;
+    },
+
+    scheduleClose() {
+      this.cancelClose();
+      this.closeTimer = setTimeout(() => this.close(), 140);
+    },
+
+    cancelClose() {
+      if (this.closeTimer) clearTimeout(this.closeTimer);
+      this.closeTimer = null;
+    },
+
+    close() {
+      this.cancelClose();
+      if (this.activeButton) this.activeButton.setAttribute("aria-expanded", "false");
+      this.activeButton = null;
+      if (this.popover) {
+        this.popover.classList.add("hidden");
+        this.popover.setAttribute("aria-hidden", "true");
+      }
+    },
+  };
+
   // Non-enumerable migration aliases keep embedded integrations functional
   // without putting the retired combined field into API request JSON.
   Object.defineProperty(Store.state.inputs, "selected", {
@@ -3422,6 +3769,7 @@
 
       Toast.init();
       ResponsiveWorkspace.init();
+      ParameterHelp.init();
       InputBrowser.init();
       ParamForm.init();
       SystemManager.init();

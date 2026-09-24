@@ -7,7 +7,7 @@ The Qwen Workflow Runner Web UI is a high-performance, single-command web applic
 ```
 Browser (Vanilla SPA HTML/CSS/JS)
   ├── 1. Input Browser: Folder tree, thumbnail grid, 1-10 drag/click ordered selector
-  ├── 2. Parameter Form: ModelConfig, GenerationConfig, RuntimeConfig with live client validation
+  ├── 2. Parameter Form: ModelConfig, GenerationConfig, RuntimeConfig with live validation and accessible implementation-backed help
   ├── 3. Model & LoRA Selector: HF repo, local model upload, cached model dropdown, validated LoRA upload/selection
   ├── 4. System Configuration: live CPU/RAM/GPU inventory and dynamic production-device selection
   ├── 5. Run & Output Hub: Launch button, live SSE log/progress stream, output gallery, side-by-side comparison, JSON viewer/download, run history
@@ -52,6 +52,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | 23 | Cached Models Dropdown | Dropdown listing all cached/discovered models in `models/` for quick reuse | M1, M2 | R3, survey |
 | 24 | GGUF Variant Selector | Quantization variant selector / filename field for GGUF repos | M1, M2 | R3, survey |
 | 24a | LoRA Adapter Manager | Discover, validate, upload, select, scale, apply, and record one Qwen Image 2.1 adapter | M1, M2 | R3, survey |
+| 24b | Parameter Help | Keyboard, hover, and touch-accessible guidance derived from config, scheduling, image sizing, caching, runtime, and model-loader behavior | M2 | R2, ORIGINAL_REQUEST |
 | 25 | Background Inference Runner | Non-blocking execution of `qwen_runner.runner.run(config)` | M1, M2 | R4, survey |
 | 26 | Live Log & Progress Stream | Server-Sent Events stream of runner logs, status, and step progress | M1, M2 | R4, survey |
 | 27 | Output Image Viewer | Displays output images with filename, dimensions, and SHA-256 hash badge | M1, M2 | R4, survey |

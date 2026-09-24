@@ -546,9 +546,10 @@ class WorkflowQwenImage21Pipeline(DiffusionPipeline, QwenImageLoraLoaderMixin):
                 vision context and by the VAE into latent tokens prepended to the noise. A list is one set of images
                 shared by every prompt in the batch, not one entry per prompt.
             negative_prompt (`str` or `list[str]`, *optional*):
-                The prompt not to guide image generation. Ignored when `true_cfg_scale` is not greater than 1.
+                The prompt not to guide image generation. Ignored when `true_cfg_scale` equals 1.
             true_cfg_scale (`float`, *optional*, defaults to 1.0):
-                Classifier-free guidance scale. Enabled by `true_cfg_scale > 1` together with a negative prompt.
+                Classifier-free guidance scale. Enabled by `true_cfg_scale != 1` together with a negative prompt.
+                Values below 1 attenuate or invert the positive-versus-negative prediction difference.
                 Qwen-Image 2.1 is meant to be sampled without guidance, hence the default of 1.0.
             height (`int`, *optional*):
                 Height in pixels of the generated image. Derived from the condition image's aspect ratio if omitted.

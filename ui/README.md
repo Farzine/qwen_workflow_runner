@@ -8,6 +8,7 @@ A high-performance, modern, production-grade Web UI and API application server f
 
 - [Overview & Architecture](#overview--architecture)
 - [Quickstart Guide](#quickstart-guide)
+- [Parameter Help](#parameter-help)
 - [CLI Reference](#cli-reference)
 - [Automatic Port Conflict Fallback](#automatic-port-conflict-fallback)
 - [Environment Variables](#environment-variables)
@@ -23,7 +24,7 @@ A high-performance, modern, production-grade Web UI and API application server f
 The Web UI integrates seamlessly with `qwen_runner` to provide an intuitive visual studio for generative editing:
 
 - **Input & Reference Workspace**: Scans configured input folders, accepts validated multi-file uploads and drag-and-drop, and keeps 1–10 ordered process inputs separate from up to nine shared conditioning references.
-- **Comprehensive Parameter Form**: Controls exposing every parameter across `ModelConfig`, `GenerationConfig`, and `RuntimeConfig` with real-time client-side validation, range hints, and preset management.
+- **Comprehensive Parameter Form**: Controls exposing every parameter across `ModelConfig`, `GenerationConfig`, and `RuntimeConfig` with real-time validation, presets, and implementation-backed help for behavior, ranges, interactions, and resource trade-offs.
 - **Model and LoRA Management**: Live asynchronous downloading of Hugging Face repositories, chunked local model uploads, cached model discovery, and a separate validated LoRA catalog with upload, selection, and strength controls.
 - **System Configuration**: Live CPU/RAM and GPU inventory, per-GPU total/free/used memory, PyTorch/CUDA versions, runtime readiness, and dynamic device selection for the next production run.
 - **Execution & Output Hub**: Non-blocking background execution with real-time SSE streaming logs, step progress bar, output gallery with byte-accurate SHA-256 badges, interactive split-view comparison slider, 2-up side-by-side mode, expandable JSON record viewer with export, and session run history.
@@ -89,6 +90,24 @@ python ui/app.py --demo
 ```
 
 Demo mode is an explicit synthetic preview. `DemoBackend` derives a labeled image from the first input and writes valid PNG, comparison, and `{run_id}.json` artifacts, but it does not load or run the Qwen model. Normal startup defaults to production inference. If the selected production runtime is unavailable, the run reports a setup error instead of silently substituting demo output.
+
+---
+
+## Parameter Help
+
+Each meaningful generation, runtime, system, model, LoRA, output, and demo control has an information button beside its label. Hover it, focus it from the keyboard, or click/tap it to open the shared help card. Press `Escape`, move focus away, scroll, or interact outside the card to close it.
+
+The text follows the implemented configuration and execution paths. It documents details that generic diffusion guidance often misses here, including:
+
+- denoise strength selects a schedule tail for an empty latent and does not blend input pixels;
+- negative conditioning runs only with non-empty negative text and CFG other than exactly `1`;
+- native reference resolution (`0`) can retain very large source dimensions and exhaust VRAM;
+- KV-cache auto placement uses the configured CUDA reserve before spilling lossless cache layers to CPU;
+- repeat seeds are shared across process inputs within a repeat, while optional incrementing occurs between repeats;
+- CPU requires float32 with no model offload, and device changes apply to the next job;
+- synthetic demo output is input-derived and never applies the selected production model or LoRA.
+
+Validation messages remain visible outside these help cards, so required corrections do not depend on hover or tooltip access.
 
 ---
 
