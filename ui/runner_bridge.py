@@ -625,6 +625,29 @@ class RunnerBridge:
             ),
         }
 
+    def delete_lora_file(self, path: Path) -> None:
+        """Remove an idle adapter after releasing any resident pipeline using it.
+
+        The bridge lock excludes new web submissions while the active-job check,
+        pipeline teardown, and file removal complete.
+        """
+        target = path.resolve()
+        with self._lock:
+            for job in self.jobs.values():
+                requested = job.config.model.lora_path
+                if (job.status in {"queued", "running"} and requested
+                        and Path(requested).expanduser().resolve() == target):
+                    raise RuntimeError("LoRA is used by an active or queued inference job")
+
+            for slot in self.pipeline_manager.snapshot()["slots"]:
+                loaded = (slot.get("lora") or {}).get("path")
+                if loaded and Path(loaded).expanduser().resolve() == target:
+                    if slot["active_leases"]:
+                        raise RuntimeError("LoRA is used by an active inference pipeline")
+                    self.pipeline_manager.unload_device(slot["device"])
+
+            path.unlink()
+
     def submit_run(
         self,
         config: Config,

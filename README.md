@@ -279,6 +279,16 @@ reuse its existing blobs and fetch missing files; offline mode fails clearly.
 Same-size corruption is not detected by the lightweight size check. Local
 folders must contain all required files.
 
+The web downloader reports selected-file counts and materialized bytes while
+Hugging Face downloads each file. It shows a percentage and ETA only when the
+Hub reports sizes for every selected file and a transfer rate can be measured.
+Otherwise the progress bar is indeterminate. Cancel stops the job between file
+operations, so an active large file may finish first. Cancellation before
+manifest publication leaves no new completion manifest; a request arriving
+after publication may leave a valid cached model. Retry starts a new attempt
+and reuses complete cached files. Download work runs in a background thread while
+the web app remains available.
+
 A completed `main` cache stays on its first resolved commit. To test a newer
 release, set `model.revision` to its commit hash. Pin `base_revision` as well
 when comparing quantizations. Moving the cache to another machine may

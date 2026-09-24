@@ -239,7 +239,23 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
   - Payload: `{"repo_id": "Qwen/Qwen-Image-2.1", "filename": "...", "revision": "main"}`
   - Response: `{"task_id": "download_uuid", "status": "queued"}`
 - **`GET /api/models/download/progress/{task_id}`**
-  - SSE stream broadcasting download progress (`percent`, `speed`, `eta`, `complete`, `error`).
+  - Returns a thread-safe JSON snapshot by default: `status`, `downloaded_bytes`,
+    `total_bytes`, `completed_files`, `total_files`, `remaining_files`,
+    `current_file`, `speed_bytes_per_second`, `eta_seconds`, `percent`, and
+    `error`. Unknown totals, percent, speed, and ETA are `null`; failures do
+    not report 100%. States are queued, preparing, downloading, verifying,
+    cancelling, completed, failed, and cancelled.
+  - `?stream=true` or `Accept: text/event-stream` emits the same snapshots as
+    progress events and a final complete event for terminal states.
+- **`POST /api/models/download/{task_id}/cancel`**
+  - Requests cooperative cancellation after the current Hub file operation.
+    A terminal job returns HTTP 409. Partial work remains in the Hub cache.
+    Cancellation before manifest publication leaves no new manifest; if the
+    request races with final publication, a valid cached model may remain.
+- **`POST /api/models/download/{task_id}/retry`**
+  - Starts a new attempt for a failed or cancelled job, returning a new task ID
+    and `retry_of`. Complete cached files are reused. Active/completed jobs
+    return HTTP 409.
 - **`POST /api/models/upload`**
   - Multipart chunked upload for `.gguf` and `.safetensors` files directly into `models/`.
   - Form fields: `file` (UploadFile), `upload_id` (str), `chunk_index` (int), `total_chunks` (int).

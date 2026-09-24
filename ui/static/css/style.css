@@ -2110,6 +2110,20 @@ code, pre, .font-mono {
   color: var(--text-secondary);
   font-weight: 500;
 }
+.download-file-line {
+  overflow-wrap: anywhere;
+}
+.progress-bar-track.is-indeterminate .progress-bar-fill {
+  width: 35% !important;
+  animation: download-indeterminate 1.5s ease-in-out infinite alternate;
+}
+@keyframes download-indeterminate {
+  from { transform: translateX(0); }
+  to { transform: translateX(190%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar-track.is-indeterminate .progress-bar-fill { animation: none; }
+}
 
 /* Callout Info */
 .info-callout {

@@ -876,6 +876,24 @@
       return await res.json();
     },
 
+    async cancelDownload(taskId) {
+      const res = await fetch(`/api/models/download/${encodeURIComponent(taskId)}/cancel`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Cancellation failed" }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    },
+
+    async retryDownload(taskId) {
+      const res = await fetch(`/api/models/download/${encodeURIComponent(taskId)}/retry`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Retry failed" }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    },
+
     async uploadModelChunk(file, filename, chunkIndex, totalChunks, uploadId) {
       const formData = new FormData();
       formData.append("file", file);
@@ -2057,6 +2075,13 @@
     hfProgressStatus: null,
     hfProgressBadge: null,
     hfProgressError: null,
+    hfProgressTrack: null,
+    hfProgressFile: null,
+    hfProgressDetails: null,
+    hfCancelBtn: null,
+    hfRetryBtn: null,
+    activeDownloadTaskId: null,
+    downloadPollTimer: null,
 
     // File Upload
     dropzone: null,
@@ -2082,6 +2107,11 @@
       this.hfProgressStatus = document.getElementById("hf-download-status-label");
       this.hfProgressBadge = document.getElementById("hf-download-percent-badge");
       this.hfProgressError = document.getElementById("hf-download-error");
+      this.hfProgressTrack = document.getElementById("hf-download-progress-track");
+      this.hfProgressFile = document.getElementById("hf-download-file");
+      this.hfProgressDetails = document.getElementById("hf-download-details");
+      this.hfCancelBtn = document.getElementById("btn-cancel-hf-download");
+      this.hfRetryBtn = document.getElementById("btn-retry-hf-download");
 
       this.dropzone = document.getElementById("model-upload-dropzone");
       this.fileInput = document.getElementById("model-file-input");
@@ -2109,6 +2139,8 @@
       if (this.hfDownloadBtn) {
         this.hfDownloadBtn.addEventListener("click", () => this.startHfDownload());
       }
+      if (this.hfCancelBtn) this.hfCancelBtn.addEventListener("click", () => this.cancelHfDownload());
+      if (this.hfRetryBtn) this.hfRetryBtn.addEventListener("click", () => this.retryHfDownload());
 
       this.bindUploadDropzone();
       this.loadModels();
@@ -2223,48 +2255,110 @@
       try {
         if (this.hfProgressWrap) this.hfProgressWrap.classList.remove("hidden");
         if (this.hfProgressError) this.hfProgressError.classList.add("hidden");
-        if (this.hfProgressBar) this.hfProgressBar.style.width = "0%";
-        if (this.hfProgressBadge) this.hfProgressBadge.textContent = "0%";
-        if (this.hfProgressStatus) this.hfProgressStatus.textContent = "Initiating download...";
+        if (this.hfDownloadBtn) this.hfDownloadBtn.disabled = true;
+        if (this.hfProgressStatus) this.hfProgressStatus.textContent = "Preparing download…";
 
         const data = await ApiClient.downloadModel(repoId, filename, revision);
-        const taskId = data.task_id;
         Toast.show(`Download started: ${repoId}`, "info");
-
-        // Poll progress
-        const pollInterval = setInterval(async () => {
-          try {
-            const p = await ApiClient.getDownloadProgress(taskId);
-            const pct = Math.min(100, Math.max(0, Math.round(p.percent || p.progress * 100 || 0)));
-
-            if (this.hfProgressBar) this.hfProgressBar.style.width = `${pct}%`;
-            if (this.hfProgressBadge) this.hfProgressBadge.textContent = `${pct}%`;
-            if (this.hfProgressStatus) this.hfProgressStatus.textContent = `Status: ${p.status} (${pct}%)`;
-
-            if (p.status === "completed") {
-              clearInterval(pollInterval);
-              Toast.show(`Model download completed: ${repoId}`, "success");
-              this.loadModels();
-            } else if (p.status === "failed") {
-              clearInterval(pollInterval);
-              const errMsg = p.error || "Download failed.";
-              if (this.hfProgressError) {
-                this.hfProgressError.textContent = `Error: ${errMsg}`;
-                this.hfProgressError.classList.remove("hidden");
-              }
-              Toast.show(`Download failed: ${errMsg}`, "error");
-            }
-          } catch (err) {
-            clearInterval(pollInterval);
-            console.error("Progress polling error:", err);
-          }
-        }, 750);
+        this.trackHfDownload(data.task_id);
       } catch (err) {
+        if (this.hfDownloadBtn) this.hfDownloadBtn.disabled = false;
         if (this.hfProgressError) {
           this.hfProgressError.textContent = `Error: ${err.message}`;
           this.hfProgressError.classList.remove("hidden");
         }
         Toast.show(`Download request failed: ${err.message}`, "error");
+      }
+    },
+
+    trackHfDownload(taskId) {
+      if (this.downloadPollTimer) clearTimeout(this.downloadPollTimer);
+      this.activeDownloadTaskId = taskId;
+      if (this.hfRetryBtn) this.hfRetryBtn.classList.add("hidden");
+      if (this.hfCancelBtn) this.hfCancelBtn.classList.remove("hidden");
+      this.pollHfDownload(taskId);
+    },
+
+    async pollHfDownload(taskId) {
+      if (taskId !== this.activeDownloadTaskId) return;
+      try {
+        const progress = await ApiClient.getDownloadProgress(taskId);
+        if (taskId !== this.activeDownloadTaskId) return;
+        this.renderHfDownloadProgress(progress);
+        if (["completed", "failed", "cancelled"].includes(progress.status)) {
+          if (this.hfDownloadBtn) this.hfDownloadBtn.disabled = false;
+          if (progress.status === "completed") {
+            Toast.show(`Model download completed: ${progress.repo_id}`, "success");
+            this.loadModels();
+          } else if (progress.status === "failed") {
+            Toast.show(`Download failed: ${progress.error || "Unknown error"}`, "error");
+          } else {
+            Toast.show("Model download cancelled.", "info");
+          }
+          return;
+        }
+      } catch (err) {
+        if (this.hfProgressError) {
+          this.hfProgressError.textContent = `Status temporarily unavailable: ${err.message}. Retrying…`;
+          this.hfProgressError.classList.remove("hidden");
+        }
+      }
+      this.downloadPollTimer = setTimeout(() => this.pollHfDownload(taskId), 750);
+    },
+
+    renderHfDownloadProgress(progress) {
+      const terminal = ["completed", "failed", "cancelled"].includes(progress.status);
+      const percent = Number.isFinite(progress.percent) ? Math.min(100, Math.max(0, progress.percent)) : null;
+      if (this.hfProgressWrap) this.hfProgressWrap.classList.remove("hidden");
+      if (this.hfProgressTrack) {
+        this.hfProgressTrack.classList.toggle("is-indeterminate", percent === null && !terminal);
+        if (percent === null) this.hfProgressTrack.removeAttribute("aria-valuenow");
+        else this.hfProgressTrack.setAttribute("aria-valuenow", String(Math.round(percent)));
+      }
+      if (this.hfProgressBar) this.hfProgressBar.style.width = `${percent === null ? 0 : percent}%`;
+      if (this.hfProgressBadge) this.hfProgressBadge.textContent = percent === null ? "Size unknown" : `${Math.round(percent)}%`;
+      const labels = { queued: "Queued", preparing: "Preparing", downloading: "Downloading", verifying: "Verifying",
+        cancelling: "Cancelling after current file", completed: "Completed", failed: "Failed", cancelled: "Cancelled" };
+      if (this.hfProgressStatus) this.hfProgressStatus.textContent = labels[progress.status] || progress.status;
+      if (this.hfProgressFile) this.hfProgressFile.textContent = progress.current_file
+        ? `Current file: ${progress.current_file}` : "No file currently transferring.";
+      const doneBytes = Number.isFinite(progress.downloaded_bytes) ? Utils.formatBytes(progress.downloaded_bytes) : "Unknown";
+      const totalBytes = Number.isFinite(progress.total_bytes) ? Utils.formatBytes(progress.total_bytes) : "total unknown";
+      const completedFiles = progress.completed_files ?? 0;
+      const fileCount = Number.isFinite(progress.total_files) ? progress.total_files : "?";
+      const remaining = Number.isFinite(progress.remaining_files) ? ` · ${progress.remaining_files} remaining` : "";
+      const speed = Number.isFinite(progress.speed_bytes_per_second) && progress.speed_bytes_per_second > 0
+        ? ` · ${Utils.formatBytes(progress.speed_bytes_per_second)}/s` : "";
+      const eta = Number.isFinite(progress.eta_seconds)
+        ? ` · ETA ${Math.ceil(progress.eta_seconds)}s` : "";
+      if (this.hfProgressDetails) this.hfProgressDetails.textContent =
+        `${doneBytes} / ${totalBytes} · ${completedFiles}/${fileCount} files${remaining}${speed}${eta}`;
+      if (this.hfCancelBtn) this.hfCancelBtn.classList.toggle("hidden", terminal || progress.status === "cancelling");
+      if (this.hfRetryBtn) this.hfRetryBtn.classList.toggle("hidden", !["failed", "cancelled"].includes(progress.status));
+      if (this.hfProgressError) {
+        this.hfProgressError.textContent = progress.status === "failed" ? `Error: ${progress.error || "Download failed."}` : "";
+        this.hfProgressError.classList.toggle("hidden", progress.status !== "failed");
+      }
+    },
+
+    async cancelHfDownload() {
+      if (!this.activeDownloadTaskId) return;
+      try {
+        const progress = await ApiClient.cancelDownload(this.activeDownloadTaskId);
+        this.renderHfDownloadProgress(progress);
+      } catch (err) {
+        Toast.show(`Cancellation failed: ${err.message}`, "error");
+      }
+    },
+
+    async retryHfDownload() {
+      if (!this.activeDownloadTaskId) return;
+      try {
+        const result = await ApiClient.retryDownload(this.activeDownloadTaskId);
+        if (this.hfDownloadBtn) this.hfDownloadBtn.disabled = true;
+        this.trackHfDownload(result.task_id);
+      } catch (err) {
+        Toast.show(`Retry failed: ${err.message}`, "error");
       }
     },
 

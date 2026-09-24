@@ -33,6 +33,7 @@ The active checkout is `/mnt/lab/farzine/qwen_workflow_runner`. The path origina
 | `ui/app.py` | Uvicorn launcher, CLI flags, directory setup, and port selection. |
 | `ui/server.py` | FastAPI routes for health, inputs, thumbnails, models, validation, runs, SSE, history, and outputs. |
 | `ui/model_catalog.py` | Stable downloaded-model IDs, local Qwen Image 2.1 compatibility inspection, and selected-ID resolution. |
+| `ui/download_jobs.py` | Thread-safe background download state, measured byte/file progress, cancellation, and terminal status. |
 | `ui/runner_bridge.py` | Background job bridge, stdout/stderr capture, event fan-out, `DemoBackend`, and backend selection. |
 | `ui/templates/index.html` | Single-page UI markup. |
 | `ui/static/js/app.js` | Client state, server-side image browser, ordered selection, forms, run submission, SSE, history, and comparison viewer. |
@@ -60,6 +61,8 @@ flowchart LR
     Browser[Browser SPA<br/>index.html + app.js] -->|REST JSON| Server[ui.server<br/>FastAPI]
     Browser <-->|SSE events| Server
     Server --> Catalog[ui.model_catalog<br/>compatible local models]
+    Server --> Downloads[ui.download_jobs<br/>download state]
+    Downloads --> Models
     Server --> Bridge[ui.runner_bridge<br/>RunnerBridge]
     Bridge --> Manager[qwen_runner.resources<br/>PipelineManager]
     Bridge --> Runner[qwen_runner.runner]
@@ -85,7 +88,7 @@ qwen_runner.backend -> qwen_runner.gguf_loader, models, pipeline, sampling
 qwen_runner.pipeline -> qwen_runner.kv_cache
 qwen_runner.runner -> qwen_runner.backend, images, metrics, sampling
 ui.app -> ui.server
-ui.server -> qwen_runner.config, qwen_runner.models, ui.model_catalog, ui.runner_bridge
+ui.server -> qwen_runner.config, qwen_runner.models, ui.model_catalog, ui.download_jobs, ui.runner_bridge
 ui.runner_bridge -> qwen_runner.backend, qwen_runner.config, qwen_runner.resources, qwen_runner.runner, ui.server
 ```
 
@@ -142,7 +145,7 @@ Extend the validated Qwen workflow into a production-quality management applicat
 
 ## Active Task
 
-Expanded Phase 9.2 is complete: the web catalog assigns stable IDs and compatibility reasons to downloaded models. The browser sends one selected ID, which the server resolves into the authoritative model/companion for validation and inference. Legacy direct-source API/CLI calls remain supported.
+Expanded Phase 9.3 is complete: Hugging Face downloads run in background jobs with measured per-file/materialized-byte progress, truthful unknown totals, cooperative cancellation, retry, and visible browser state. Existing manifest/cache reuse remains intact.
 
 ## Completed Tasks
 
@@ -205,6 +208,9 @@ Expanded Phase 9.2 is complete: the web catalog assigns stable IDs and compatibi
 - [x] Added stable downloaded-model IDs, conservative Qwen Image 2.1 compatibility inspection, and explicit reasons for incompatible local/manifest entries.
 - [x] Made the selected catalog ID authoritative in web validation and run requests; removed advanced source/base authority from the browser while preserving legacy direct-source API and CLI behavior.
 - [x] Verified selected-model resolution with API tests and a real `cuda:1` full-model run whose requested source was deliberately wrong before server resolution.
+- [x] Replaced synthetic 25% model-download progress and false 100% errors with measured file/byte state, unknown-total handling, speed/ETA where measurable, and explicit terminal errors.
+- [x] Added cooperative cancellation at Hub file boundaries, retry using a new task ID and existing cache, and JSON/SSE terminal-state reporting.
+- [x] Wired the browser model card to current-file, completed/remaining-file, byte, speed, ETA, indeterminate-progress, cancel, retry, success, and failure states.
 
 ## Remaining Tasks
 
@@ -220,7 +226,7 @@ Expanded Phase 9.2 is complete: the web catalog assigns stable IDs and compatibi
 - [x] Phase 8: run the complete input/reference/LoRA/GPU/inference/UI validation matrix, fix remaining failures, and stabilize documentation.
 - [x] Phase 9.1: add reusable per-device pipeline ownership, LoRA-aware reuse, concurrency protection, lifecycle telemetry, and shutdown cleanup.
 - [x] Phase 9.2: make a stable, compatible downloaded-model catalog selection authoritative for inference; remove advanced-field authority and expose incompatibility reasons.
-- [ ] Phase 9.3: add truthful byte/file-aware Hugging Face download progress, retry/cancel state, and responsive background behavior.
+- [x] Phase 9.3: add truthful byte/file-aware Hugging Face download progress, retry/cancel state, and responsive background behavior.
 - [ ] Phase 9.4: add safe model, LoRA, output, and run deletion APIs plus confirmed UI actions and active-resource conflicts.
 - [ ] Phase 9.5: introduce a versioned common run metadata model and human-readable history/output details while preserving legacy record reads.
 - [ ] Phase 9.6: add aggregate batch operations, per-item stages, counts, timing, ETA, failures, and result inspection based on the reference workflow concepts.
@@ -334,7 +340,7 @@ Expanded Phase 9.2 is complete: the web catalog assigns stable IDs and compatibi
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Phase 9.2 began from clean commit `40c2122` on `main`. This task's source, tests, and documentation are the working-tree changes listed below; check `git status` before continuing.
+- Phase 9.2 was committed as `2a74330` on `main`. Phase 9.3 began from that clean commit; its changes are currently uncommitted and listed below. Check `git status` before continuing.
 - Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -342,6 +348,9 @@ Expanded Phase 9.2 is complete: the web catalog assigns stable IDs and compatibi
 - Cached Hugging Face GGUF snapshots can be symlinks to extensionless blobs. Catalog identity and format inspection must use the logical snapshot path; manifest-backed GGUF selection resolves through the manifest's repo/revision/filename so `ModelStore` retains its offline lookup behavior.
 - Complete local single-file transformers require exactly one compatible local Qwen Image 2.1 companion pipeline; the catalog rejects ambiguous/missing companions. The strict tensor-name/shape check remains in the production loader.
 - A real selected-ID run on `cuda:1` resolved a deliberately wrong source to the full local checkpoint and produced a saved, hash-verified output in 16.12 seconds. An earlier `cuda:0` attempt ran out of memory while another process held nearly all VRAM; this was a host-resource conflict, not a model-resolution failure.
+- Phase 9.3 diagnosed the old download worker: it reported a fabricated fixed 25%, returned only coarse JSON fields, and treated some offline errors as `completed` at 100%. The browser also hid polling errors and had no retry/cancel controls.
+- Installed `huggingface_hub` 1.32.0 supports `hf_hub_download(tqdm_class=...)` and `HfApi.model_info(files_metadata=True)`. The ModelStore now observes HTTP or Xet reconstruction progress without logging terminal bars. `total_bytes` is `null` until sizes are available for every selected file; percent and ETA are never guessed. The speed describes materialized file bytes per second, which can differ from network transfer bytes under Xet deduplication/compression.
+- Cancellation is cooperative before/after each `hf_hub_download` call and before manifest publication. An active large file may finish first. If cancellation arrives after publication but before terminal-state recording, the job can be cancelled while a valid complete cache remains. Retry gets a new task ID and reuses that cache. Terminal state is resolved atomically by the download job lock.
 
 ## Reference Implementations
 
@@ -475,7 +484,27 @@ Phase 9.2 additions to the cumulative files above:
 - `README.md`, `ui/README.md`, `PROJECT.md` — document the catalog, selected-ID contract, legacy API behavior, and M6 progress.
 - `CONTEXT.md` — record implementation, real model proof, tests, remaining limits, and the Phase 9.3 continuation point.
 
+Phase 9.3 additions to the cumulative files above:
+
+- `qwen_runner/models.py` — added optional progress callbacks, per-file size inspection and tqdm byte events, cooperative cancellation checks, and cache-hit progress while preserving the old `fetch()` call contract and atomic manifest publication.
+- `ui/download_jobs.py` — added synchronized job snapshots, measured byte/file completion and speed/ETA, explicit unknown totals, and cancellation/terminal state handling.
+- `ui/server.py` — replaced fabricated progress with background job snapshots, added cancellation/retry APIs and terminal SSE, and logged failures instead of reporting them as success.
+- `ui/static/js/app.js`, `ui/templates/index.html`, `ui/static/css/style.css` — display determinate or indeterminate download progress, current file/counts/bytes/speed/ETA, errors, and working cancel/retry controls.
+- `ui/tests/test_downloads.py`, `ui/tests/test_challenger_m2_node.js` — cover progress math, manifest reuse, cancellation without a manifest, API cancel/retry/SSE/errors, and browser rendering.
+- `README.md`, `ui/README.md`, `PROJECT.md` — document the measured progress contract, cancellation timing, retry/cache behavior, and M6 status.
+- `CONTEXT.md` — records this slice, its validation, limitations, and Phase 9.4 handoff.
+
 ## Tests Performed
+
+Phase 9.3 validation:
+
+- `.venv/bin/python -m pytest -q tests` — 38 passed plus 8 parameterized subtests.
+- Focused host-access `timeout 180 .venv/bin/python -m pytest -q ui/tests/test_downloads.py` — 5 passed, including cancellation between files with no completion manifest, retry, SSE, cache hit, and offline failure.
+- Offline-only `ModelStore.fetch` against the actual cached Qwen Image 2.1 manifest — cache hit, 24 completed files, 33,131,601,593 selected bytes, 26 progress events, and no Hub network call.
+- Final host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 425 passed in 20.08 seconds; only two existing Starlette/AnyIO deprecation warnings.
+- `node ui/tests/test_challenger_m2_node.js` — 36/36 passed, including unknown-total/failure rendering and cancel/retry API wiring; `node ui/tests/test_tier5_node_stress.js` — 15/15 passed.
+- Final `.venv/bin/python -m compileall -q qwen_runner ui tests`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
+- After adjusting speed measurement to begin at file start, the focused download suite still passed 5/5; the full UI suite had passed immediately before this isolated timing refinement.
 
 Phase 9.2 validation:
 
@@ -590,7 +619,8 @@ Phase 9.1 validation:
 
 - The browser model catalog supports compatible complete Qwen Image 2.1 pipelines and transformer-only checkpoints with one compatible local companion. Unsupported formats and ambiguous companion choices are explicitly rejected. Broader model-family support requires a separate backend/loader design.
 - The full-model selected-ID path was exercised on hardware; selected-ID GGUF loading and a complete browser-to-output run with an alternate model were not repeated in this slice. The catalog's structural check does not replace the loader's exact tensor/shape validation.
-- Hugging Face download progress is currently coarse (start/25%/complete) and does not yet report trustworthy file/byte totals, current file, speed, ETA, retry, or cancellation. This is Phase 9.3.
+- Download cancellation is cooperative at file boundaries. An active Hub file operation can finish before the job stops; the UI says so. Progress speed measures materialized file bytes, not exact network transfer bytes, because Xet may deduplicate or compress them. In-memory job history is lost on server restart; completed model manifests remain durable.
+- The progress adapter was exercised with a fake per-file Hub downloader and the actual offline 33.13 GB cached manifest. A fresh live Hub transfer was not run in this slice, so HTTP/Xet progress integration still merits a bounded online smoke test when network access is available.
 - Models, LoRAs, generated outputs, and run records do not yet have complete confirmed backend deletion workflows. This is Phase 9.4.
 - Current durable records are technically detailed schema-version-1 documents. They are not yet normalized into the common human-readable metadata schema requested for single and batch views. This is Phase 9.5.
 - The current SPA remains a three-panel workflow with configuration tabs and a history drawer. Dedicated Dashboard, Models, LoRAs, Batch, History, and Outputs pages remain Phase 9.6–9.7 work.
@@ -608,12 +638,12 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 9.3 as the next independently testable slice:
+Implement Phase 9.4 as the next independently testable slice:
 
-1. Inspect the current Hugging Face download job, manifest, SSE/polling, and browser progress flows without repeating the full repository audit.
-2. Report truthful preparation/downloading/verifying/completed/failed/cancelled states, byte and file totals only when known, current file, transfer speed, and ETA when measurable.
-3. Add safe retry/cancel behavior where the underlying download library permits it; retain a responsive server/UI and preserve existing manifest/cache behavior.
-4. Test progress math/state transitions, API events, partial/failed downloads, and frontend display. Update `CONTEXT.md` at the clean Phase 9.3 checkpoint.
+1. Inspect existing model, LoRA, output, and run storage plus active pipeline/job state without repeating completed audit work.
+2. Add confined backend deletion APIs for model, LoRA, and generated output/run artifacts. Define active-resource and in-progress-download conflicts before deleting files.
+3. Add visible browser delete actions with confirmation, clear success/error feedback, and catalog/history refresh.
+4. Validate actual filesystem cleanup, traversal rejection, active-use protection, metadata consistency, and UI behavior. Update `CONTEXT.md` at the Phase 9.4 checkpoint.
 
 ## Resume Instructions
 

@@ -711,17 +711,21 @@
                 </svg>
                 Download Weights
               </button>
+              <button type="button" id="btn-cancel-hf-download" class="btn btn-outline btn-sm hidden">Cancel</button>
+              <button type="button" id="btn-retry-hf-download" class="btn btn-outline btn-sm hidden">Retry</button>
             </div>
 
             <!-- Download Progress Display -->
-            <div id="hf-download-progress-container" class="progress-box mt-sm hidden">
+            <div id="hf-download-progress-container" class="progress-box mt-sm hidden" role="status" aria-live="polite">
               <div class="progress-header">
-                <span id="hf-download-status-label" class="progress-label">Downloading...</span>
-                <span id="hf-download-percent-badge" class="badge badge-primary">0%</span>
+                <span id="hf-download-status-label" class="progress-label">Preparing...</span>
+                <span id="hf-download-percent-badge" class="badge badge-primary">Calculating…</span>
               </div>
-              <div class="progress-bar-track">
+              <div id="hf-download-progress-track" class="progress-bar-track" role="progressbar" aria-label="Model download progress" aria-valuemin="0" aria-valuemax="100">
                 <div id="hf-download-bar" class="progress-bar-fill" style="width: 0%;"></div>
               </div>
+              <div id="hf-download-file" class="field-hint download-file-line">Waiting for file selection.</div>
+              <div id="hf-download-details" class="field-hint">File and byte totals will appear when available.</div>
               <div id="hf-download-error" class="text-danger mt-xs hidden"></div>
             </div>
           </div>

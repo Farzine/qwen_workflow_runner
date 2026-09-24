@@ -18,6 +18,7 @@ import hashlib
 import inspect
 from io import BytesIO
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -48,8 +49,9 @@ if str(UI_DIR) not in sys.path:
     sys.path.insert(0, str(UI_DIR))
 
 from qwen_runner.config import Config, GenerationConfig, ModelConfig, RuntimeConfig
-from qwen_runner.models import ModelStore, parse_model_ref, safe_relative
+from qwen_runner.models import DownloadCancelled, ModelStore, parse_model_ref, safe_relative
 from ui.model_catalog import discover_models, resolve_selected_model
+from ui.download_jobs import DownloadJob, TERMINAL_STATES
 from qwen_runner.system import probe_runtime_capabilities
 from ui.runner_bridge import (
     CaptureManager,
@@ -168,8 +170,9 @@ MAX_IMAGE_UPLOAD_PIXELS = 100_000_000
 MAX_LORA_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024
 
 # Global background download tasks
-download_tasks: Dict[str, Dict[str, Any]] = {}
+download_tasks: Dict[str, DownloadJob] = {}
 download_tasks_lock = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -624,6 +627,26 @@ async def list_loras():
     return {"directory": str(root), "loras": entries}
 
 
+@app.delete("/api/loras/{filename}")
+async def delete_lora(filename: str):
+    """Delete one local adapter without invalidating queued or resident inference."""
+    if filename != Path(filename).name or not filename.endswith(".safetensors") or filename.startswith("."):
+        raise HTTPException(status_code=400, detail="Select a LoRA filename from the catalog")
+    root = get_loras_dir().resolve()
+    target = root / filename
+    if target.is_symlink():
+        raise HTTPException(status_code=400, detail="LoRA symlinks cannot be deleted through the catalog")
+    if not target.is_file() or target.resolve().parent != root:
+        raise HTTPException(status_code=404, detail="LoRA file not found")
+    try:
+        get_runner_bridge().delete_lora_file(target)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="LoRA file no longer exists")
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    return {"deleted": True, "filename": filename}
+
+
 @app.post("/api/loras/upload")
 async def upload_lora(file: UploadFile = File(...)):
     """Validate and store one Qwen Image LoRA SafeTensors file."""
@@ -837,31 +860,39 @@ async def upload_model(
 
 def _run_hf_download_worker(task_id: str, repo_id: str, filename: Optional[str], revision: str):
     """Background worker for HuggingFace model download."""
-    models_dir = get_models_dir()
+    with download_tasks_lock:
+        job = download_tasks[task_id]
     try:
-        with download_tasks_lock:
-            if task_id in download_tasks:
-                download_tasks[task_id]["status"] = "in_progress"
-                download_tasks[task_id]["progress"] = 25.0
-
+        job.started()
+        models_dir = get_models_dir()
         ref = parse_model_ref(repo_id, revision=revision, filename=filename)
         store = ModelStore(root=str(models_dir))
-        load_path, metadata = store.fetch(ref)
-
-        with download_tasks_lock:
-            if task_id in download_tasks:
-                download_tasks[task_id]["status"] = "completed"
-                download_tasks[task_id]["progress"] = 100.0
-                download_tasks[task_id]["percent"] = 100.0
-                download_tasks[task_id]["path"] = str(load_path)
-                download_tasks[task_id]["metadata"] = metadata
+        load_path, metadata = store.fetch(ref, on_progress=job.apply,
+                                          should_cancel=job.cancel_event.is_set)
+        job.finish("completed", path=load_path, metadata=metadata)
+    except DownloadCancelled:
+        job.finish("cancelled")
     except Exception as exc:
-        with download_tasks_lock:
-            if task_id in download_tasks:
-                # If network or model resolution fails, record completion/status cleanly
-                download_tasks[task_id]["status"] = "completed" if "offline" in str(exc).lower() else "failed"
-                download_tasks[task_id]["progress"] = 100.0
-                download_tasks[task_id]["error"] = str(exc)
+        logger.exception("Model download %s failed for %s", task_id, repo_id)
+        job.finish("failed", error=str(exc))
+
+
+def _launch_download_job(repo_id: str, filename: Optional[str], revision: str) -> DownloadJob:
+    task_id = f"dl_{uuid.uuid4().hex[:10]}"
+    job = DownloadJob(task_id, repo_id, filename, revision)
+    with download_tasks_lock:
+        download_tasks[task_id] = job
+    threading.Thread(target=_run_hf_download_worker,
+                     args=(task_id, repo_id, filename, revision), daemon=True).start()
+    return job
+
+
+def _get_download_job(task_id: str) -> DownloadJob:
+    with download_tasks_lock:
+        job = download_tasks.get(task_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Download task not found")
+    return job
 
 
 @app.post("/api/models/download")
@@ -870,70 +901,50 @@ async def start_model_download(req: ModelDownloadRequest):
     if not req.repo_id or not isinstance(req.repo_id, str) or not req.repo_id.strip():
         raise HTTPException(status_code=400, detail="repo_id is required and cannot be empty")
 
-    task_id = f"dl_{uuid.uuid4().hex[:10]}"
-    task_data = {
-        "task_id": task_id,
-        "repo_id": req.repo_id.strip(),
-        "filename": req.filename,
-        "revision": req.revision or "main",
-        "status": "in_progress",
-        "progress": 0.0,
-        "percent": 0.0,
-        "downloaded_bytes": 0,
-        "total_bytes": 0,
-        "error": None,
-        "start_time": time.time(),
-    }
+    job = _launch_download_job(req.repo_id.strip(), req.filename, req.revision or "main")
+    return {"task_id": job.data["task_id"], "status": "queued", "repo_id": req.repo_id.strip()}
 
-    with download_tasks_lock:
-        download_tasks[task_id] = task_data
 
-    thread = threading.Thread(
-        target=_run_hf_download_worker,
-        args=(task_id, req.repo_id.strip(), req.filename, req.revision or "main"),
-        daemon=True,
-    )
-    thread.start()
+@app.post("/api/models/download/{task_id}/cancel")
+async def cancel_model_download(task_id: str):
+    """Cooperatively stop after the active Hub file operation finishes."""
+    job = _get_download_job(task_id)
+    state = job.cancel()
+    if state is None:
+        raise HTTPException(status_code=409, detail="Download task has already finished")
+    return state
 
-    return {"task_id": task_id, "status": "started", "repo_id": req.repo_id.strip()}
+
+@app.post("/api/models/download/{task_id}/retry")
+async def retry_model_download(task_id: str):
+    """Start a new attempt that can reuse any complete cached Hub files."""
+    previous = _get_download_job(task_id).snapshot()
+    if previous["status"] not in {"failed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="Only failed or cancelled downloads can be retried")
+    job = _launch_download_job(previous["repo_id"], previous["filename"], previous["revision"])
+    return {"task_id": job.data["task_id"], "status": "queued", "retry_of": task_id}
 
 
 @app.get("/api/models/download/progress/{task_id}")
 async def get_download_progress(task_id: str, request: Request, stream: bool = Query(False)):
     """Return download progress as JSON or text/event-stream SSE."""
-    with download_tasks_lock:
-        task = download_tasks.get(task_id)
-
-    if not task:
-        raise HTTPException(status_code=404, detail="Download task not found")
+    job = _get_download_job(task_id)
 
     accept_header = request.headers.get("accept", "")
     if "text/event-stream" in accept_header or stream:
         async def event_generator():
             while True:
-                with download_tasks_lock:
-                    curr = download_tasks.get(task_id)
-                if not curr:
-                    yield f"event: error\ndata: {json.dumps({'error': 'Task not found'})}\n\n"
-                    break
+                curr = job.snapshot()
                 payload = json.dumps(curr)
                 yield f"event: progress\ndata: {payload}\n\n"
-                if curr.get("status") in {"completed", "failed"}:
+                if curr["status"] in TERMINAL_STATES:
                     yield f"event: complete\ndata: {payload}\n\n"
                     break
                 await asyncio.sleep(0.5)
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-    # Default JSON response matching e2e expectation: {"task_id": ..., "status": ..., "progress": ...}
-    return {
-        "task_id": task["task_id"],
-        "repo_id": task.get("repo_id"),
-        "status": task["status"],
-        "progress": task.get("progress", 0.0),
-        "percent": task.get("percent", 0.0),
-        "error": task.get("error"),
-    }
+    return job.snapshot()
 
 
 # ============================================================================

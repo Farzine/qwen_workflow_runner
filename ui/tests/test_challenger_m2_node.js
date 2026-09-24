@@ -1029,6 +1029,69 @@ runTest("Catalog model selection uses stable IDs and excludes incompatible entri
   ApiClient.listModels = originalList;
 });
 
+runTest("Model download renders measured progress and truthful unknown totals", () => {
+  ModelManager.hfProgressWrap = domRegistry.get("hf-download-progress-container");
+  ModelManager.hfProgressTrack = domRegistry.get("hf-download-progress-track");
+  ModelManager.hfProgressBar = domRegistry.get("hf-download-bar");
+  ModelManager.hfProgressBadge = domRegistry.get("hf-download-percent-badge");
+  ModelManager.hfProgressStatus = domRegistry.get("hf-download-status-label");
+  ModelManager.hfProgressFile = domRegistry.get("hf-download-file");
+  ModelManager.hfProgressDetails = domRegistry.get("hf-download-details");
+  ModelManager.hfProgressError = domRegistry.get("hf-download-error");
+  ModelManager.hfCancelBtn = domRegistry.get("btn-cancel-hf-download");
+  ModelManager.hfRetryBtn = domRegistry.get("btn-retry-hf-download");
+
+  ModelManager.renderHfDownloadProgress({ status: "preparing", percent: null, downloaded_bytes: 0,
+    total_bytes: null, completed_files: 0, total_files: null, remaining_files: null });
+  assert.strictEqual(ModelManager.hfProgressBadge.textContent, "Size unknown");
+  assert.strictEqual(ModelManager.hfProgressTrack.getAttribute("aria-valuenow"), null);
+  assert(ModelManager.hfProgressTrack.classList.contains("is-indeterminate"));
+
+  ModelManager.renderHfDownloadProgress({ status: "downloading", percent: 50, downloaded_bytes: 50,
+    total_bytes: 100, completed_files: 1, total_files: 2, remaining_files: 1,
+    current_file: "transformer/very_long_model_name.safetensors", speed_bytes_per_second: 20, eta_seconds: 3 });
+  assert.strictEqual(ModelManager.hfProgressBadge.textContent, "50%");
+  assert.strictEqual(ModelManager.hfProgressTrack.getAttribute("aria-valuenow"), "50");
+  assert(ModelManager.hfProgressDetails.textContent.includes("1/2 files"));
+  assert(ModelManager.hfProgressFile.textContent.includes("very_long_model_name"));
+
+  ModelManager.renderHfDownloadProgress({ status: "failed", percent: 50, downloaded_bytes: 50,
+    total_bytes: 100, completed_files: 1, total_files: 2, remaining_files: 1, error: "Connection closed" });
+  assert(!ModelManager.hfRetryBtn.classList.contains("hidden"));
+  assert(ModelManager.hfCancelBtn.classList.contains("hidden"));
+  assert(ModelManager.hfProgressError.textContent.includes("Connection closed"));
+});
+
+runTest("Model download controls send cancellation and retry requests", async () => {
+  const originalCancel = ApiClient.cancelDownload;
+  const originalRetry = ApiClient.retryDownload;
+  const originalTrack = ModelManager.trackHfDownload;
+  const originalTask = ModelManager.activeDownloadTaskId;
+  let cancelledTask = null;
+  let retriedTask = null;
+  let trackedTask = null;
+  ModelManager.activeDownloadTaskId = "dl_old";
+  ApiClient.cancelDownload = async (taskId) => {
+    cancelledTask = taskId;
+    return { status: "cancelling", percent: null, downloaded_bytes: 0 };
+  };
+  ApiClient.retryDownload = async (taskId) => {
+    retriedTask = taskId;
+    return { task_id: "dl_new" };
+  };
+  ModelManager.trackHfDownload = (taskId) => { trackedTask = taskId; };
+  await ModelManager.cancelHfDownload();
+  assert.strictEqual(cancelledTask, "dl_old");
+  assert(ModelManager.hfProgressStatus.textContent.includes("Cancelling"));
+  await ModelManager.retryHfDownload();
+  assert.strictEqual(retriedTask, "dl_old");
+  assert.strictEqual(trackedTask, "dl_new");
+  ApiClient.cancelDownload = originalCancel;
+  ApiClient.retryDownload = originalRetry;
+  ModelManager.trackHfDownload = originalTrack;
+  ModelManager.activeDownloadTaskId = originalTask;
+});
+
 (async function runAll() {
   console.log("\n=======================================================");
   console.log("CHALLENGER M2: Node.js Frontend State Machine Harness");

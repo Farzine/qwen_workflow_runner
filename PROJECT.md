@@ -70,7 +70,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | M3 | App Startup, CLI & Packaging | Entrypoint script (`ui/app.py`), configurable port fallback, directory overrides, documentation, and dependency profiles | M1, M2 | COMPLETE |
 | M4 | E2E Verification & Adversarial Hardening | Full automated suites plus hardware-gated browser production validation; evidence in `VALIDATION_MATRIX.md` | M1, M2, M3 | COMPLETE |
 | M5 | Persistent Resource Lifecycle | One exclusive cached production pipeline per device, compatible reuse, LoRA switching, runtime telemetry, and explicit shutdown cleanup | M1, M4 | COMPLETE |
-| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | IN PROGRESS (selection complete) |
+| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | IN PROGRESS (selection and progress complete) |
 | M7 | Records, Batch UX & Task Pages | Versioned human-readable metadata, detailed batch state/ETA, and Dashboard/Models/LoRAs/Inference/Batch/History/Outputs views | M6 | PLANNED |
 
 ## Interface Contracts
@@ -83,7 +83,9 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
   - Returns: `{"models": [{"id": "model_...", "name": "...", "path": "...", "type": "diffusers|safetensors|gguf", "is_cached": bool, "compatible": bool, "compatibility_reason": "...|null", "companion_path": "...|null"}]}`
 - `POST /api/models/download`:
   - Body: `{"repo_id": "...", "filename": "...", "revision": "..."}`
-  - Returns: `{"task_id": "..."}` (progress streamed via SSE `/api/models/download/progress/{task_id}`)
+  - Returns: `{"task_id": "...", "status": "queued"}`; `/api/models/download/progress/{task_id}` returns measured JSON progress or SSE with `?stream=true`. Unknown totals/percent are `null`.
+- `POST /api/models/download/{task_id}/cancel` and `/retry`:
+  - Cooperative cancellation at file boundaries; retry of failed/cancelled jobs returns a new task ID and reuses valid Hub cache files.
 - `POST /api/models/upload`:
   - Form multipart upload: file (`.gguf` or `.safetensors`). Saves directly to `models/`.
   - Returns: `{"success": true, "filename": "...", "path": "..."}`
