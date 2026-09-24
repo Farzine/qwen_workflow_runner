@@ -2,7 +2,7 @@
 
 Audits:
 1. DOM Element IDs:
-   - Exactly 167 unique IDs in ui/templates/index.html.
+   - Exactly 179 unique IDs in ui/templates/index.html.
    - Naming conventions, uniqueness, and complete alignment with ui/static/js/app.js.
    - ARIA accessibility: tab controls, tabpanel associations, modal/drawer roles, form labels.
 2. Offline Font Stack & Resource Integrity:
@@ -75,7 +75,7 @@ class DOMAuditor(html.parser.HTMLParser):
 
 
 class TestDOMIntegrityAndA11y(unittest.TestCase):
-    """Verifies DOM integrity, exact 167 IDs, accessibility, and offline compliance."""
+    """Verifies DOM integrity, exact 179 IDs, accessibility, and offline compliance."""
 
     @classmethod
     def setUpClass(cls):
@@ -90,17 +90,17 @@ class TestDOMIntegrityAndA11y(unittest.TestCase):
         cls.auditor = DOMAuditor()
         cls.auditor.feed(cls.html_content)
 
-    def test_exact_167_dom_ids_uniqueness_and_kebab_case(self):
-        """Audits that index.html contains exactly 167 IDs with zero duplicates and proper syntax."""
+    def test_exact_179_dom_ids_uniqueness_and_kebab_case(self):
+        """Audits that index.html contains exactly 179 IDs with zero duplicates and proper syntax."""
         ids = self.auditor.ids
         self.assertEqual(
             len(ids),
-            167,
-            f"Expected exactly 167 IDs in index.html, found {len(ids)}",
+            179,
+            f"Expected exactly 179 IDs in index.html, found {len(ids)}",
         )
         self.assertEqual(
             len(set(ids)),
-            167,
+            179,
             f"Duplicate IDs detected: {[i for i in ids if ids.count(i) > 1]}",
         )
 
@@ -373,7 +373,7 @@ class TestNodeFrontendStressHarness(unittest.TestCase):
             0,
             f"Node.js Tier 5 stress harness failed (exit {res.returncode}):\n{res.stdout}\n{res.stderr}",
         )
-        self.assertIn("14 / 14 Tier 5 stress tests passed", res.stdout)
+        self.assertIn("15 / 15 Tier 5 stress tests passed", res.stdout)
 
 
 if __name__ == "__main__":

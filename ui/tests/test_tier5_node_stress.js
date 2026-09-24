@@ -326,7 +326,9 @@ const sandbox = {
         json: async () => ({
           run_id: runId,
           status: "success",
-          parameters: { generation: { images: ["/inputs/canvas_mock.png"] } },
+          input_image: "/inputs/canvas_mock.png",
+          input_index: 0,
+          parameters: { generation: { input_images: ["/inputs/canvas_mock.png"], reference_images: [] } },
           outputs: [{ filename: "out_mock.png", url: "/api/outputs/out_mock.png", width: 1024, height: 1024 }],
           comparison: "/mnt/lab/farzine/qwen_workflow_runner/outputs/out_mock_comparison.png",
         }),
@@ -523,25 +525,63 @@ test("Empty Tray Resubmission: repeatedly blocks execution and shows error banne
   }
 });
 
+test("Partial-success completion keeps successful outputs and reports failed inputs", () => {
+  toastLog.length = 0;
+  bannerErrors = [];
+  RunController.handleComplete({
+    status: "partial_success",
+    outputs: [{
+      run_id: "batch_input_1",
+      filename: "generated_1.png",
+      url: "/api/outputs/generated_1.png",
+      width: 768,
+      height: 1024,
+    }],
+    records: [{
+      run_id: "batch_input_1",
+      input_index: 0,
+      input_image: "/inputs/person.png",
+    }],
+    comparisons: [{
+      run_id: "batch_input_1",
+      url: "/api/outputs/generated_1_comparison.png",
+    }],
+    errors: [{
+      input_index: 1,
+      error: { message: "reference could not be decoded" },
+    }],
+  });
+
+  assert.strictEqual(Store.state.run.currentOutputs.length, 1);
+  assert.strictEqual(Store.state.run.currentOutputs[0].input_image, "/inputs/person.png");
+  assert.strictEqual(domRegistry.get("output-primary-image").src, "/api/outputs/generated_1.png");
+  assert.strictEqual(domRegistry.get("run-status-badge").textContent, "Completed with errors");
+  assert(domRegistry.get("run-status-badge").className.includes("badge-warning"));
+  assert(toastLog.some((item) => item.type === "warning"));
+  assert.deepStrictEqual(bannerErrors, ["Input 2: reference could not be decoded"]);
+  assert.strictEqual(ComparisonSlider.beforeImg.src, "/api/inputs/thumbnail?path=%2Finputs%2Fperson.png&size=1024");
+});
+
 test("Rapid Clear & Re-add Cycles (50 iterations): invariant preservation", () => {
   for (let i = 0; i < 50; i++) {
     InputBrowser.clearAll();
-    assert.strictEqual(Store.state.inputs.selected.length, 0);
+    InputBrowser.setActiveRole("input");
+    assert.strictEqual(Store.state.inputs.inputImages.length, 0);
 
-    const testImg1 = { name: `canvas_${i}.png`, path: `/inputs/canvas_${i}.png`, width: 1024, height: 1024 };
-    const testImg2 = { name: `ref_${i}.png`, path: `/inputs/ref_${i}.png`, width: 1024, height: 1024 };
+    const testImg1 = { name: `input_1_${i}.png`, path: `/inputs/input_1_${i}.png`, width: 1024, height: 1024 };
+    const testImg2 = { name: `input_2_${i}.png`, path: `/inputs/input_2_${i}.png`, width: 1024, height: 1024 };
 
     InputBrowser.toggleSelection(testImg1);
     InputBrowser.toggleSelection(testImg2);
 
-    assert.strictEqual(Store.state.inputs.selected.length, 2);
-    assert.strictEqual(Store.state.config.generation.images[0], testImg1.path);
-    assert.strictEqual(Store.state.config.generation.images[1], testImg2.path);
+    assert.strictEqual(Store.state.inputs.inputImages.length, 2);
+    assert.strictEqual(Store.state.config.generation.input_images[0], testImg1.path);
+    assert.strictEqual(Store.state.config.generation.input_images[1], testImg2.path);
 
     const cards = InputBrowser.selectedSlotsList.children;
     assert.strictEqual(cards.length, 2);
-    assert.strictEqual(cards[0].querySelector(".badge").textContent, "#1 Canvas");
-    assert.strictEqual(cards[1].querySelector(".badge").textContent, "#2 Ref");
+    assert.strictEqual(cards[0].querySelector(".badge").textContent, "Input 1");
+    assert.strictEqual(cards[1].querySelector(".badge").textContent, "Input 2");
   }
 });
 
@@ -603,26 +643,26 @@ test("RunHistory: scaling with 30 runs populates history drawer cards and counte
 
 test("RunHistory: selecting historical run updates output viewer and comparison view", async () => {
   // Populate active tray items to verify historical run inspection overrides active tray
-  Store.state.inputs.selected = [{ name: "active_tray.png", path: "/inputs/active_tray.png", width: 512, height: 512 }];
+  Store.state.inputs.inputImages = [{ name: "active_tray.png", path: "/inputs/active_tray.png", width: 512, height: 512 }];
 
   await RunHistory.selectRun("historical_run_1");
   assert.strictEqual(domRegistry.get("output-primary-image").src, "/api/outputs/out_mock.png");
   assert.strictEqual(ComparisonSlider.afterImg.src, "/api/outputs/out_mock.png");
 
-  // 1. With currentRecord synchronized using parameters.generation.images, beforeImg uses historical run's canvas thumbnail
+  // 1. The explicit historical input image determines the before image.
   assert.strictEqual(
     ComparisonSlider.beforeImg.src,
     "/api/inputs/thumbnail?path=%2Finputs%2Fcanvas_mock.png&size=1024"
   );
 
-  // 2. Historical run canvas image takes precedence over active input tray
+  // 2. Historical run input takes precedence over the active input tray.
   assert(
     !ComparisonSlider.beforeImg.src.includes("active_tray.png"),
-    "Historical run canvas must take precedence over active input tray"
+    "Historical run input must take precedence over active input tray"
   );
 
-  // 3. Clear tray and inspect historical run with no canvas image to verify disk comparison path translation
-  Store.state.inputs.selected = [];
+  // 3. Clear the tray and verify disk comparison path translation for a text-only historical run.
+  Store.state.inputs.inputImages = [];
   await RunHistory.selectRun("historical_run_no_canvas");
   assert.strictEqual(
     ComparisonSlider.beforeImg.src,

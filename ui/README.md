@@ -22,7 +22,7 @@ A high-performance, modern, production-grade Web UI and API application server f
 
 The Web UI integrates seamlessly with `qwen_runner` to provide an intuitive visual studio for generative editing:
 
-- **Input Browser & Sequence Tray**: Scans input folders (`/mnt/lab/farzine/inputs/` and project `inputs/`), groups by subfolder, filters hidden files, generates cached thumbnails, and enforces a strict 1–10 ordered selection tray where Slot 1 represents the canvas reference.
+- **Input & Reference Workspace**: Scans configured input folders, accepts validated multi-file uploads and drag-and-drop, and keeps 1–10 ordered process inputs separate from up to nine shared conditioning references.
 - **Comprehensive Parameter Form**: Full controls exposing all 38 parameters across `ModelConfig`, `GenerationConfig`, and `RuntimeConfig` with real-time client-side validation, range hints, and preset management.
 - **Model Management**: Live asynchronous downloading of Hugging Face repositories with SSE progress streaming, chunked drag-and-drop local file uploads (`.gguf`, `.safetensors`), and cached model catalog.
 - **Execution & Output Hub**: Non-blocking background execution with real-time SSE streaming logs, step progress bar, output gallery with byte-accurate SHA-256 badges, interactive split-view comparison slider, 2-up side-by-side mode, expandable JSON record viewer with export, and session run history.
@@ -30,7 +30,7 @@ The Web UI integrates seamlessly with `qwen_runner` to provide an intuitive visu
 
 ```
 Browser (Vanilla SPA HTML5 / CSS3 / ES2020)
-  ├── Input Browser (folder tree, thumbnail grid, 1-10 ordered sequence tray)
+  ├── Input Browser (folder tree, uploads, process-input tray, reference tray)
   ├── Parameter Form (ModelConfig, GenerationConfig, RuntimeConfig with live validation)
   ├── Model Hub (HF downloader with SSE progress, chunked uploader, cached models)
   └── Execution Hub (SSE live logs, output gallery, split comparison slider, JSON viewer)
@@ -175,6 +175,11 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
 - **`GET /api/inputs/thumbnail`**
   - Query parameters: `path` (absolute or relative image path), `size` (optional max dimension, default: 256)
   - Response: Binary JPEG/PNG image with disk caching in `.cache/thumbnails/`.
+- **`POST /api/inputs/upload`**
+  - Multipart field: one to ten `files` entries per request.
+  - Accepts decoded JPEG, PNG, WebP, BMP, and GIF files up to 64 MiB each. The filename extension must match the detected image format.
+  - Stores the batch under the configured `inputs/uploads/` directory with sanitized, collision-safe names. Validation is atomic: if one file is invalid, none of that request's files remain stored.
+  - Response: `{"success": true, "count": 2, "images": [{"name": "...", "original_name": "...", "path": "...", "width": 1024, "height": 1024, "thumb_url": "..."}]}`.
 
 ### 2. Model Catalog & Uploads
 
@@ -235,7 +240,7 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
     - `event: status`: `{"status": "RUNNING"}`
     - `event: log`: `{"text": "[INFO] Starting step 1/20..."}`
     - `event: progress`: `{"step": 1, "total": 20, "percent": 5}`
-    - `event: complete`: `{"status": "COMPLETED", "outputs": [...], "comparison_url": "...", "record": {...}}`
+    - `event: complete`: `{"status": "success|partial_success|error", "outputs": [...], "comparisons": [...], "records": [...], "errors": [...]}`
     - `event: error`: `{"status": "FAILED", "error": "CUDA out of memory"}`
 
 ### 5. Outputs & History

@@ -131,6 +131,17 @@ TEMPLATES_DIR = UI_DIR / "templates"
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 MODEL_EXTENSIONS = {".gguf", ".safetensors", ".bin"}
+IMAGE_FORMATS_BY_EXTENSION = {
+    ".jpg": {"JPEG"},
+    ".jpeg": {"JPEG"},
+    ".png": {"PNG"},
+    ".webp": {"WEBP"},
+    ".bmp": {"BMP"},
+    ".gif": {"GIF"},
+}
+MAX_IMAGE_UPLOAD_FILES = 10
+MAX_IMAGE_UPLOAD_BYTES = 64 * 1024 * 1024
+MAX_IMAGE_UPLOAD_PIXELS = 100_000_000
 
 # Global background download tasks
 download_tasks: Dict[str, Dict[str, Any]] = {}
@@ -365,6 +376,123 @@ async def get_thumbnail(
         media_type="image/jpeg",
         headers={"Cache-Control": "public, max-age=86400, immutable"},
     )
+
+
+@app.post("/api/inputs/upload")
+async def upload_input_images(files: List[UploadFile] = File(...)):
+    """Validate and atomically store up to ten images under inputs/uploads."""
+    if not files:
+        raise HTTPException(status_code=400, detail="Select at least one image to upload")
+    if len(files) > MAX_IMAGE_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Upload at most {MAX_IMAGE_UPLOAD_FILES} images at once",
+        )
+
+    inputs_dir = get_inputs_dir().resolve()
+    upload_dir = (inputs_dir / "uploads").resolve()
+    if not is_safe_path(inputs_dir, upload_dir):
+        raise HTTPException(status_code=500, detail="Upload directory is outside the configured inputs directory")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    staged = []
+    committed = []
+    temp_paths = []
+    try:
+        for uploaded in files:
+            original_name = Path(uploaded.filename or "").name
+            if not original_name:
+                raise HTTPException(status_code=400, detail="Every uploaded image must have a filename")
+            extension = Path(original_name).suffix.lower()
+            if extension not in IMAGE_FORMATS_BY_EXTENSION:
+                allowed = ", ".join(sorted(IMAGE_EXTENSIONS))
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported image extension '{extension}' for {original_name}. Allowed: {allowed}",
+                )
+
+            safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(original_name).stem).strip("._-")
+            safe_stem = (safe_stem or "image")[:80]
+            unique_name = f"{safe_stem}_{uuid.uuid4().hex[:10]}{extension}"
+            final_path = (upload_dir / unique_name).resolve()
+            temp_path = (upload_dir / f".{unique_name}.{uuid.uuid4().hex[:6]}.tmp").resolve()
+            if not is_safe_path(upload_dir, final_path) or not is_safe_path(upload_dir, temp_path):
+                raise HTTPException(status_code=400, detail=f"Invalid image filename: {original_name}")
+            temp_paths.append(temp_path)
+
+            total_read = 0
+            with open(temp_path, "wb") as output:
+                while chunk := await uploaded.read(1024 * 1024):
+                    total_read += len(chunk)
+                    if total_read > MAX_IMAGE_UPLOAD_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"Image '{original_name}' exceeds the {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
+                        )
+                    output.write(chunk)
+            if total_read == 0:
+                raise HTTPException(status_code=400, detail=f"Image '{original_name}' is empty")
+
+            try:
+                with Image.open(temp_path) as image:
+                    detected_format = (image.format or "").upper()
+                    width, height = image.size
+                    image.verify()
+            except Exception as error:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image '{original_name}' could not be decoded: {error}",
+                ) from error
+
+            if detected_format not in IMAGE_FORMATS_BY_EXTENSION[extension]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image '{original_name}' content is {detected_format or 'unknown'}, which does not match {extension}",
+                )
+            if width < 1 or height < 1 or width * height > MAX_IMAGE_UPLOAD_PIXELS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image '{original_name}' dimensions {width}x{height} exceed the supported limit",
+                )
+
+            staged.append({
+                "temp_path": temp_path,
+                "final_path": final_path,
+                "name": unique_name,
+                "original_name": original_name,
+                "size": total_read,
+                "width": width,
+                "height": height,
+            })
+
+        uploaded_images = []
+        for item in staged:
+            item["temp_path"].replace(item["final_path"])
+            committed.append(item["final_path"])
+            resolved = str(item["final_path"])
+            uploaded_images.append({
+                "name": item["name"],
+                "original_name": item["original_name"],
+                "path": resolved,
+                "size": item["size"],
+                "width": item["width"],
+                "height": item["height"],
+                "thumb_url": f"/api/inputs/thumbnail?path={urllib.parse.quote(resolved)}",
+            })
+        return {"success": True, "count": len(uploaded_images), "images": uploaded_images}
+    except HTTPException:
+        for path in committed:
+            path.unlink(missing_ok=True)
+        raise
+    except Exception as error:
+        for path in committed:
+            path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Image upload failed: {error}") from error
+    finally:
+        for path in temp_paths:
+            path.unlink(missing_ok=True)
+        for uploaded in files:
+            await uploaded.close()
 
 
 # ============================================================================

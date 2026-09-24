@@ -5,7 +5,7 @@
  * Pure Vanilla ES6 — Zero External CDN / Library Dependencies
  *
  * Requirements Covered:
- * - R1: Input Image Browser (1-10 ordered selection, Slot 1 = Canvas, Slots 2-10 = Ref)
+ * - R1: Separate ordered process inputs and shared references with upload/drop support
  * - R2: Parameter Form & Live Debounced Validation against POST /api/config/validate
  * - R3: Model Management (Cached models catalog, HF async download with live progress, chunked file upload)
  * - R4: Run Execution & Live SSE Streaming (console logs, progress bar, output gallery, SHA-256 badge, comparison slider, JSON record, run history)
@@ -223,7 +223,9 @@
         parentFolder: null,
         folders: [],
         images: [],
-        selected: [], // Array of { name, path, width, height, thumb_url }
+        inputImages: [], // Ordered process inputs
+        referenceImages: [], // Ordered shared conditioning references
+        activeRole: "input",
       },
       config: {
         model: {
@@ -238,7 +240,8 @@
           offline: false,
         },
         generation: {
-          images: [],
+          input_images: [],
+          reference_images: [],
           prompt: "Keep the character and pose in <image1> unchanged, put this light blue denim shirt from <image2> on the character...",
           negative_prompt: "",
           steps: 25,
@@ -307,6 +310,19 @@
     },
   };
 
+  // Non-enumerable migration aliases keep embedded integrations functional
+  // without putting the retired combined field into API request JSON.
+  Object.defineProperty(Store.state.inputs, "selected", {
+    enumerable: false,
+    get() { return this.inputImages; },
+    set(value) { this.inputImages = Array.isArray(value) ? value : []; },
+  });
+  Object.defineProperty(Store.state.config.generation, "images", {
+    enumerable: false,
+    get() { return this.input_images; },
+    set(value) { this.input_images = Array.isArray(value) ? value : []; },
+  });
+
 
   // ==========================================================================
   // 4. API CLIENT LAYER
@@ -342,6 +358,17 @@
 
     getThumbnailUrl(path, size = 256) {
       return `/api/inputs/thumbnail?path=${encodeURIComponent(path)}&size=${size}`;
+    },
+
+    async uploadInputImages(files) {
+      const formData = new FormData();
+      for (const file of files) formData.append("files", file);
+      const res = await fetch("/api/inputs/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Image upload failed" }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return await res.json();
     },
 
     async listModels() {
@@ -450,6 +477,16 @@
     clearBtn: null,
     selectedSlotsList: null,
     emptySelectionNotice: null,
+    referenceCountBadge: null,
+    clearReferencesBtn: null,
+    referenceSlotsList: null,
+    emptyReferenceNotice: null,
+    selectInputsBtn: null,
+    selectReferencesBtn: null,
+    uploadDropzone: null,
+    uploadInput: null,
+    uploadRoleHint: null,
+    uploadStatus: null,
     refreshBtn: null,
 
     init() {
@@ -462,6 +499,16 @@
       this.clearBtn = document.getElementById("btn-clear-selection");
       this.selectedSlotsList = document.getElementById("selected-slots-list");
       this.emptySelectionNotice = document.getElementById("empty-selection-notice");
+      this.referenceCountBadge = document.getElementById("reference-count-badge");
+      this.clearReferencesBtn = document.getElementById("btn-clear-references");
+      this.referenceSlotsList = document.getElementById("reference-slots-list");
+      this.emptyReferenceNotice = document.getElementById("empty-reference-notice");
+      this.selectInputsBtn = document.getElementById("btn-select-inputs");
+      this.selectReferencesBtn = document.getElementById("btn-select-references");
+      this.uploadDropzone = document.getElementById("image-upload-dropzone");
+      this.uploadInput = document.getElementById("image-file-input");
+      this.uploadRoleHint = document.getElementById("image-upload-role-hint");
+      this.uploadStatus = document.getElementById("image-upload-status");
       this.refreshBtn = document.getElementById("btn-refresh-inputs");
 
       if (this.refreshBtn) {
@@ -471,9 +518,16 @@
       }
 
       if (this.clearBtn) {
-        this.clearBtn.addEventListener("click", () => {
-          this.clearAll();
-        });
+        this.clearBtn.addEventListener("click", () => this.clearRole("input"));
+      }
+      if (this.clearReferencesBtn) {
+        this.clearReferencesBtn.addEventListener("click", () => this.clearRole("reference"));
+      }
+      if (this.selectInputsBtn) {
+        this.selectInputsBtn.addEventListener("click", () => this.setActiveRole("input"));
+      }
+      if (this.selectReferencesBtn) {
+        this.selectReferencesBtn.addEventListener("click", () => this.setActiveRole("reference"));
       }
 
       if (this.searchFilter) {
@@ -482,8 +536,108 @@
         });
       }
 
+      this.bindImageUpload();
+      this.setActiveRole(Store.state.inputs.activeRole || "input");
+      this.syncSelectionState();
+
       // Initial browse scan
       this.loadFolder("");
+    },
+
+    roleState(role) {
+      return role === "reference" ? Store.state.inputs.referenceImages : Store.state.inputs.inputImages;
+    },
+
+    setActiveRole(role) {
+      Store.state.inputs.activeRole = role === "reference" ? "reference" : "input";
+      const isInput = Store.state.inputs.activeRole === "input";
+      if (this.selectInputsBtn) {
+        this.selectInputsBtn.className = `btn btn-xs ${isInput ? "btn-active" : "btn-ghost"}`;
+        this.selectInputsBtn.setAttribute("aria-pressed", String(isInput));
+      }
+      if (this.selectReferencesBtn) {
+        this.selectReferencesBtn.className = `btn btn-xs ${isInput ? "btn-ghost" : "btn-active"}`;
+        this.selectReferencesBtn.setAttribute("aria-pressed", String(!isInput));
+      }
+      if (this.uploadRoleHint) {
+        this.uploadRoleHint.textContent = `Uploads will be added to ${isInput ? "Input Images" : "Reference Images"}.`;
+      }
+      this.renderGallery(Store.state.inputs.images);
+    },
+
+    bindImageUpload() {
+      if (!this.uploadDropzone || !this.uploadInput) return;
+      const openPicker = () => this.uploadInput.click();
+      this.uploadDropzone.addEventListener("click", openPicker);
+      this.uploadDropzone.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openPicker();
+        }
+      });
+      this.uploadInput.addEventListener("change", () => {
+        this.uploadFiles(Array.from(this.uploadInput.files || []));
+        this.uploadInput.value = "";
+      });
+      for (const eventName of ["dragenter", "dragover"]) {
+        this.uploadDropzone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          this.uploadDropzone.classList.add("dragover");
+        });
+      }
+      for (const eventName of ["dragleave", "drop"]) {
+        this.uploadDropzone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          this.uploadDropzone.classList.remove("dragover");
+        });
+      }
+      this.uploadDropzone.addEventListener("drop", (event) => {
+        this.uploadFiles(Array.from((event.dataTransfer && event.dataTransfer.files) || []));
+      });
+    },
+
+    async uploadFiles(files) {
+      if (!files.length) return;
+      const role = Store.state.inputs.activeRole;
+      const selected = this.roleState(role);
+      const limit = role === "reference" ? 9 : 10;
+      const remaining = limit - selected.length;
+      if (files.length > remaining) {
+        const message = `${role === "reference" ? "References" : "Inputs"} can contain at most ${limit} images; ${remaining} slot${remaining === 1 ? " is" : "s are"} available.`;
+        Toast.show(message, "warning");
+        this.showErrorBanner([message]);
+        return;
+      }
+      if (this.uploadStatus) {
+        this.uploadStatus.textContent = `Uploading ${files.length} image${files.length === 1 ? "" : "s"}...`;
+        this.uploadStatus.className = "image-upload-status";
+      }
+      try {
+        const response = await ApiClient.uploadInputImages(files);
+        const destination = this.roleState(role);
+        for (const image of response.images || []) {
+          if (!destination.some((item) => item.path === image.path)) {
+            destination.push({
+              ...image,
+              stored_name: image.name,
+              name: image.original_name || image.name,
+            });
+          }
+        }
+        this.syncSelectionState();
+        if (this.uploadStatus) {
+          this.uploadStatus.textContent = `Uploaded ${response.count || files.length} image${files.length === 1 ? "" : "s"} to ${role === "reference" ? "References" : "Inputs"}.`;
+        }
+        Toast.show(`Uploaded ${response.count || files.length} image${files.length === 1 ? "" : "s"}.`, "success");
+        await this.loadFolder(Store.state.inputs.currentFolder);
+      } catch (error) {
+        if (this.uploadStatus) {
+          this.uploadStatus.textContent = `Upload failed: ${error.message}`;
+          this.uploadStatus.className = "image-upload-status error";
+        }
+        this.showErrorBanner([`Image upload failed: ${error.message}`]);
+        Toast.show(`Image upload failed: ${error.message}`, "error");
+      }
     },
 
     async loadFolder(folderPath = "") {
@@ -613,15 +767,17 @@
       const frag = document.createDocumentFragment();
 
       for (const img of images) {
-        const selectedIdx = Store.state.inputs.selected.findIndex((s) => s.path === img.path);
-        const isSelected = selectedIdx !== -1;
+        const inputIndex = Store.state.inputs.inputImages.findIndex((item) => item.path === img.path);
+        const referenceIndex = Store.state.inputs.referenceImages.findIndex((item) => item.path === img.path);
+        const isInput = inputIndex !== -1;
+        const isReference = referenceIndex !== -1;
 
         const card = Utils.el(
           "div",
           {
-            class: `input-image-card ${isSelected ? "selected" : ""}`,
+            class: `input-image-card ${isInput ? "selected selected-input" : ""} ${isReference ? "selected-reference" : ""}`,
             dataset: { path: img.path, name: img.name },
-            onclick: () => this.toggleSelection(img),
+            onclick: () => this.toggleSelection(img, Store.state.inputs.activeRole),
           },
           Utils.el(
             "div",
@@ -634,13 +790,8 @@
                 e.target.style.display = "none";
               },
             }),
-            isSelected
-              ? Utils.el(
-                  "div",
-                  { class: `slot-badge-overlay ${selectedIdx === 0 ? "badge-canvas" : "badge-ref"}` },
-                  selectedIdx === 0 ? "#1 Canvas" : `#${selectedIdx + 1} Ref`
-                )
-              : null
+            isInput ? Utils.el("div", { class: "slot-badge-overlay badge-input" }, `Input ${inputIndex + 1}`) : null,
+            isReference ? Utils.el("div", { class: "slot-badge-overlay badge-ref" }, `Ref ${referenceIndex + 1}`) : null
           ),
           Utils.el(
             "div",
@@ -674,18 +825,19 @@
       });
     },
 
-    toggleSelection(img) {
-      const selected = Store.state.inputs.selected;
+    toggleSelection(img, role = Store.state.inputs.activeRole) {
+      role = role === "reference" ? "reference" : "input";
+      const selected = this.roleState(role);
       const existingIdx = selected.findIndex((s) => s.path === img.path);
 
       if (existingIdx !== -1) {
-        // Remove from selection
         selected.splice(existingIdx, 1);
       } else {
-        // Enforce 10 images limit
-        if (selected.length >= 10) {
-          Toast.show("Maximum 10 reference images allowed. Slot 1 is Canvas, Slots 2–10 are References.", "warning");
-          this.showErrorBanner(["Maximum 10 reference images allowed. Provide 1–10 ordered reference images."]);
+        const limit = role === "reference" ? 9 : 10;
+        if (selected.length >= limit) {
+          const message = `Maximum ${limit} ${role === "reference" ? "reference" : "input"} images allowed.`;
+          Toast.show(message, "warning");
+          this.showErrorBanner([message]);
           return;
         }
         selected.push({
@@ -700,8 +852,13 @@
       this.syncSelectionState();
     },
 
-    moveSlot(index, direction) {
-      const selected = Store.state.inputs.selected;
+    moveSlot(role, index, direction) {
+      if (typeof role !== "string") {
+        direction = index;
+        index = role;
+        role = "input";
+      }
+      const selected = this.roleState(role);
       const targetIdx = index + direction;
       if (targetIdx < 0 || targetIdx >= selected.length) return;
 
@@ -712,8 +869,12 @@
       this.syncSelectionState();
     },
 
-    removeSlot(index) {
-      const selected = Store.state.inputs.selected;
+    removeSlot(role, index) {
+      if (typeof role !== "string") {
+        index = role;
+        role = "input";
+      }
+      const selected = this.roleState(role);
       if (index >= 0 && index < selected.length) {
         selected.splice(index, 1);
         this.syncSelectionState();
@@ -721,17 +882,28 @@
     },
 
     clearAll() {
-      Store.state.inputs.selected = [];
+      Store.state.inputs.inputImages = [];
+      Store.state.inputs.referenceImages = [];
+      this.syncSelectionState();
+    },
+
+    clearRole(role) {
+      if (role === "reference") Store.state.inputs.referenceImages = [];
+      else Store.state.inputs.inputImages = [];
       this.syncSelectionState();
     },
 
     syncSelectionState() {
-      const selected = Store.state.inputs.selected;
-      Store.state.config.generation.images = selected.map((s) => s.path);
+      const inputs = Store.state.inputs.inputImages;
+      const references = Store.state.inputs.referenceImages;
+      Store.state.config.generation.input_images = inputs.map((item) => item.path);
+      Store.state.config.generation.reference_images = references.map((item) => item.path);
 
-      // Update count badge
       if (this.selectedCountBadge) {
-        this.selectedCountBadge.textContent = `${selected.length} / 10`;
+        this.selectedCountBadge.textContent = `${inputs.length} / 10`;
+      }
+      if (this.referenceCountBadge) {
+        this.referenceCountBadge.textContent = `${references.length} / 9`;
       }
 
       this.renderSelectedSlots();
@@ -742,39 +914,32 @@
     },
 
     renderSelectedSlots() {
-      if (!this.selectedSlotsList) return;
-      this.selectedSlotsList.innerHTML = "";
+      this.renderRoleSlots("input", this.selectedSlotsList, this.emptySelectionNotice);
+      this.renderRoleSlots("reference", this.referenceSlotsList, this.emptyReferenceNotice);
+    },
 
-      const selected = Store.state.inputs.selected;
+    renderRoleSlots(role, container, emptyNotice) {
+      if (!container) return;
+      container.innerHTML = "";
+      const selected = this.roleState(role);
       if (selected.length === 0) {
-        if (this.emptySelectionNotice) {
-          this.selectedSlotsList.appendChild(this.emptySelectionNotice);
-        } else {
-          this.selectedSlotsList.innerHTML = `
-            <div class="empty-selection-placeholder">
-              <span>Click images above to build your 1–10 ordered sequence.</span>
-            </div>
-          `;
-        }
+        if (emptyNotice) container.appendChild(emptyNotice);
         return;
       }
-
       const frag = document.createDocumentFragment();
-
       for (let i = 0; i < selected.length; i++) {
         const item = selected[i];
-        const isCanvas = i === 0;
-
+        const label = role === "reference" ? `Ref ${i + 1} · <image${i + 2}>` : `Input ${i + 1}`;
         const slotCard = Utils.el(
           "div",
-          { class: `selected-slot-card ${isCanvas ? "slot-card-canvas" : ""}` },
+          { class: `selected-slot-card slot-card-${role}` },
           Utils.el(
             "div",
             { class: "slot-order-badge-col" },
             Utils.el(
               "span",
-              { class: `badge ${isCanvas ? "badge-accent" : "badge-primary"}` },
-              isCanvas ? "#1 Canvas" : `#${i + 1} Ref`
+              { class: `badge ${role === "reference" ? "badge-accent" : "badge-primary"}` },
+              label
             )
           ),
           Utils.el(
@@ -805,7 +970,7 @@
                   {
                     class: "btn-icon-slot",
                     title: "Move earlier in sequence",
-                    onclick: () => this.moveSlot(i, -1),
+                    onclick: () => this.moveSlot(role, i, -1),
                   },
                   "◀"
                 )
@@ -816,7 +981,7 @@
                   {
                     class: "btn-icon-slot",
                     title: "Move later in sequence",
-                    onclick: () => this.moveSlot(i, 1),
+                    onclick: () => this.moveSlot(role, i, 1),
                   },
                   "▶"
                 )
@@ -825,8 +990,8 @@
               "button",
               {
                 class: "btn-icon-slot btn-remove-slot",
-                title: "Remove from sequence",
-                onclick: () => this.removeSlot(i),
+                title: `Remove from ${role === "reference" ? "references" : "inputs"}`,
+                onclick: () => this.removeSlot(role, i),
               },
               "✕"
             )
@@ -836,7 +1001,7 @@
         frag.appendChild(slotCard);
       }
 
-      this.selectedSlotsList.appendChild(frag);
+      container.appendChild(frag);
     },
 
     showErrorBanner(messages) {
@@ -1274,6 +1439,12 @@
       const r = c.runtime;
 
       // Fast client-side sanity checks
+      if (!Array.isArray(g.input_images) || g.input_images.length < 1 || g.input_images.length > 10) {
+        errors.push("Provide 1–10 ordered input images.");
+      }
+      if (!Array.isArray(g.reference_images) || g.reference_images.length > 9) {
+        errors.push("Provide at most 9 ordered reference images.");
+      }
       if (g.steps < 1 || g.steps > 10000) {
         errors.push("steps must be between 1 and 10000.");
       }
@@ -1729,11 +1900,12 @@
       this.isSubmitting = true;
 
       try {
-        // 1. Check at least 1 image is selected
-        const selected = Store.state.inputs.selected;
-        if (selected.length === 0) {
-          Toast.show("Please select at least 1 reference image (Slot 1 Canvas) before running.", "warning");
-          InputBrowser.showErrorBanner(["Provide 1–10 ordered reference images; image1 is the output canvas."]);
+        // 1. Every job needs at least one process input; references are optional.
+        const inputs = Store.state.inputs.inputImages;
+        const references = Store.state.inputs.referenceImages;
+        if (inputs.length === 0) {
+          Toast.show("Please select at least one input image before running.", "warning");
+          InputBrowser.showErrorBanner(["Provide 1–10 ordered input images to process."]);
           return;
         }
 
@@ -1749,8 +1921,8 @@
           TerminalViewer.clear();
           TerminalViewer.appendSystemLog("Initiating inference workflow pipeline...");
 
-          // Ensure generation.images is synchronized
-          Store.state.config.generation.images = selected.map((s) => s.path);
+          Store.state.config.generation.input_images = inputs.map((item) => item.path);
+          Store.state.config.generation.reference_images = references.map((item) => item.path);
 
           const payload = {
             model: Store.state.config.model,
@@ -1861,21 +2033,35 @@
     handleComplete(payload) {
       this.setRunningState(false);
 
-      if (payload.status === "success") {
+      if (payload.status === "success" || payload.status === "partial_success") {
+        const isPartial = payload.status === "partial_success";
         if (this.statusBadge) {
-          this.statusBadge.textContent = "Completed";
-          this.statusBadge.className = "status-pill badge badge-success";
+          this.statusBadge.textContent = isPartial ? "Completed with errors" : "Completed";
+          this.statusBadge.className = `status-pill badge ${isPartial ? "badge-warning" : "badge-success"}`;
         }
-        Toast.show("Workflow completed successfully!", "success");
+        Toast.show(
+          isPartial ? "Some inputs failed; successful outputs are available." : "Workflow completed successfully!",
+          isPartial ? "warning" : "success"
+        );
 
         // Format outputs
-        const outputs = (payload.outputs || []).map((o) => ({
-          filename: o.filename || (o.path ? o.path.split("/").pop() : "output.png"),
-          url: o.url || ApiClient.getOutputUrl(o.filename || (o.path ? o.path.split("/").pop() : "output.png")),
-          width: o.width || 1024,
-          height: o.height || 1024,
-          sha256: o.sha256 || "",
-        }));
+        const records = payload.records || [];
+        const comparisons = payload.comparisons || [];
+        const outputs = (payload.outputs || []).map((o) => {
+          const record = records.find((item) => item.run_id === o.run_id) || payload.record || {};
+          const comparison = comparisons.find((item) => item.run_id === o.run_id);
+          return {
+            filename: o.filename || (o.path ? o.path.split("/").pop() : "output.png"),
+            url: o.url || ApiClient.getOutputUrl(o.filename || (o.path ? o.path.split("/").pop() : "output.png")),
+            width: o.width || 1024,
+            height: o.height || 1024,
+            sha256: o.sha256 || "",
+            run_id: o.run_id || record.run_id,
+            input_index: o.input_index ?? record.input_index,
+            input_image: record.input_image,
+            comparison_url: comparison ? comparison.url : null,
+          };
+        });
 
         Store.state.run.currentOutputs = outputs;
         Store.state.run.currentRecord = payload.record || payload;
@@ -1884,7 +2070,12 @@
         OutputViewer.renderOutputs(outputs);
 
         // Render Comparison View
-        ComparisonSlider.setup(outputs, payload.comparison_url);
+        const firstOutput = outputs[0];
+        ComparisonSlider.setup(
+          outputs,
+          (firstOutput && firstOutput.comparison_url) || payload.comparison_url,
+          firstOutput && firstOutput.input_image
+        );
 
         // Render JSON Record
         JsonInspector.render(payload.record || payload);
@@ -1894,6 +2085,16 @@
 
         // Switch to Outputs view tab
         this.switchOutputTab("tab-btn-outputs", "pane-outputs");
+        if (isPartial) {
+          const errors = (payload.errors || []).map((item) => {
+            const detail = item.error || {};
+            return `Input ${(item.input_index ?? 0) + 1}: ${detail.message || "generation failed"}`;
+          });
+          if (errors.length) {
+            InputBrowser.showErrorBanner(errors);
+            errors.forEach((message) => TerminalViewer.appendLogLine(message, "stderr"));
+          }
+        }
       } else {
         if (this.statusBadge) {
           this.statusBadge.textContent = "Failed";
@@ -2142,6 +2343,7 @@
                 this.setPrimaryOutput(out);
                 this.batchStrip.querySelectorAll(".batch-thumb").forEach((b) => b.classList.remove("active"));
                 thumb.classList.add("active");
+                ComparisonSlider.setup([out], out.comparison_url, out.input_image);
               },
             });
             this.batchStrip.appendChild(thumb);
@@ -2220,7 +2422,7 @@
       this.bindHandleDrag();
 
       // Ensure comparison badges align with displayed image halves:
-      // In split view, clipWrapper (Output) is on the left; background beforeImg (Canvas) on the right.
+      // In split view, clipWrapper (Output) is on the left; process input is on the right.
       if (this.splitWrapper && typeof this.splitWrapper.querySelector === "function") {
         const badgeBefore = this.splitWrapper.querySelector(".badge-before");
         const badgeAfter = this.splitWrapper.querySelector(".badge-after");
@@ -2249,7 +2451,7 @@
       }
     },
 
-    setup(outputs, comparisonUrl = null) {
+    setup(outputs, comparisonUrl = null, sourceImagePath = null) {
       if (comparisonUrl && typeof comparisonUrl === "string") {
         if (comparisonUrl.startsWith("/api/outputs/")) {
           // Already an API URL
@@ -2260,15 +2462,17 @@
       }
 
       let canvasThumb = null;
-      let canvasImgPath = null;
+      let canvasImgPath = sourceImagePath;
       const curRec = Store.state.run.currentRecord;
-      if (curRec) {
-        canvasImgPath = curRec?.parameters?.generation?.images?.[0]
+      if (!canvasImgPath && curRec) {
+        canvasImgPath = curRec?.input_image
+          || curRec?.parameters?.generation?.input_images?.[curRec?.input_index || 0]
+          || curRec?.parameters?.generation?.images?.[0]
           || curRec?.config?.generation?.images?.[0]
           || curRec?.effective_parameters?.reference_images?.[0]?.path;
       }
       if (!canvasImgPath) {
-        const selected = Store.state.inputs.selected;
+        const selected = Store.state.inputs.inputImages;
         if (selected && selected.length > 0) {
           canvasImgPath = selected[0].path;
         }
@@ -2486,7 +2690,8 @@
 
       for (const r of runs) {
         const isSuccess = r.status === "completed" || r.status === "success";
-        const badgeClass = isSuccess ? "badge-success" : "badge-danger";
+        const isPartial = r.status === "partial_success";
+        const badgeClass = isSuccess ? "badge-success" : isPartial ? "badge-warning" : "badge-danger";
 
         const item = Utils.el(
           "div",

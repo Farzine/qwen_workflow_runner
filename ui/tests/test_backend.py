@@ -6,6 +6,7 @@ and error handling.
 """
 
 import asyncio
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -102,6 +103,109 @@ class TestBackendRunnerBridge(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("boolean", response.json()["detail"])
+
+    @staticmethod
+    def _image_bytes(color=(10, 20, 30), image_format="PNG"):
+        from PIL import Image
+        buffer = BytesIO()
+        Image.new("RGB", (24, 16), color=color).save(buffer, format=image_format)
+        return buffer.getvalue()
+
+    def test_input_upload_stores_multiple_decoded_images_with_unique_names(self):
+        inputs_dir = self.root / "inputs"
+        inputs_dir.mkdir()
+        app.state.inputs_dir = inputs_dir
+        try:
+            files = [
+                ("files", ("same name.png", self._image_bytes((10, 20, 30)), "image/png")),
+                ("files", ("same name.png", self._image_bytes((30, 20, 10)), "image/png")),
+            ]
+            response = self.client.post("/api/inputs/upload", files=files)
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["count"], 2)
+            self.assertEqual(len({item["name"] for item in payload["images"]}), 2)
+            for item in payload["images"]:
+                path = Path(item["path"])
+                self.assertTrue(path.is_file())
+                self.assertTrue(path.is_relative_to((inputs_dir / "uploads").resolve()))
+                self.assertEqual((item["width"], item["height"]), (24, 16))
+                thumb = self.client.get(item["thumb_url"])
+                self.assertEqual(thumb.status_code, 200)
+
+            browse = self.client.get("/api/inputs/browse?folder=uploads")
+            self.assertEqual(browse.status_code, 200)
+            self.assertEqual(len(browse.json()["images"]), 2)
+        finally:
+            app.state.inputs_dir = None
+
+    def test_input_upload_rejects_invalid_batch_atomically(self):
+        inputs_dir = self.root / "inputs-invalid"
+        inputs_dir.mkdir()
+        app.state.inputs_dir = inputs_dir
+        try:
+            files = [
+                ("files", ("valid.png", self._image_bytes(), "image/png")),
+                ("files", ("corrupt.png", b"not an image", "image/png")),
+            ]
+            response = self.client.post("/api/inputs/upload", files=files)
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("could not be decoded", response.json()["detail"])
+            self.assertEqual(list((inputs_dir / "uploads").glob("*")), [])
+
+            bad_extension = self.client.post(
+                "/api/inputs/upload",
+                files=[("files", ("payload.exe", self._image_bytes(), "application/octet-stream"))],
+            )
+            self.assertEqual(bad_extension.status_code, 400)
+            self.assertIn("Unsupported image extension", bad_extension.json()["detail"])
+
+            mismatched_content = self.client.post(
+                "/api/inputs/upload",
+                files=[("files", ("actually-jpeg.png", self._image_bytes(image_format="JPEG"), "image/png"))],
+            )
+            self.assertEqual(mismatched_content.status_code, 400)
+            self.assertIn("does not match", mismatched_content.json()["detail"])
+
+            empty = self.client.post(
+                "/api/inputs/upload",
+                files=[("files", ("empty.png", b"", "image/png"))],
+            )
+            self.assertEqual(empty.status_code, 400)
+            self.assertIn("empty", empty.json()["detail"])
+        finally:
+            app.state.inputs_dir = None
+
+    def test_input_upload_confines_traversal_name_and_enforces_limits(self):
+        inputs_dir = self.root / "inputs-limits"
+        inputs_dir.mkdir()
+        app.state.inputs_dir = inputs_dir
+        try:
+            traversal = self.client.post(
+                "/api/inputs/upload",
+                files=[("files", ("../../portrait.png", self._image_bytes(), "image/png"))],
+            )
+            self.assertEqual(traversal.status_code, 200)
+            saved = Path(traversal.json()["images"][0]["path"])
+            self.assertTrue(saved.is_relative_to((inputs_dir / "uploads").resolve()))
+            self.assertNotIn("..", saved.name)
+
+            too_many = self.client.post(
+                "/api/inputs/upload",
+                files=[("files", (f"{index}.png", self._image_bytes(), "image/png")) for index in range(11)],
+            )
+            self.assertEqual(too_many.status_code, 400)
+            self.assertIn("at most 10", too_many.json()["detail"])
+
+            with patch("ui.server.MAX_IMAGE_UPLOAD_BYTES", 10):
+                too_large = self.client.post(
+                    "/api/inputs/upload",
+                    files=[("files", ("large.png", self._image_bytes(), "image/png"))],
+                )
+            self.assertEqual(too_large.status_code, 413)
+            self.assertIn("limit", too_large.json()["detail"])
+        finally:
+            app.state.inputs_dir = None
 
     def test_explicit_input_reference_api_contract(self):
         first = self.root / "first.png"

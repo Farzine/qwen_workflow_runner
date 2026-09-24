@@ -809,6 +809,63 @@ code, pre, .font-mono {
   padding-left: 28px;
 }
 
+.asset-role-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(17, 23, 38, 0.55);
+}
+.asset-role-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.asset-role-actions {
+  display: flex;
+  gap: 4px;
+}
+.asset-role-actions .btn-active {
+  color: #fff;
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+}
+
+.image-upload-dropzone {
+  margin: 8px 12px 0;
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 1px dashed var(--border-medium);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: rgba(99, 102, 241, 0.05);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color var(--trans-fast), background var(--trans-fast);
+}
+.image-upload-dropzone:hover,
+.image-upload-dropzone:focus-visible,
+.image-upload-dropzone.dragover {
+  border-color: var(--accent-cyan);
+  background: rgba(34, 211, 238, 0.09);
+  outline: none;
+}
+.upload-dropzone-title { font-size: 11px; }
+.upload-dropzone-hint { font-size: 10px; color: var(--text-muted); }
+.image-upload-status {
+  padding: 4px 12px 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+.image-upload-status.error { color: var(--accent-rose); }
+
 /* Gallery Thumbnail Grid */
 .gallery-scroll-area {
   flex: 1;
@@ -838,6 +895,45 @@ code, pre, .font-mono {
   transform: translateY(-2px);
   box-shadow: var(--shadow-sm);
 }
+.input-image-card.selected-input {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.35);
+}
+.input-image-card.selected-reference {
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
+}
+.card-thumb-wrapper { position: absolute; inset: 0; }
+.card-thumb-wrapper img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card-meta {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 16px 5px 5px;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(to top, rgba(0,0,0,.88), transparent);
+  pointer-events: none;
+}
+.card-name, .card-dims {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-name { color: #fff; font-size: 10px; }
+.card-dims { color: #cbd5e1; font-size: 9px; }
+.slot-badge-overlay {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  padding: 2px 5px;
+  border-radius: var(--radius-xs);
+  color: #fff;
+  background: rgba(8, 12, 22, .88);
+  font-size: 9px;
+  font-weight: 700;
+}
+.slot-badge-overlay.badge-ref { top: 24px; color: #fbbf24; }
 .input-thumb-img {
   width: 100%;
   height: 100%;
@@ -870,13 +966,21 @@ code, pre, .font-mono {
   color: var(--text-muted);
 }
 
-/* Selected Reference Sequence List */
-.selection-sequence-panel {
+/* Separate Input and Reference Lists */
+.workflow-image-selections {
+  display: grid;
+  grid-template-rows: minmax(120px, 1fr) minmax(100px, .85fr);
+  max-height: 46%;
   border-top: 1px solid var(--border-subtle);
   background-color: var(--bg-header);
-  max-height: 38%;
+}
+.selection-sequence-panel {
+  min-height: 0;
   display: flex;
   flex-direction: column;
+}
+.selection-sequence-panel + .selection-sequence-panel {
+  border-top: 1px solid var(--border-medium);
 }
 .sequence-header {
   display: flex;
@@ -936,6 +1040,34 @@ code, pre, .font-mono {
 .selected-slot-card:hover {
   border-color: var(--border-medium);
 }
+.slot-card-input { border-left: 2px solid var(--accent-cyan); }
+.slot-card-reference { border-left: 2px solid var(--accent-amber); }
+.slot-card-reference .badge-accent {
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, .4);
+  background: rgba(245, 158, 11, .2);
+}
+.slot-order-badge-col { flex-shrink: 0; }
+.slot-thumb-wrapper img {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: var(--radius-xs);
+  cursor: zoom-in;
+}
+.slot-info-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.slot-dims-label { color: var(--text-muted); font-size: 9px; }
+.slot-actions-col { display: flex; gap: 3px; }
+.btn-icon-slot {
+  border: 0;
+  border-radius: var(--radius-xs);
+  padding: 3px 5px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.btn-icon-slot:hover { color: var(--text-main); background: rgba(255,255,255,.07); }
+.btn-remove-slot:hover { color: var(--accent-rose); }
 .slot-badge {
   font-size: 10px;
   font-weight: 700;
@@ -1236,6 +1368,18 @@ code, pre, .font-mono {
   cursor: pointer;
 }
 .batch-thumb-item.active {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary-glow);
+}
+.batch-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+  object-fit: cover;
+  cursor: pointer;
+}
+.batch-thumb.active {
   border-color: var(--accent-primary);
   box-shadow: 0 0 8px var(--accent-primary-glow);
 }
@@ -1713,15 +1857,71 @@ code, pre, .font-mono {
 }
 
 @media (max-width: 768px) {
+  .app-body {
+    height: auto;
+    min-height: 100vh;
+  }
+  .app-header {
+    height: auto;
+    min-height: 88px;
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .header-left { gap: 8px; }
+  .brand-subtitle,
+  .header-left > .badge,
+  #btn-quick-presets {
+    display: none;
+  }
+  .header-right {
+    margin-left: auto;
+  }
+  .header-center {
+    order: 3;
+    width: 100%;
+  }
+  .header-center .status-pill {
+    width: 100%;
+    justify-content: center;
+  }
+  .alert-container {
+    position: fixed;
+    top: 96px;
+    width: calc(100% - 24px);
+    max-height: 45vh;
+    overflow-y: auto;
+  }
   .app-layout {
-    grid-template-columns: 1fr;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
   }
   .panel-inputs {
-    display: none; /* toggleable drawer on small viewports */
+    display: flex;
+    min-height: 820px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .panel-config {
+    min-height: 760px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .panel-output {
+    position: relative;
+    inset: auto;
+    width: auto;
+    min-height: 680px;
+    transform: none;
+    box-shadow: none;
   }
   .form-grid-2, .form-grid-3 {
     grid-template-columns: 1fr;
   }
+  .workflow-image-selections { max-height: 420px; }
+  .asset-role-toolbar { align-items: flex-start; flex-direction: column; }
 }
 
 /* ==========================================================================

@@ -94,7 +94,7 @@ sequenceDiagram
     participant E as Selected backend
     participant F as Filesystem
 
-    U->>JS: Select current legacy 1-10 image sequence
+    U->>JS: Select/upload ordered inputs and optional references
     JS->>API: POST /api/run (model, generation, runtime, demo_mode)
     API->>API: Build Config and validate image paths
     API->>B: submit_run(config, demo_mode)
@@ -133,13 +133,7 @@ Make the application a reliable production image-generation workflow: run real Q
 
 ## Active Task
 
-Phase 3.2 — expose the completed core/API image distinction through separate browser controls and validated uploads:
-
-1. Add a confined multi-image upload endpoint for supported image formats with clear validation and collision-safe storage.
-2. Replace the combined client selection state with ordered process inputs and ordered references while keeping the legacy request path compatible.
-3. Add distinct input/reference drop zones, previews, ordering, individual removal, empty states, and actionable errors.
-4. Submit `generation.input_images` and `generation.reference_images`, display every successful per-input result, and surface partial failures without hiding successful outputs.
-5. Cover desktop and narrow layouts plus long filenames, many images, invalid files, and drag/drop behavior without starting the LoRA redesign.
+Phase 4 — implement LoRA discovery, upload, selection, application, and active-state reporting as the next independently testable vertical slice. The Phase 3 browser input/reference workflow is complete.
 
 ## Completed Tasks
 
@@ -168,6 +162,10 @@ Phase 3.2 — expose the completed core/API image distinction through separate b
 - [x] Preserved repeat seed semantics, input/reference order, per-input output/comparison metadata, and legacy setup-error behavior.
 - [x] Added API aggregation for all multi-input artifacts and `partial_success` records when one input fails while later inputs succeed.
 - [x] Added core, runner, API, SSE, and compatibility coverage for explicit image batches and documented the CLI/REST contract.
+- [x] Added atomic, confined multi-image upload with content decoding, extension/format matching, size/count/pixel limits, collision-safe names, and actionable validation errors.
+- [x] Replaced the combined browser tray with independent ordered process-input and shared-reference state, controls, previews, counts, reordering, removal, and role-aware upload/drop behavior.
+- [x] Made the browser emit only explicit `input_images`/`reference_images`, retain non-enumerable migration aliases for embedded integrations, display every successful batch artifact, and preserve outputs during `partial_success` failures.
+- [x] Restored narrow-screen access to the input panel and validated desktop/narrow rendering with headless Chrome in addition to DOM, accessibility, API, and JavaScript state-machine coverage.
 
 ## Remaining Tasks
 
@@ -175,7 +173,7 @@ Phase 3.2 — expose the completed core/API image distinction through separate b
 - [x] Phase 2.2: install/use a PyTorch build compatible with the NVIDIA driver (or update the driver), then run and validate real Qwen inference at a safe resolution.
 - [x] Phase 2.3: verify actual transformation quality, parameter propagation, image conditioning, persistence, and UI display with the full model.
 - [x] Phase 3.1: introduce separate ordered `input_images` and `reference_images` request concepts; define each input as an independently generated output while applying the chosen reference set.
-- [ ] Phase 3: add multi-file image upload, drag-and-drop, previews, ordering, individual removal, validation, and clear empty/error states.
+- [x] Phase 3: add multi-file image upload, drag-and-drop, previews, ordering, individual removal, validation, and clear empty/error states.
 - [ ] Phase 4: add LoRA directory discovery, validated upload, selection, active-state reporting, backend loading/application, metadata, and tests.
 - [ ] Phase 5: add system/GPU inventory and configuration API/page; validate and honor manual device selection.
 - [ ] Phase 6: reorganize the UI around the production workflow and improve responsive behavior, accessibility, loading, progress, and long-list states.
@@ -202,10 +200,10 @@ Phase 3.2 — expose the completed core/API image distinction through separate b
 
 ### Inputs and references
 
-- The UI can click-select and reorder up to ten images from a server-side directory, but it labels the combined list “Reference Sequence.” Slot 1 is both canvas/input and conditioning; slots 2-10 are references.
-- There is no local multi-image upload endpoint/control, no image drag-and-drop, and no separate input/reference state.
-- The core/API now accepts up to ten ordered process inputs and nine ordered shared references. It emits a separate durable attempt for each input while loading the backend once; the browser still submits the legacy combined `images` field until Phase 3.2.
-- Explicit multi-input API responses flatten all successful non-warmup artifacts into `outputs`/`comparisons` and retain per-input records/errors. The current client treats `partial_success` as failure and therefore needs the Phase 3.2 result-display update before it uses this contract.
+- The browser now maintains up to ten ordered process inputs and nine ordered shared references in separate sections. Gallery clicks and multi-file uploads target the visibly selected role; both lists provide previews, counts, ordering, individual removal, clear actions, distinct empty states, and ellipsized long names while retaining the full original upload name in the card metadata.
+- `POST /api/inputs/upload` validates one to ten decoded JPEG/PNG/WebP/BMP/GIF files atomically, enforces a 64 MiB per-file and 100-megapixel limit, matches detected content to the extension, sanitizes names, and confines collision-safe files to `inputs/uploads`.
+- The client emits only `generation.input_images` and `generation.reference_images`. Non-enumerable `selected`/`images` aliases preserve older embedded tests/integrations without reintroducing the retired field into request JSON.
+- Successful batch outputs retain their per-input source and comparison metadata. `partial_success` renders those outputs, uses a warning state, and surfaces every failed input in the alert and terminal.
 
 ### LoRA and device management
 
@@ -255,6 +253,7 @@ Phase 3.2 — expose the completed core/API image distinction through separate b
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
+- Current Phase 3.2 checkpoint: branch `main`, commit `40b16c2`, matching `origin/main`, with only the Phase 3.2 files listed below modified.
 - There were only two commits: the initial implementation and a Tier 5 frontend/adversarial test addition.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -281,8 +280,8 @@ Useful concepts to adapt are the separation of base input from optional referenc
 
 | Concern | Reference script | Current project | Implication |
 | --- | --- | --- | --- |
-| Input processing | Iterates independent base images | Core/API expands ordered `input_images` into independent durable generations; browser still uses the legacy sequence | Build the separate browser selection/upload controls on the completed batch boundary. |
-| References | Separate optional reference field | Core/API has ordered shared `reference_images`; browser still mixes references with the first/canvas image | Split browser state and controls while preserving `[input, *references]` conditioning order. |
+| Input processing | Iterates independent base images | Core/API and browser expand ordered `input_images` into independent durable generations and results | Real full-model multi-input validation remains in the final matrix. |
+| References | Separate optional reference field | Browser and API keep ordered shared `reference_images` separate and preserve `[input, *references]` conditioning order | The transport and UI distinction are complete; adherence quality remains model/prompt dependent. |
 | LoRA | Sends optional `adapter_name` | Unsupported and never loaded | Add local discovery/upload plus explicit Diffusers loading and metadata. |
 | Device/model | Remote service owns them | Local `QwenBackend` owns them | Local capability reporting and strict device errors are required. |
 | Execution | Always requests remote inference | Production by default; synthetic demo requires explicit opt-in | Continue validating the real backend through the complete UI/API path. |
@@ -309,6 +308,17 @@ Useful concepts to adapt are the separation of base input from optional referenc
 - `tests/test_core.py`, `tests/test_runtime.py` — added image-contract boundary, ordering, shared-load, seed, record, and partial-failure tests.
 - `ui/tests/test_backend.py`, `ui/tests/test_frontend.py` — added backend-selection, API contract, default-mode, UI truthfulness, multi-input SSE, and partial-success tests.
 - `ui/tests/e2e/common.py`, `ui/tests/e2e/test_tier4_scenarios.py` — made synthetic E2E intent explicit after changing the production default.
+
+Phase 3.2 additions to the cumulative files above:
+
+- `ui/server.py` — added the confined, atomic `/api/inputs/upload` endpoint and image validation limits.
+- `ui/templates/index.html` — added the role selector, upload/drop control, and separate process-input/reference sections and labels.
+- `ui/static/js/app.js` — added explicit independent state, role-aware selection/upload, ordered list controls, explicit request serialization, all-output mapping, output-specific comparisons, and partial-success presentation.
+- `ui/static/css/style.css` — styled uploads, role/selection states, both ordered galleries, batch thumbnails, and usable stacked narrow-screen panels/header.
+- `ui/README.md` — documented the completed input/reference workspace, upload endpoint, validation behavior, and batch completion shape.
+- `ui/tests/test_backend.py` — added valid multi-upload, atomic rejection, content mismatch, empty/unsupported input, traversal-name confinement, count, and size-limit coverage.
+- `ui/tests/test_frontend.py`, `ui/tests/test_tier5_frontend_stress.py` — updated the DOM/accessibility contract for the new controls.
+- `ui/tests/test_challenger_m2_node.js`, `ui/tests/test_tier5_node_stress.js` — migrated assertions to explicit roles and added upload destination, request JSON, independent limits, and partial-success output tests.
 
 ## Tests Performed
 
@@ -357,12 +367,19 @@ Useful concepts to adapt are the separation of base input from optional referenc
 - `.venv/bin/python run.py --input-images a.png b.png --reference-images ref.png --dry-run` — passed and serialized the explicit contract; `--reference-images` without `--input-images` exited with the intended parser error.
 - Phase 3.1 `node ui/tests/test_challenger_m2_node.js` and `node ui/tests/test_tier5_node_stress.js` — 27/27 and 14/14 passed.
 - Final `.venv/bin/python -m compileall -q qwen_runner ui tests` and `git diff --check` — passed.
+- Phase 3.2 targeted upload API tests — 3 passed, covering multiple valid files, collision-safe duplicate names, thumbnail/browse integration, atomic corrupt-batch cleanup, unsupported/empty/mismatched content, traversal-like filenames, count limits, and size limits.
+- Phase 3.2 `node ui/tests/test_challenger_m2_node.js` — 31/31 passed, including independent input/reference state, ordering/removal, max counts, explicit JSON without `images`, and role-aware uploaded-image placement.
+- Phase 3.2 `node ui/tests/test_tier5_node_stress.js` — 15/15 passed, including 50 clear/re-add cycles and preservation of successful outputs and visible input errors for `partial_success`.
+- Final Phase 3.2 host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 409 passed in 20.55 seconds; only the known Starlette/AnyIO deprecation warnings remain.
+- Phase 3.2 `.venv/bin/python -m pytest -q tests` — 28 passed plus 5 parameterized subtests in 2.43 seconds.
+- Headless Chrome validation against a temporary local demo server — rendered and visually inspected the live UI at 1440x1000 and 390x844; the second narrow pass confirmed a wrapped header, visible runtime state, and accessible input/upload/role controls.
+- Final Phase 3.2 `.venv/bin/python -m compileall -q qwen_runner ui run.py benchmark.py`, `.venv/bin/python -m pip check`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
 
 ## Known Issues
 
 - Real production execution is proven through the API, SSE, history, persistence, and file-serving path. A real browser automation pass with full model inference remains deferred to final end-to-end stabilization.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
-- Multi-reference transport is proven, but adherence is weak in the tested hairstyle transfer. Multiple process inputs and separate references are validated through the core and synthetic API/SSE path; the real full-model multi-input batch and browser controls remain unvalidated. LoRA application and narrow-viewport interaction also remain unvalidated. Selected-GPU execution is proven on both `cuda:0` and `cuda:1`.
+- Multi-reference transport is proven, but adherence is weak in the tested hairstyle transfer. Multiple process inputs and separate references are validated through the core, synthetic API/SSE path, browser state machine, and live responsive rendering; a real full-model multi-input batch initiated through browser controls remains for final end-to-end stabilization. LoRA application remains unimplemented. Selected-GPU execution is proven on both `cuda:0` and `cuda:1`.
 - `resolution=0` intentionally preserves native reference sizes. Very large references can consume nearly all GPU memory, take several minutes, and produce unusable output when the output canvas is much smaller; the UI needs a stronger warning or safer production default during the input/reference redesign.
 - Starlette 1.6 warns that its HTTPX fallback is deprecated. Installing `httpx2` 2.13.1 made TestClient unusable in this environment, so it was removed; current tests pass with HTTPX 0.28.1 when host IPC/loopback is available.
 - The user-provided primary checkout path was absent; work is occurring in the actual Git checkout at `/mnt/lab/farzine/qwen_workflow_runner`.
@@ -373,13 +390,13 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 3.2 as the separate browser input/reference workflow:
+Implement Phase 4 as a complete LoRA vertical slice:
 
-1. Trace the existing input browser, selection tray, thumbnail path checks, and output rendering before changing client state.
-2. Add a confined multi-file image upload endpoint with decoded-image validation, supported-extension/size limits, collision-safe names, and tests for valid, invalid, empty, and traversal-like uploads.
-3. Add separate ordered `inputs.selected` and `references.selected` client collections and distinct controls/drop zones with thumbnails, removal, ordering, and clear limits.
-4. Submit the Phase 3.1 `input_images`/`reference_images` fields and render all successful artifacts. Treat `partial_success` as a visible warning while preserving successful outputs and per-input errors.
-5. Validate click selection, drag/drop, multiple uploads, long filenames, max counts, empty states, and a narrow viewport; retain legacy server compatibility but stop emitting the combined field from the redesigned client.
+1. Inspect the installed Diffusers Qwen LoRA loader methods and current model lifecycle to define supported file formats, adapter naming, loading, scaling, replacement/unload, and offload/device behavior from actual APIs.
+2. Add configuration fields and validation for an optional selected LoRA plus strength, preserving a clear no-LoRA default and recording the effective adapter state in durable run metadata.
+3. Add confined LoRA directory discovery and validated upload endpoints with extension/size/path protections and actionable errors.
+4. Apply the selected LoRA in `QwenBackend.load`, prove it is actually activated, and ensure repeated jobs/model reuse do not accidentally retain a prior adapter.
+5. Add browser discovery/upload/selection/active-state controls, then test existing, uploaded, invalid, absent, and load-failure cases without beginning the full system-page redesign.
 
 ## Resume Instructions
 

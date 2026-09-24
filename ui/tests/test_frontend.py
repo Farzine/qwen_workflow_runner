@@ -257,11 +257,23 @@ class TestInteractiveComponentIDs(unittest.TestCase):
             "input-search-filter",
             "input-gallery-grid",
             "inputs-loading-spinner",
+            "asset-role-selector",
+            "btn-select-inputs",
+            "btn-select-references",
+            "image-upload-dropzone",
+            "image-file-input",
+            "image-upload-role-hint",
+            "image-upload-status",
             "selection-sequence-panel",
             "selected-count-badge",
             "btn-clear-selection",
             "selected-slots-list",
             "empty-selection-notice",
+            "reference-selection-panel",
+            "reference-count-badge",
+            "btn-clear-references",
+            "reference-slots-list",
+            "empty-reference-notice",
         ]
         for elem_id in expected:
             self.assertIn(f'id="{elem_id}"', self.html, f"Missing R1 element: {elem_id}")

@@ -112,6 +112,21 @@
         <input type="text" id="input-search-filter" class="form-control form-control-sm" placeholder="Filter images by name..." autocomplete="off">
       </div>
 
+      <div class="asset-role-toolbar" id="asset-role-selector" aria-label="Choose where selected images are added">
+        <span class="asset-role-label">Add gallery images to:</span>
+        <div class="asset-role-actions" role="group" aria-label="Image role">
+          <button type="button" id="btn-select-inputs" class="btn btn-xs btn-active" aria-pressed="true">Input Images</button>
+          <button type="button" id="btn-select-references" class="btn btn-xs btn-ghost" aria-pressed="false">References</button>
+        </div>
+      </div>
+
+      <div id="image-upload-dropzone" class="image-upload-dropzone" tabindex="0" role="button" aria-label="Upload input or reference images">
+        <input id="image-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,.bmp,.gif,image/*" aria-label="Choose images to upload" multiple hidden>
+        <span class="upload-dropzone-title">Drop images here or <strong>browse</strong></span>
+        <span id="image-upload-role-hint" class="upload-dropzone-hint">Uploads will be added to Input Images.</span>
+      </div>
+      <div id="image-upload-status" class="image-upload-status hidden" aria-live="polite"></div>
+
       <!-- Discovered Thumbnail Grid -->
       <div class="gallery-scroll-area">
         <div class="thumbnail-grid" id="input-gallery-grid" aria-label="Available input images">
@@ -122,27 +137,47 @@
         </div>
       </div>
 
-      <!-- Selected Reference Images Sequence (1 to 10 Ordered Slots) -->
-      <div class="selection-sequence-panel" id="selection-sequence-panel">
-        <div class="sequence-header">
-          <div class="sequence-title-group">
-            <h3 class="sequence-title">Reference Sequence</h3>
-            <span id="selected-count-badge" class="badge badge-primary">0 / 10</span>
+      <!-- Separate ordered process inputs and shared references -->
+      <div class="workflow-image-selections">
+        <div class="selection-sequence-panel selection-inputs" id="selection-sequence-panel">
+          <div class="sequence-header">
+            <div class="sequence-title-group">
+              <h3 class="sequence-title">Input Images</h3>
+              <span id="selected-count-badge" class="badge badge-primary">0 / 10</span>
+            </div>
+            <button id="btn-clear-selection" class="btn btn-ghost btn-xs" title="Clear process inputs">Clear</button>
           </div>
-          <button id="btn-clear-selection" class="btn btn-ghost btn-xs" title="Clear all selected images">Clear All</button>
+
+          <p class="sequence-hint">
+            Each image is processed independently and produces its own result.
+          </p>
+
+          <!-- Ordered Selected Slots List -->
+          <div class="selected-slots-list" id="selected-slots-list">
+            <div class="empty-selection-placeholder" id="empty-selection-notice">
+              <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M4 16l4.586-4.586a2 2 0 0 1 2.828 0L16 16m-2-2l1.586-1.586a2 2 0 0 1 2.828 0L20 14m-6-6h.01M6 20h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"></path>
+              </svg>
+              <span>Select or upload 1&ndash;10 images to process.</span>
+            </div>
+          </div>
         </div>
 
-        <p class="sequence-hint">
-          <strong>Slot 1</strong> is the editing canvas. <strong>Slots 2&ndash;10</strong> provide reference context.
-        </p>
-
-        <!-- Ordered Selected Slots List -->
-        <div class="selected-slots-list" id="selected-slots-list">
-          <div class="empty-selection-placeholder" id="empty-selection-notice">
-            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M4 16l4.586-4.586a2 2 0 0 1 2.828 0L16 16m-2-2l1.586-1.586a2 2 0 0 1 2.828 0L20 14m-6-6h.01M6 20h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"></path>
-            </svg>
-            <span>Click images above to build your 1&ndash;10 ordered sequence.</span>
+        <div class="selection-sequence-panel selection-references" id="reference-selection-panel">
+          <div class="sequence-header">
+            <div class="sequence-title-group">
+              <h3 class="sequence-title">Reference Images</h3>
+              <span id="reference-count-badge" class="badge badge-accent">0 / 9</span>
+            </div>
+            <button id="btn-clear-references" class="btn btn-ghost btn-xs" title="Clear shared references">Clear</button>
+          </div>
+          <p class="sequence-hint">
+            Shared conditioning for every input. Order maps to <strong>&lt;image2&gt;</strong> onward.
+          </p>
+          <div class="selected-slots-list" id="reference-slots-list">
+            <div class="empty-selection-placeholder" id="empty-reference-notice">
+              <span>References are optional. Select “References” above to add them.</span>
+            </div>
           </div>
         </div>
       </div>
@@ -211,8 +246,8 @@
             <!-- Quick Token Insert Toolbar -->
             <div class="token-toolbar" id="prompt-token-toolbar" title="Click to insert image reference token at cursor">
               <span class="token-toolbar-label">Tokens:</span>
-              <button type="button" class="token-btn" data-token="<image1>">&lt;image1&gt; (canvas)</button>
-              <button type="button" class="token-btn" data-token="<image2>">&lt;image2&gt;</button>
+              <button type="button" class="token-btn" data-token="<image1>">&lt;image1&gt; (current input)</button>
+              <button type="button" class="token-btn" data-token="<image2>">&lt;image2&gt; (reference 1)</button>
               <button type="button" class="token-btn" data-token="<image3>">&lt;image3&gt;</button>
               <button type="button" class="token-btn" data-token="<image4>">&lt;image4&gt;</button>
               <button type="button" class="token-btn" data-token="<image5>">&lt;image5&gt;</button>
@@ -319,7 +354,7 @@
                 <span class="field-hint">Multiples of 32 &le; 4096 (0 = canvas native)</span>
               </div>
               <select id="param-resolution" class="form-control">
-                <option value="0" selected>0 (Canvas Native Dimensions)</option>
+                <option value="0" selected>0 (Input Native Dimensions)</option>
                 <option value="512">512 &times; 512</option>
                 <option value="768">768 &times; 768</option>
                 <option value="1024">1024 &times; 1024 (Standard HD)</option>
@@ -508,7 +543,7 @@
               </label>
               <div>
                 <span class="toggle-label font-semibold">Generate Side-by-Side Comparison Image</span>
-                <div class="field-hint">Outputs a side-by-side PNG comparing Canvas input with generated output</div>
+                <div class="field-hint">Outputs a side-by-side PNG comparing each process input with its generated output</div>
               </div>
             </div>
           </div>
@@ -764,7 +799,7 @@
               <polyline points="21 15 16 10 5 21"></polyline>
             </svg>
             <p>No output generated yet.</p>
-            <span class="field-hint">Select reference images, configure prompt, and click Run Pipeline.</span>
+            <span class="field-hint">Select input images, optionally add references, then click Run Pipeline.</span>
           </div>
 
           <div id="output-active-view" class="output-display-card hidden">
@@ -825,7 +860,7 @@
               <button id="btn-mode-split" class="btn btn-xs btn-active" title="Split view slider">Split Slider</button>
               <button id="btn-mode-side" class="btn btn-xs btn-ghost" title="2-up side-by-side view">Side-by-Side</button>
             </div>
-            <span class="field-hint">Compares Slot 1 (Canvas) with Generated Output</span>
+            <span class="field-hint">Compares the selected process input with its generated output</span>
           </div>
 
           <div id="comparison-empty-state" class="output-empty-placeholder">
@@ -838,9 +873,9 @@
 
           <!-- Mode A: Interactive Split Slider -->
           <div id="comparison-split-wrapper" class="comparison-container hidden">
-            <!-- Background Image (Canvas Image / Before) -->
-            <img id="comparison-before-img" class="comparison-img before" alt="Original Canvas Image" src="">
-            <span class="comparison-badge badge-before">Canvas (Slot 1)</span>
+            <!-- Background Image (Process Input / Before) -->
+            <img id="comparison-before-img" class="comparison-img before" alt="Original Process Input" src="">
+            <span class="comparison-badge badge-before">Process Input</span>
 
             <!-- Foreground Image Clipped (Output Image / After) -->
             <div id="comparison-clip-wrapper" class="comparison-clip">
@@ -863,8 +898,8 @@
           <!-- Mode B: 2-Up Side-by-Side Grid -->
           <div id="comparison-two-up-wrapper" class="comparison-two-up-grid hidden">
             <div class="two-up-col">
-              <span class="column-tag">Canvas Input (Slot 1)</span>
-              <img id="two-up-before-img" class="two-up-img" alt="Canvas Input">
+              <span class="column-tag">Process Input</span>
+              <img id="two-up-before-img" class="two-up-img" alt="Process Input">
             </div>
             <div class="two-up-col">
               <span class="column-tag">Generated Output</span>

@@ -5,8 +5,8 @@
  * Executed via Node.js v22.
  *
  * Stress-tests:
- * 1. Reference slot ordering logic: 0 images, 1 image, 10 images, 11th image addition attempt.
- * 2. Slot 1 strictly canvas vs slots 2-10 references in badges, classes, and comparison viewer.
+ * 1. Process-input ordering logic: 0 images, 1 image, 10 images, 11th image addition attempt.
+ * 2. Shared-reference role selection, independent limits, badges, and prompt-token mapping.
  * 3. Reordering logic: move up/down, boundaries, removing slots, clearing all.
  * 4. Slider <-> numeric input bidirectional synchronization.
  * 5. Parameter validation for out-of-bounds numbers and invalid characters.
@@ -364,8 +364,8 @@ function assertJsonEqual(actual, expected, msg) {
 
 runTest("Boundary at 0 images: initial state is empty", () => {
   InputBrowser.clearAll();
-  assert.strictEqual(Store.state.inputs.selected.length, 0);
-  assertJsonEqual(Store.state.config.generation.images, []);
+  assert.strictEqual(Store.state.inputs.inputImages.length, 0);
+  assertJsonEqual(Store.state.config.generation.input_images, []);
   assert.strictEqual(InputBrowser.selectedCountBadge.textContent, "0 / 10");
 });
 
@@ -378,36 +378,36 @@ runTest("Boundary at 0 images: RunHub blocks execution with error banner & warni
 
   assert.strictEqual(toastLog.length, 1);
   assert.strictEqual(toastLog[0].type, "warning");
-  assert.match(toastLog[0].msg, /at least 1 reference image/i);
+  assert.match(toastLog[0].msg, /at least one input image/i);
   assert.strictEqual(lastAlertMessages.length, 1);
-  assert.match(lastAlertMessages[0], /Provide 1–10 ordered reference images/i);
+  assert.match(lastAlertMessages[0], /Provide 1–10 ordered input images/i);
   assert.strictEqual(Store.state.run.status, "idle");
 });
 
-runTest("Boundary at 1 image: select 1 image assigns #1 Canvas", () => {
+runTest("Boundary at 1 image: select 1 process input", () => {
   InputBrowser.clearAll();
   const img1 = { name: "portrait_canvas.png", path: "/mnt/lab/farzine/inputs/portrait_canvas.png", width: 1024, height: 1024 };
 
   InputBrowser.toggleSelection(img1);
 
-  assert.strictEqual(Store.state.inputs.selected.length, 1);
-  assertJsonEqual(Store.state.config.generation.images, [img1.path]);
+  assert.strictEqual(Store.state.inputs.inputImages.length, 1);
+  assertJsonEqual(Store.state.config.generation.input_images, [img1.path]);
   assert.strictEqual(InputBrowser.selectedCountBadge.textContent, "1 / 10");
 
   // Inspect slot card rendering
   const slotCards = InputBrowser.selectedSlotsList.children;
   assert.strictEqual(slotCards.length, 1);
   const card = slotCards[0];
-  assert(card.className.includes("slot-card-canvas"), "Slot 1 card must have slot-card-canvas class");
+  assert(card.className.includes("slot-card-input"), "Process input card must have slot-card-input class");
 
-  // Verify badge text is #1 Canvas
+  // Verify explicit process-input role
   const badge = card.querySelector(".badge");
   assert(badge, "Badge must be rendered");
-  assert.strictEqual(badge.textContent, "#1 Canvas");
-  assert(badge.className.includes("badge-accent"), "Slot 1 must have badge-accent");
+  assert.strictEqual(badge.textContent, "Input 1");
+  assert(badge.className.includes("badge-primary"));
 });
 
-runTest("Slot 1 Canvas vs Slots 2–10 References: distinct badges and classes", () => {
+runTest("Multiple process inputs remain independent ordered inputs", () => {
   InputBrowser.clearAll();
   const img1 = { name: "img1.png", path: "/inputs/img1.png", width: 512, height: 512 };
   const img2 = { name: "img2.png", path: "/inputs/img2.png", width: 512, height: 512 };
@@ -417,29 +417,23 @@ runTest("Slot 1 Canvas vs Slots 2–10 References: distinct badges and classes",
   InputBrowser.toggleSelection(img2);
   InputBrowser.toggleSelection(img3);
 
-  assert.strictEqual(Store.state.inputs.selected.length, 3);
-  assertJsonEqual(Store.state.config.generation.images, [img1.path, img2.path, img3.path]);
+  assert.strictEqual(Store.state.inputs.inputImages.length, 3);
+  assertJsonEqual(Store.state.config.generation.input_images, [img1.path, img2.path, img3.path]);
 
   const cards = InputBrowser.selectedSlotsList.children;
   assert.strictEqual(cards.length, 3);
 
-  // Slot 1: Canvas
-  assert(cards[0].className.includes("slot-card-canvas"));
-  assert.strictEqual(cards[0].querySelector(".badge").textContent, "#1 Canvas");
-  assert(cards[0].querySelector(".badge").className.includes("badge-accent"));
-
-  // Slot 2: Ref
-  assert(!cards[1].className.includes("slot-card-canvas"));
-  assert.strictEqual(cards[1].querySelector(".badge").textContent, "#2 Ref");
+  assert(cards[0].className.includes("slot-card-input"));
+  assert.strictEqual(cards[0].querySelector(".badge").textContent, "Input 1");
+  assert(cards[1].className.includes("slot-card-input"));
+  assert.strictEqual(cards[1].querySelector(".badge").textContent, "Input 2");
   assert(cards[1].querySelector(".badge").className.includes("badge-primary"));
-
-  // Slot 3: Ref
-  assert(!cards[2].className.includes("slot-card-canvas"));
-  assert.strictEqual(cards[2].querySelector(".badge").textContent, "#3 Ref");
+  assert(cards[2].className.includes("slot-card-input"));
+  assert.strictEqual(cards[2].querySelector(".badge").textContent, "Input 3");
   assert(cards[2].querySelector(".badge").className.includes("badge-primary"));
 });
 
-runTest("ComparisonSlider strictly consumes Slot 1 as Canvas for comparison", () => {
+runTest("ComparisonSlider consumes the first process input by default", () => {
   const outputs = [{ url: "/api/outputs/run_001.png", filename: "run_001.png" }];
   ComparisonSlider.setup(outputs, "/api/outputs/run_001_comparison.png");
 
@@ -448,55 +442,55 @@ runTest("ComparisonSlider strictly consumes Slot 1 as Canvas for comparison", ()
   assert.strictEqual(ComparisonSlider.afterImg.src, "/api/outputs/run_001.png");
 });
 
-runTest("Reordering logic: moving slot 0 down swaps Canvas role to new first item", () => {
+runTest("Reordering logic: moving input 0 down changes process order", () => {
   // Current order: [img1, img2, img3]
   InputBrowser.moveSlot(0, 1);
 
   // New order must be: [img2, img1, img3]
-  assertJsonEqual(Store.state.config.generation.images, [
+  assertJsonEqual(Store.state.config.generation.input_images, [
     "/inputs/img2.png",
     "/inputs/img1.png",
     "/inputs/img3.png",
   ]);
 
   const cards = InputBrowser.selectedSlotsList.children;
-  // img2 is now Slot 1 Canvas!
+  // img2 is now process input 1.
   assert.strictEqual(cards[0].querySelector(".slot-filename").textContent, "img2.png");
-  assert.strictEqual(cards[0].querySelector(".badge").textContent, "#1 Canvas");
-  assert(cards[0].className.includes("slot-card-canvas"));
+  assert.strictEqual(cards[0].querySelector(".badge").textContent, "Input 1");
+  assert(cards[0].className.includes("slot-card-input"));
 
-  // img1 is now Slot 2 Ref!
+  // img1 is now process input 2.
   assert.strictEqual(cards[1].querySelector(".slot-filename").textContent, "img1.png");
-  assert.strictEqual(cards[1].querySelector(".badge").textContent, "#2 Ref");
+  assert.strictEqual(cards[1].querySelector(".badge").textContent, "Input 2");
 });
 
 runTest("Reordering logic: out-of-bounds moves are safely ignored without modification", () => {
   // Move slot 0 earlier (direction -1) -> out of bounds
   InputBrowser.moveSlot(0, -1);
-  assert.strictEqual(Store.state.inputs.selected[0].name, "img2.png");
+  assert.strictEqual(Store.state.inputs.inputImages[0].name, "img2.png");
 
   // Move slot 2 later (direction +1) -> out of bounds (targetIdx 3 >= length 3)
   InputBrowser.moveSlot(2, 1);
-  assert.strictEqual(Store.state.inputs.selected[2].name, "img3.png");
+  assert.strictEqual(Store.state.inputs.inputImages[2].name, "img3.png");
 
   // Arbitrary out of bounds
   InputBrowser.moveSlot(-5, -1);
   InputBrowser.moveSlot(10, 1);
-  assert.strictEqual(Store.state.inputs.selected.length, 3);
+  assert.strictEqual(Store.state.inputs.inputImages.length, 3);
 });
 
-runTest("Slot removal: removing slot 0 shifts subsequent items and re-badges Slot 1 Canvas", () => {
+runTest("Input removal shifts subsequent ordered inputs", () => {
   // Current order: [img2, img1, img3]
   InputBrowser.removeSlot(0);
 
   // New order: [img1, img3]
-  assert.strictEqual(Store.state.inputs.selected.length, 2);
-  assertJsonEqual(Store.state.config.generation.images, ["/inputs/img1.png", "/inputs/img3.png"]);
+  assert.strictEqual(Store.state.inputs.inputImages.length, 2);
+  assertJsonEqual(Store.state.config.generation.input_images, ["/inputs/img1.png", "/inputs/img3.png"]);
 
   const cards = InputBrowser.selectedSlotsList.children;
   assert.strictEqual(cards[0].querySelector(".slot-filename").textContent, "img1.png");
-  assert.strictEqual(cards[0].querySelector(".badge").textContent, "#1 Canvas");
-  assert.strictEqual(cards[1].querySelector(".badge").textContent, "#2 Ref");
+  assert.strictEqual(cards[0].querySelector(".badge").textContent, "Input 1");
+  assert.strictEqual(cards[1].querySelector(".badge").textContent, "Input 2");
   assert.strictEqual(InputBrowser.selectedCountBadge.textContent, "2 / 10");
 });
 
@@ -511,14 +505,14 @@ runTest("Boundary at 10 images: can select up to exactly 10 images", () => {
     });
   }
 
-  assert.strictEqual(Store.state.inputs.selected.length, 10);
-  assert.strictEqual(Store.state.config.generation.images.length, 10);
+  assert.strictEqual(Store.state.inputs.inputImages.length, 10);
+  assert.strictEqual(Store.state.config.generation.input_images.length, 10);
   assert.strictEqual(InputBrowser.selectedCountBadge.textContent, "10 / 10");
 
   const cards = InputBrowser.selectedSlotsList.children;
   assert.strictEqual(cards.length, 10);
-  assert.strictEqual(cards[0].querySelector(".badge").textContent, "#1 Canvas");
-  assert.strictEqual(cards[9].querySelector(".badge").textContent, "#10 Ref");
+  assert.strictEqual(cards[0].querySelector(".badge").textContent, "Input 1");
+  assert.strictEqual(cards[9].querySelector(".badge").textContent, "Input 10");
 });
 
 runTest("Boundary at 11th image: addition attempt is blocked with toast warning & banner", () => {
@@ -529,26 +523,99 @@ runTest("Boundary at 11th image: addition attempt is blocked with toast warning 
   InputBrowser.toggleSelection(img11);
 
   // Selection must strictly remain 10 items
-  assert.strictEqual(Store.state.inputs.selected.length, 10, "Selected items must NOT exceed 10");
-  assert.strictEqual(Store.state.config.generation.images.length, 10);
+  assert.strictEqual(Store.state.inputs.inputImages.length, 10, "Selected items must NOT exceed 10");
+  assert.strictEqual(Store.state.config.generation.input_images.length, 10);
   assert.strictEqual(InputBrowser.selectedCountBadge.textContent, "10 / 10");
 
   // Warning must be triggered
-  assert(toastLog.some((t) => t.type === "warning" && t.msg.includes("Maximum 10 reference images")));
-  assert(lastAlertMessages.some((m) => m.includes("Maximum 10 reference images")));
+  assert(toastLog.some((t) => t.type === "warning" && t.msg.includes("Maximum 10 input images")));
+  assert(lastAlertMessages.some((m) => m.includes("Maximum 10 input images")));
 });
 
 runTest("Deselection at boundary: removing 1 image drops count to 9, allowing new image", () => {
   // Deselect img_5 by toggling it
   InputBrowser.toggleSelection({ path: "/inputs/img_5.png" });
-  assert.strictEqual(Store.state.inputs.selected.length, 9);
+  assert.strictEqual(Store.state.inputs.inputImages.length, 9);
   assert.strictEqual(InputBrowser.selectedCountBadge.textContent, "9 / 10");
 
   // Now adding img_11 succeeds
   const img11 = { name: "img_11.png", path: "/inputs/img_11.png", width: 1024, height: 1024 };
   InputBrowser.toggleSelection(img11);
-  assert.strictEqual(Store.state.inputs.selected.length, 10);
-  assert.strictEqual(Store.state.inputs.selected[9].name, "img_11.png");
+  assert.strictEqual(Store.state.inputs.inputImages.length, 10);
+  assert.strictEqual(Store.state.inputs.inputImages[9].name, "img_11.png");
+});
+
+runTest("Reference role keeps shared references separate from process inputs", () => {
+  InputBrowser.clearAll();
+  const input = { name: "person.png", path: "/inputs/person.png", width: 512, height: 768 };
+  const reference = { name: "style.png", path: "/inputs/style.png", width: 640, height: 640 };
+  InputBrowser.setActiveRole("input");
+  InputBrowser.toggleSelection(input);
+  InputBrowser.setActiveRole("reference");
+  InputBrowser.toggleSelection(reference);
+
+  assertJsonEqual(Store.state.config.generation.input_images, [input.path]);
+  assertJsonEqual(Store.state.config.generation.reference_images, [reference.path]);
+  assert.strictEqual(InputBrowser.referenceCountBadge.textContent, "1 / 9");
+  const refCard = InputBrowser.referenceSlotsList.children[0];
+  assert(refCard.className.includes("slot-card-reference"));
+  assert.strictEqual(refCard.querySelector(".badge").textContent, "Ref 1 · <image2>");
+});
+
+runTest("Explicit request JSON omits the retired combined images field", () => {
+  const serialized = JSON.parse(JSON.stringify(Store.state.config.generation));
+  assert(!Object.prototype.hasOwnProperty.call(serialized, "images"));
+  assertJsonEqual(serialized.input_images, ["/inputs/person.png"]);
+  assertJsonEqual(serialized.reference_images, ["/inputs/style.png"]);
+});
+
+runTest("Reference boundary accepts 9 and rejects the 10th reference", () => {
+  InputBrowser.clearRole("reference");
+  InputBrowser.setActiveRole("reference");
+  for (let index = 1; index <= 9; index++) {
+    InputBrowser.toggleSelection({ name: `ref_${index}.png`, path: `/inputs/ref_${index}.png`, width: 64, height: 64 });
+  }
+  assert.strictEqual(Store.state.inputs.referenceImages.length, 9);
+  assert.strictEqual(InputBrowser.referenceCountBadge.textContent, "9 / 9");
+  toastLog.length = 0;
+  InputBrowser.toggleSelection({ name: "ref_10.png", path: "/inputs/ref_10.png", width: 64, height: 64 });
+  assert.strictEqual(Store.state.inputs.referenceImages.length, 9);
+  assert(toastLog.some((item) => item.type === "warning" && item.msg.includes("Maximum 9 reference images")));
+  InputBrowser.setActiveRole("input");
+});
+
+runTest("Uploaded images are appended to the active reference role", async () => {
+  InputBrowser.clearAll();
+  InputBrowser.setActiveRole("reference");
+  const originalUpload = ApiClient.uploadInputImages;
+  const originalLoadFolder = InputBrowser.loadFolder;
+  ApiClient.uploadInputImages = async () => ({
+    count: 2,
+    images: [
+      { name: "style-a.png", original_name: "a-very-long-original-style-filename-that-must-remain-readable-in-the-selection-list.png", path: "/inputs/uploads/style-a.png", width: 320, height: 240 },
+      { name: "style-b.png", original_name: "style.png", path: "/inputs/uploads/style-b.png", width: 640, height: 480 },
+    ],
+  });
+  InputBrowser.loadFolder = async () => {};
+
+  try {
+    await InputBrowser.uploadFiles([{ name: "style.png" }, { name: "style.png" }]);
+    assertJsonEqual(Store.state.config.generation.reference_images, [
+      "/inputs/uploads/style-a.png",
+      "/inputs/uploads/style-b.png",
+    ]);
+    assert.strictEqual(Store.state.config.generation.input_images.length, 0);
+    assert.strictEqual(InputBrowser.referenceSlotsList.children.length, 2);
+    assert.strictEqual(
+      InputBrowser.referenceSlotsList.children[0].querySelector(".slot-filename").textContent,
+      "a-very-long-original-style-filename-that-must-remain-readable-in-the-selection-list.png"
+    );
+    assert.strictEqual(InputBrowser.referenceSlotsList.children[1].querySelector(".badge").textContent, "Ref 2 · <image3>");
+  } finally {
+    ApiClient.uploadInputImages = originalUpload;
+    InputBrowser.loadFolder = originalLoadFolder;
+    InputBrowser.setActiveRole("input");
+  }
 });
 
 console.log("\n[TEST GROUP 2: Parameter Inputs, Slider Sync & Live Validation]");
@@ -727,7 +794,7 @@ runTest("Invalid characters resilience: non-numeric inputs do not crash or produ
   assert.strictEqual(Store.state.config.generation.shift, 0.69); // Fallback to 0.69
 });
 
-runTest("Reordering & Canvas Badging: Multi-step slot shift promotes item to Canvas", () => {
+runTest("Reordering and input badging preserve the process order", () => {
   InputBrowser.clearAll();
   const imgs = [
     { name: "A.png", path: "/inputs/A.png", width: 512, height: 512 },
@@ -737,15 +804,15 @@ runTest("Reordering & Canvas Badging: Multi-step slot shift promotes item to Can
   ];
   imgs.forEach((img) => InputBrowser.toggleSelection(img));
 
-  assert.strictEqual(Store.state.inputs.selected.length, 4);
-  assert.strictEqual(Store.state.inputs.selected[0].name, "A.png");
+  assert.strictEqual(Store.state.inputs.inputImages.length, 4);
+  assert.strictEqual(Store.state.inputs.inputImages[0].name, "A.png");
 
   // Shift D from slot 3 to slot 0:
   InputBrowser.moveSlot(3, -1); // [A, B, D, C]
   InputBrowser.moveSlot(2, -1); // [A, D, B, C]
   InputBrowser.moveSlot(1, -1); // [D, A, B, C]
 
-  assertJsonEqual(Store.state.config.generation.images, [
+  assertJsonEqual(Store.state.config.generation.input_images, [
     "/inputs/D.png",
     "/inputs/A.png",
     "/inputs/B.png",
@@ -755,36 +822,36 @@ runTest("Reordering & Canvas Badging: Multi-step slot shift promotes item to Can
   const cards = InputBrowser.selectedSlotsList.children;
   assert.strictEqual(cards.length, 4);
 
-  // Slot 0 (D.png): strictly #1 Canvas
-  assert(cards[0].className.includes("slot-card-canvas"));
-  assert.strictEqual(cards[0].querySelector(".badge").textContent, "#1 Canvas");
-  assert(cards[0].querySelector(".badge").className.includes("badge-accent"));
+  // Slot 0 (D.png) is now the first process input.
+  assert(cards[0].className.includes("slot-card-input"));
+  assert.strictEqual(cards[0].querySelector(".badge").textContent, "Input 1");
+  assert(cards[0].querySelector(".badge").className.includes("badge-primary"));
   assert.strictEqual(cards[0].querySelector(".slot-filename").textContent, "D.png");
 
-  // Slots 1-3 (A, B, C): strictly References
-  assert(!cards[1].className.includes("slot-card-canvas"));
-  assert.strictEqual(cards[1].querySelector(".badge").textContent, "#2 Ref");
+  // Slots 1-3 remain independently processed inputs.
+  assert(cards[1].className.includes("slot-card-input"));
+  assert.strictEqual(cards[1].querySelector(".badge").textContent, "Input 2");
   assert.strictEqual(cards[1].querySelector(".slot-filename").textContent, "A.png");
 
-  assert(!cards[2].className.includes("slot-card-canvas"));
-  assert.strictEqual(cards[2].querySelector(".badge").textContent, "#3 Ref");
+  assert(cards[2].className.includes("slot-card-input"));
+  assert.strictEqual(cards[2].querySelector(".badge").textContent, "Input 3");
   assert.strictEqual(cards[2].querySelector(".slot-filename").textContent, "B.png");
 
-  assert(!cards[3].className.includes("slot-card-canvas"));
-  assert.strictEqual(cards[3].querySelector(".badge").textContent, "#4 Ref");
+  assert(cards[3].className.includes("slot-card-input"));
+  assert.strictEqual(cards[3].querySelector(".badge").textContent, "Input 4");
   assert.strictEqual(cards[3].querySelector(".slot-filename").textContent, "C.png");
 
-  // Verify ComparisonSlider setup now binds D.png as Canvas
+  // Verify ComparisonSlider setup now binds D.png as the source input.
   ComparisonSlider.setup([{ url: "/api/outputs/run_002.png", filename: "run_002.png" }]);
   assert(ComparisonSlider.beforeImg.src.includes("%2Finputs%2FD.png"));
 });
 
-runTest("Slot Removal: Removing mid-sequence slot shifts subsequent items preserving Canvas", () => {
+runTest("Slot removal shifts subsequent process inputs", () => {
   // Current order: [D, A, B, C]. Remove slot 1 (A.png):
   InputBrowser.removeSlot(1);
 
-  assert.strictEqual(Store.state.inputs.selected.length, 3);
-  assertJsonEqual(Store.state.config.generation.images, [
+  assert.strictEqual(Store.state.inputs.inputImages.length, 3);
+  assertJsonEqual(Store.state.config.generation.input_images, [
     "/inputs/D.png",
     "/inputs/B.png",
     "/inputs/C.png",
@@ -792,13 +859,13 @@ runTest("Slot Removal: Removing mid-sequence slot shifts subsequent items preser
 
   const cards = InputBrowser.selectedSlotsList.children;
   assert.strictEqual(cards.length, 3);
-  assert.strictEqual(cards[0].querySelector(".badge").textContent, "#1 Canvas");
+  assert.strictEqual(cards[0].querySelector(".badge").textContent, "Input 1");
   assert.strictEqual(cards[0].querySelector(".slot-filename").textContent, "D.png");
 
-  assert.strictEqual(cards[1].querySelector(".badge").textContent, "#2 Ref");
+  assert.strictEqual(cards[1].querySelector(".badge").textContent, "Input 2");
   assert.strictEqual(cards[1].querySelector(".slot-filename").textContent, "B.png");
 
-  assert.strictEqual(cards[2].querySelector(".badge").textContent, "#3 Ref");
+  assert.strictEqual(cards[2].querySelector(".badge").textContent, "Input 3");
   assert.strictEqual(cards[2].querySelector(".slot-filename").textContent, "C.png");
 });
 
@@ -830,7 +897,7 @@ runTest("Special characters in image paths: URL encoding and escape safety", () 
   };
   InputBrowser.toggleSelection(specialImg);
 
-  assert.strictEqual(Store.state.inputs.selected.length, 1);
+  assert.strictEqual(Store.state.inputs.inputImages.length, 1);
   const encodedThumb = ApiClient.getThumbnailUrl(specialImg.path, 256);
   assert(encodedThumb.includes("photo%20%26%20edit%20(v2)%20%5Bfinal%5D.png"));
 
