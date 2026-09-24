@@ -127,5 +127,114 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(len(failures),1)
             self.assertIsNotNone(failures[0]['inference_time_seconds'])
 
+    def test_explicit_inputs_share_model_references_and_repeat_seed(self):
+        import torch
+        from qwen_runner.config import Config
+        from qwen_runner.runner import run
+
+        class Backend:
+            loads = 0
+            calls = []
+
+            def __init__(self, config):
+                self.config = config
+                self.torch = torch
+                self.metadata = {'model': {'repo_id': 'synthetic/batch'}}
+
+            def load(self):
+                type(self).loads += 1
+                return self
+
+            def generate(self, images, canvas, seed):
+                type(self).calls.append({
+                    'pixels': [image.getpixel((0, 0)) for image in images],
+                    'paths': list(self.config.generation.images),
+                    'seed': seed,
+                })
+                return [images[0].copy()]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = []
+            for name, color in (
+                ('input-b.png', (20, 0, 0)),
+                ('input-a.png', (10, 0, 0)),
+                ('ref-2.png', (0, 20, 0)),
+                ('ref-1.png', (0, 10, 0)),
+            ):
+                path = root / name
+                Image.new('RGB', (64, 64), color).save(path)
+                paths.append(path)
+
+            c = Config()
+            c.generation.input_images = [str(paths[0]), str(paths[1])]
+            c.generation.reference_images = [str(paths[2]), str(paths[3])]
+            c.generation.seed = 7
+            c.runtime.output_dir = str(root / 'out')
+            c.runtime.device = 'cpu'; c.runtime.dtype = 'float32'; c.runtime.offload = 'none'
+            c.runtime.repeats = 2; c.runtime.increment_seed = True
+            records = run(c, Backend)
+
+            self.assertEqual(Backend.loads, 1)
+            self.assertEqual(len(records), 4)
+            self.assertEqual([r['input_index'] for r in records], [0, 1, 0, 1])
+            self.assertEqual([r['parameters']['generation']['seed'] for r in records], [7, 7, 8, 8])
+            self.assertTrue(all(r['parameters']['generation']['images'] == [] for r in records))
+            self.assertEqual([call['seed'] for call in Backend.calls], [7, 7, 8, 8])
+            self.assertEqual(
+                [call['pixels'] for call in Backend.calls[:2]],
+                [[(20, 0, 0), (0, 20, 0), (0, 10, 0)],
+                 [(10, 0, 0), (0, 20, 0), (0, 10, 0)]],
+            )
+            self.assertEqual(Backend.calls[0]['paths'], [str(paths[0]), str(paths[2]), str(paths[3])])
+            self.assertEqual(Backend.calls[1]['paths'], [str(paths[1]), str(paths[2]), str(paths[3])])
+            self.assertEqual(
+                [Path(item['path']).name for item in records[0]['effective_parameters']['additional_reference_images']],
+                ['ref-2.png', 'ref-1.png'],
+            )
+            self.assertTrue(all(len(record['outputs']) == 1 for record in records))
+
+    def test_explicit_multi_input_isolates_decode_failure(self):
+        import torch
+        from qwen_runner.config import Config
+        from qwen_runner.runner import run
+
+        class Backend:
+            loads = 0
+            calls = 0
+
+            def __init__(self, config):
+                self.config = config
+                self.torch = torch
+                self.metadata = {'model': {'repo_id': 'synthetic/partial'}}
+
+            def load(self):
+                type(self).loads += 1
+                return self
+
+            def generate(self, images, canvas, seed):
+                type(self).calls += 1
+                return [images[0].copy()]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            corrupt = root / 'corrupt.png'; corrupt.write_bytes(b'not an image')
+            valid = root / 'valid.png'; Image.new('RGB', (64, 64), (1, 2, 3)).save(valid)
+            reference = root / 'reference.png'; Image.new('RGB', (64, 64), (4, 5, 6)).save(reference)
+            c = Config()
+            c.generation.input_images = [str(corrupt), str(valid)]
+            c.generation.reference_images = [str(reference)]
+            c.runtime.output_dir = str(root / 'out')
+            c.runtime.device = 'cpu'; c.runtime.dtype = 'float32'; c.runtime.offload = 'none'
+
+            records = run(c, Backend)
+            self.assertEqual(Backend.loads, 1)
+            self.assertEqual(Backend.calls, 1)
+            self.assertEqual([record['status'] for record in records], ['error', 'success'])
+            self.assertEqual(records[0]['input_index'], 0)
+            self.assertIn('error', records[0])
+            self.assertEqual(records[1]['input_index'], 1)
+            self.assertEqual(len(records[1]['outputs']), 1)
+
 
 if __name__ == '__main__': unittest.main()

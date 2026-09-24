@@ -20,6 +20,11 @@ class ModelConfig:
 class GenerationConfig:
     images: list[str] = field(default_factory=lambda: [
         "inputs/portrait_model_denim.png", "inputs/clothing_light_blue_denim_shirt.png"])
+    # Explicit batch contract. When input_images is provided it takes precedence
+    # over the legacy combined images list. Each input is inferred independently
+    # with the same ordered reference_images appended after it.
+    input_images: list[str] | None = None
+    reference_images: list[str] | None = None
     prompt: str = (
         "Keep the character and pose in <image1> unchanged, put this light blue denim shirt "
         "from <image2> on the character, preserve the original facial features, hair, body "
@@ -68,16 +73,49 @@ class Config:
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
 
     def as_dict(self):
-        return asdict(self)
+        result = asdict(self)
+        if self.generation.input_images is not None or self.generation.reference_images is not None:
+            # Do not serialize ignored default/legacy paths beside the active
+            # explicit contract; this keeps API responses and run records clear.
+            result['generation']['images'] = []
+        return result
+
+    def resolved_image_inputs(self):
+        """Return ordered process inputs and shared references.
+
+        The legacy ``images`` field remains a single conditioning sequence:
+        its first item is the process input/canvas and the remaining items are
+        references. Supplying either explicit field activates the new contract.
+        """
+        g = self.generation
+        explicit = g.input_images is not None or g.reference_images is not None
+        if explicit:
+            inputs = g.input_images
+            references = [] if g.reference_images is None else g.reference_images
+            if not isinstance(inputs, list) or not 1 <= len(inputs) <= 10:
+                raise ValueError("Provide 1–10 ordered input_images.")
+            if not isinstance(references, list) or len(references) > 9:
+                raise ValueError(
+                    "Provide at most 9 ordered reference_images so each inference has at most 10 conditioning images."
+                )
+        else:
+            if not isinstance(g.images, list) or not 1 <= len(g.images) <= 10:
+                raise ValueError("Provide 1–10 ordered reference images; image1 is the output canvas.")
+            inputs, references = g.images[:1], g.images[1:]
+
+        if not all(isinstance(path, str) and path.strip() for path in [*inputs, *references]):
+            raise ValueError("All image paths must be non-empty strings.")
+        return list(inputs), list(references)
 
     def validate(self, check_images=True):
         g, r = self.generation, self.runtime
-        if not 1 <= len(g.images) <= 10:
-            raise ValueError("Provide 1–10 ordered reference images; image1 is the output canvas.")
+        input_images, reference_images = self.resolved_image_inputs()
+        explicit_images = g.input_images is not None or g.reference_images is not None
         if check_images:
-            for p in g.images:
+            for p in [*input_images, *reference_images]:
                 if not Path(p).is_file():
-                    raise FileNotFoundError(f"Missing reference image: {p}. Supply your images or run scripts/download_examples.py.")
+                    label = "image" if explicit_images else "reference image"
+                    raise FileNotFoundError(f"Missing {label}: {p}. Supply your images or run scripts/download_examples.py.")
         if g.steps < 1 or g.steps > 10000 or g.batch_size < 1:
             raise ValueError("steps must be 1–10000 and batch_size must be positive")
         if not math.isfinite(g.cfg) or g.cfg < 0:

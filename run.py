@@ -46,7 +46,10 @@ CONFIG = Config(
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--model', help='Override CONFIG.model.source')
-    parser.add_argument('--images', nargs='+', help='Ordered reference image paths')
+    image_group = parser.add_mutually_exclusive_group()
+    image_group.add_argument('--images', nargs='+', help='Legacy ordered conditioning paths; first image is the process input')
+    image_group.add_argument('--input-images', nargs='+', help='Ordered process inputs; creates one inference record per input')
+    parser.add_argument('--reference-images', nargs='*', help='Shared ordered references used with every --input-images item')
     parser.add_argument('--filename', help='Exact GGUF or floating-point transformer filename')
     parser.add_argument('--offline', action='store_true')
     parser.add_argument('--dry-run', action='store_true', help='Validate settings without importing torch or downloading models')
@@ -54,6 +57,11 @@ def main():
     args = parser.parse_args()
     if args.model: CONFIG.model.source = args.model
     if args.images: CONFIG.generation.images = args.images
+    if args.input_images is not None: CONFIG.generation.input_images = args.input_images
+    if args.reference_images is not None:
+        if args.input_images is None:
+            parser.error('--reference-images requires --input-images')
+        CONFIG.generation.reference_images = args.reference_images
     if args.filename: CONFIG.model.filename = args.filename
     if args.offline: CONFIG.model.offline = True
     if args.dry_run:

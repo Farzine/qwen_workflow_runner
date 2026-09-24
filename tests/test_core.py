@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 from PIL import Image
-from qwen_runner.config import Config
+from qwen_runner.config import Config, GenerationConfig
 from qwen_runner.images import reference_size, load_references
 from qwen_runner.models import ModelStore, parse_model_ref, select_gguf
 from qwen_runner.sampling import sigma_schedule
@@ -33,6 +33,35 @@ class ConfigurationTests(unittest.TestCase):
     def test_custom_dimensions_require_grid(self):
         c = Config(); c.generation.custom_size = True; c.generation.width = 1000
         with self.assertRaises(ValueError): c.validate(False)
+
+    def test_legacy_and_explicit_image_contracts(self):
+        legacy = Config(generation=GenerationConfig(images=['input.png', 'ref.png']))
+        self.assertEqual(legacy.resolved_image_inputs(), (['input.png'], ['ref.png']))
+
+        explicit = Config(generation=GenerationConfig(
+            images=['ignored-legacy.png'],
+            input_images=['input-b.png', 'input-a.png'],
+            reference_images=['ref-2.png', 'ref-1.png'],
+        ))
+        explicit.validate(check_images=False)
+        self.assertEqual(
+            explicit.resolved_image_inputs(),
+            (['input-b.png', 'input-a.png'], ['ref-2.png', 'ref-1.png']),
+        )
+        self.assertEqual(explicit.as_dict()['generation']['images'], [])
+
+    def test_explicit_image_contract_boundaries(self):
+        invalid = (
+            GenerationConfig(input_images=[]),
+            GenerationConfig(input_images=None, reference_images=['ref.png']),
+            GenerationConfig(input_images=['input.png'], reference_images=['ref.png'] * 10),
+            GenerationConfig(input_images=['']),
+            GenerationConfig(input_images='input.png'),
+        )
+        for generation in invalid:
+            with self.subTest(generation=generation):
+                with self.assertRaises(ValueError):
+                    Config(generation=generation).validate(check_images=False)
 
 
 class ImageTests(unittest.TestCase):

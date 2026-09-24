@@ -1,0 +1,7 @@
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+# Verified on NVIDIA driver 560.28.03 with RTX A6000 GPUs.
+-r requirements.txt
+torch==2.11.0+cu126
+torchvision==0.26.0+cu126
+setuptools<82

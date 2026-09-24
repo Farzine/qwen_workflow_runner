@@ -750,15 +750,19 @@ def collect_validation_errors(config: Config, check_images: bool = False) -> Lis
     errors = []
     g, r = config.generation, config.runtime
 
-    # 1. Images
-    if not isinstance(g.images, list) or not (1 <= len(g.images) <= 10):
-        errors.append("Provide 1–10 ordered reference images; image1 is the output canvas.")
-    elif not all(isinstance(p, str) for p in g.images):
-        errors.append("All image references must be strings")
-    elif check_images:
-        for p in g.images:
-            if not Path(p).is_file():
-                errors.append(f"Missing reference image: {p}. Supply your images or run scripts/download_examples.py.")
+    # 1. Images. Explicit input/reference fields take precedence over the
+    # backward-compatible combined images sequence.
+    try:
+        input_images, reference_images = config.resolved_image_inputs()
+    except (TypeError, ValueError) as error:
+        errors.append(str(error))
+    else:
+        if check_images:
+            explicit_images = g.input_images is not None or g.reference_images is not None
+            for p in [*input_images, *reference_images]:
+                if not Path(p).is_file():
+                    label = "image" if explicit_images else "reference image"
+                    errors.append(f"Missing {label}: {p}. Supply your images or run scripts/download_examples.py.")
 
     # 2. Steps & Batch size
     if not isinstance(g.steps, int) or g.steps < 1 or g.steps > 10000 or not isinstance(g.batch_size, int) or g.batch_size < 1:

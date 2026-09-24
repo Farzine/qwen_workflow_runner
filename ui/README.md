@@ -219,6 +219,9 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
 - **`POST /api/run`**
   - Submits a new inference run to the background worker queue.
   - Payload: Complete config object matching `Config` schema + optional `"demo_mode": bool`.
+  - New clients should send `generation.input_images` and `generation.reference_images`. Each input is processed independently with the same ordered references while the model remains loaded. Legacy `generation.images` remains supported as one combined sequence whose first item is the input/canvas.
+  - Example generation payload: `{"input_images": ["/inputs/a.png", "/inputs/b.png"], "reference_images": ["/inputs/style.png"], "steps": 25}`.
+  - Successful multi-input responses expose all non-warmup artifacts in `outputs` and `comparisons`. Per-input failures remain in `records`/`errors`; mixed outcomes use status `partial_success`.
   - `demo_mode` defaults to `false` unless the server was explicitly started with `--demo` or `DEMO_MODE=1`. It must be a JSON boolean. Production requests never fall back to `DemoBackend`.
   - Response:
     ```json

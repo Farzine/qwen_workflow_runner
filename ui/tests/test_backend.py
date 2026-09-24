@@ -6,6 +6,7 @@ and error handling.
 """
 
 import asyncio
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -17,7 +18,7 @@ from starlette.testclient import TestClient
 from qwen_runner.config import Config, GenerationConfig, ModelConfig, RuntimeConfig
 from qwen_runner.backend import QwenBackend
 from ui.runner_bridge import RunnerBridge, RunJob, resolve_backend_factory, DemoBackend
-from ui.server import app
+from ui.server import app, dict_to_config
 
 
 class TestBackendRunnerBridge(unittest.TestCase):
@@ -101,6 +102,108 @@ class TestBackendRunnerBridge(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("boolean", response.json()["detail"])
+
+    def test_explicit_input_reference_api_contract(self):
+        first = self.root / "first.png"
+        second = self.root / "second.png"
+        reference = self.root / "reference.png"
+        from PIL import Image
+        for path in (first, second, reference):
+            Image.new("RGB", (32, 32), color=(10, 20, 30)).save(path)
+
+        payload = {
+            "generation": {
+                "input_images": [str(second), str(first)],
+                "reference_images": [str(reference)],
+                "steps": 1,
+            },
+            "runtime": {"device": "cpu", "dtype": "float32", "offload": "none"},
+            "check_images": True,
+        }
+        response = self.client.post("/api/config/validate", json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["valid"])
+        config = dict_to_config(payload)
+        self.assertEqual(
+            config.resolved_image_inputs(),
+            ([str(second), str(first)], [str(reference)]),
+        )
+
+    def test_batch_complete_payload_exposes_all_outputs_and_partial_errors(self):
+        cfg = Config(
+            generation=GenerationConfig(input_images=["bad.png", "good.png"], reference_images=[]),
+            runtime=RuntimeConfig(output_dir=str(self.outputs_dir)),
+        )
+        job = RunJob("batch_job", cfg, demo_mode=True)
+        output = self.outputs_dir / "good.png"
+        records = [
+            {"run_id": "batch_run_000", "status": "error", "input_index": 0,
+             "outputs": [], "error": {"type": "ValueError", "message": "bad input"}},
+            {"run_id": "batch_run_001", "status": "success", "input_index": 1,
+             "is_warmup": False, "outputs": [{"path": str(output), "width": 32, "height": 32, "sha256": "abc"}]},
+        ]
+        payload = self.bridge._build_complete_payload(job, records)
+        self.assertEqual(payload["status"], "partial_success")
+        self.assertEqual(payload["run_id"], "batch_run_001")
+        self.assertEqual(payload["outputs"][0]["input_index"], 1)
+        self.assertEqual(payload["errors"][0]["input_index"], 0)
+
+    def test_explicit_multi_input_run_returns_every_result(self):
+        from PIL import Image
+        inputs = [self.root / "input-2.png", self.root / "input-1.png"]
+        reference = self.root / "shared-reference.png"
+        for path, color in zip([*inputs, reference], [(20, 0, 0), (10, 0, 0), (0, 20, 0)]):
+            Image.new("RGB", (32, 32), color=color).save(path)
+        payload = {
+            "generation": {
+                "input_images": [str(path) for path in inputs],
+                "reference_images": [str(reference)],
+                "steps": 1,
+            },
+            "runtime": {
+                "device": "cpu", "dtype": "float32", "offload": "none",
+                "output_dir": str(self.outputs_dir),
+            },
+            "demo_mode": True,
+        }
+        response = self.client.post("/api/run", json=payload)
+        stream = self.client.get(f"/api/run/{response.json()['run_id']}/stream")
+        complete = next(
+            json.loads(line[6:])
+            for chunk in stream.text.split("\n\n") if "event: complete" in chunk
+            for line in chunk.splitlines() if line.startswith("data: ")
+        )
+        self.assertEqual(complete["status"], "success")
+        self.assertEqual([record["input_index"] for record in complete["records"]], [0, 1])
+        self.assertEqual([output["input_index"] for output in complete["outputs"]], [0, 1])
+        self.assertEqual(
+            [Path(path).name for path in complete["records"][0]["effective_parameters"]["conditioning_image_paths"]],
+            ["input-2.png", "shared-reference.png"],
+        )
+
+    def test_explicit_multi_input_run_reports_partial_success(self):
+        from PIL import Image
+        corrupt = self.root / "batch-corrupt.png"; corrupt.write_bytes(b"invalid image")
+        valid = self.root / "batch-valid.png"; Image.new("RGB", (32, 32), (1, 2, 3)).save(valid)
+        payload = {
+            "generation": {"input_images": [str(corrupt), str(valid)], "reference_images": [], "steps": 1},
+            "runtime": {
+                "device": "cpu", "dtype": "float32", "offload": "none",
+                "output_dir": str(self.outputs_dir),
+            },
+            "demo_mode": True,
+        }
+        response = self.client.post("/api/run", json=payload)
+        stream = self.client.get(f"/api/run/{response.json()['run_id']}/stream")
+        complete = next(
+            json.loads(line[6:])
+            for chunk in stream.text.split("\n\n") if "event: complete" in chunk
+            for line in chunk.splitlines() if line.startswith("data: ")
+        )
+        self.assertEqual(complete["status"], "partial_success")
+        self.assertEqual([record["status"] for record in complete["records"]], ["error", "success"])
+        self.assertEqual(complete["errors"][0]["input_index"], 0)
+        self.assertEqual(complete["outputs"][0]["input_index"], 1)
 
     def test_run_job_reentrant_lock_safe(self):
         cfg = Config(

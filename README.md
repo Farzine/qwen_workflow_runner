@@ -13,7 +13,7 @@ The original graph is included at `workflow/original.json`.
 
 | Workflow setting | Project behavior |
 |---|---|
-| Two ordered `LoadImage` nodes | `generation.images`; image 1 is the person/canvas, image 2 the shirt |
+| Two ordered `LoadImage` nodes | Legacy `generation.images`; image 1 is the person/canvas, image 2 the shirt |
 | Positive prompt | Original clothing-transfer prompt is the default |
 | Negative prompt | Empty by default; inactive when CFG is 1 |
 | `TextEncodeQwenImage21`, resolution **0** | Preserve each reference's own dimensions, rounded to multiples of 32; Lanczos resizing when needed |
@@ -61,13 +61,19 @@ source .venv/bin/activate
 ```
 
 Install a matching **PyTorch + torchvision** build for your CUDA driver using
-the command generated at <https://pytorch.org/get-started/locally/>. Then:
+the command generated at <https://pytorch.org/get-started/locally/>. The
+checked-in CUDA 12.6 profile is verified with NVIDIA driver 560.28.03 and RTX
+A6000 GPUs:
 
 ```bash
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-cu126.txt
 python run.py --check
 ```
+
+For another CUDA runtime or CPU-only installation, install the appropriate
+PyTorch and torchvision wheels first, then install `requirements.txt`. The
+generic requirements deliberately do not choose a CUDA build for you.
 
 Diffusers is pinned to a reviewed Git commit containing the dedicated
 `QwenImage21Pipeline`, transformer and VAE. An older Qwen Image/Edit pipeline
@@ -83,15 +89,30 @@ on image sizes, number of references, cache policy and hardware.
 ## 2. Provide input images
 
 Your JSON contains image filenames, not the image files themselves. Either
-copy your own files into `inputs/` and change `generation.images`, or download
+copy your own files into `inputs/` and change the generation image fields, or download
 the two public template assets referenced in the original JSON:
 
 ```bash
 python scripts/download_examples.py
 ```
 
-The first image is the editing canvas. The second provides the shirt. Reference
-order corresponds to `<image1>`, `<image2>`, and so on, through ten images.
+For new integrations, use separate `input_images` and `reference_images` fields:
+
+```python
+config.generation.input_images = ["inputs/person-a.png", "inputs/person-b.png"]
+config.generation.reference_images = ["inputs/shirt.png"]
+```
+
+Each input creates an independent inference record and output using the ordered
+conditioning sequence `[current_input, *reference_images]`. The model loads once
+for the expanded batch. A repeat uses the same seed for every input; enabling
+`increment_seed` advances the seed between repeats. Up to ten process inputs and
+nine shared references are accepted, keeping each model call within its ten-image
+conditioning limit.
+
+The legacy `generation.images` field remains supported. Its first image is the
+editing canvas/input and later images are references. Reference order corresponds
+to `<image1>`, `<image2>`, and so on.
 
 ## 3. Run
 
@@ -106,6 +127,7 @@ Useful overrides:
 
 ```bash
 python run.py --images inputs/person.png inputs/shirt.png
+python run.py --input-images inputs/person-a.png inputs/person-b.png --reference-images inputs/shirt.png
 python run.py --model https://huggingface.co/Qwen/Qwen-Image-2.1/tree/main
 python run.py --model https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF
 python run.py --model abenzerps/Qwen-Image-2.1-GGUF --filename qwen-image-2.1-Q8_0.gguf
@@ -286,6 +308,7 @@ qwen_workflow_runner/
 ├── run.py                       # Editable configuration and command-line entry
 ├── benchmark.py                 # Isolated model comparisons
 ├── requirements.txt
+├── requirements-cu126.txt
 ├── pyproject.toml
 ├── README.md
 ├── LICENSE
@@ -323,9 +346,12 @@ environment. Do not substitute `QwenImageEditPlusPipeline`.
 **CUDA unavailable:** check that you installed a CUDA PyTorch wheel. For CPU
 testing set `device="cpu"`, `dtype="float32"`, `offload="none"`.
 
-**Out of memory:** use `resolution=1024` or lower rather than retaining a huge
-input; use the GGUF variant and `offload="model"` or `"sequential"`; try CPU
-KV storage, disabling the KV cache, or VAE tiling. These change the memory/time
+**Out of memory or unusable output with large references:** use
+`resolution=1024` or lower rather than retaining native multi-megapixel inputs.
+`resolution=0` deliberately preserves source dimensions; a 4000x6000 reference
+can consume nearly an entire 48 GiB GPU and overwhelm a small output canvas.
+Use the GGUF variant and `offload="model"` or `"sequential"`; try CPU KV
+storage, disabling the KV cache, or VAE tiling. These change the memory/time
 tradeoff and are recorded. The text encoder can still require significant RAM.
 
 **Missing images:** run the example-download script or supply your own images.

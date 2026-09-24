@@ -457,7 +457,7 @@ class RunJob:
         self.target_uuid_hex = target_uuid_hex or uuid.uuid4().hex
         self.created_dt = created_dt or datetime.now(timezone.utc)
         self.created_at = self.created_dt.isoformat()
-        self.status = "queued"  # queued | running | completed | error | interrupted
+        self.status = "queued"  # queued | running | completed | partial_success | error | interrupted
         self.history: List[Dict[str, Any]] = []
         self.subscribers: Dict[asyncio.Queue, Optional[asyncio.AbstractEventLoop]] = {}
         self.records: List[Dict[str, Any]] = []
@@ -635,11 +635,10 @@ class RunnerBridge:
 
             records = qwen_runner.runner.run(job.config, backend_factory=backend_factory)
 
-            job.status = "completed"
             job.records = records
 
             if records:
-                primary = records[0]
+                primary = next((r for r in records if r.get("status") == "success"), records[0])
                 job.primary_run_id = primary.get("run_id", job.job_id)
                 with self._lock:
                     for r in records:
@@ -649,6 +648,11 @@ class RunnerBridge:
                             self.run_id_map[job.job_id] = job.job_id
 
             complete_payload = self._build_complete_payload(job, records)
+            job.status = {
+                "success": "completed",
+                "partial_success": "partial_success",
+                "error": "error",
+            }.get(complete_payload["status"], complete_payload["status"])
             job.push_event("complete", complete_payload)
 
         except BaseException as exc:
@@ -691,34 +695,70 @@ class RunnerBridge:
     def _build_complete_payload(
         self, job: RunJob, records: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        primary = records[0] if records else {}
+        successful = [r for r in records if r.get("status") == "success"]
+        failed = [r for r in records if r.get("status") in {"error", "interrupted"}]
+        primary = successful[0] if successful else (records[0] if records else {})
+        explicit_batch = (
+            job.config.generation.input_images is not None
+            or job.config.generation.reference_images is not None
+        )
+        output_records = [r for r in successful if not r.get("is_warmup")]
+        if not explicit_batch:
+            output_records = [primary] if primary else []
         outputs = []
-        for out in primary.get("outputs", []):
-            path_str = out.get("path", "")
-            filename = Path(path_str).name
-            outputs.append({
-                "filename": filename,
-                "url": f"/api/outputs/{filename}",
-                "width": out.get("width"),
-                "height": out.get("height"),
-                "sha256": out.get("sha256"),
-                "path": path_str,
-            })
+        for record in output_records:
+            for out in record.get("outputs", []):
+                path_str = out.get("path", "")
+                filename = Path(path_str).name
+                outputs.append({
+                    "filename": filename,
+                    "url": f"/api/outputs/{filename}",
+                    "width": out.get("width"),
+                    "height": out.get("height"),
+                    "sha256": out.get("sha256"),
+                    "path": path_str,
+                    "run_id": record.get("run_id"),
+                    "input_index": record.get("input_index"),
+                })
 
         comparison_url = None
         if primary.get("comparison"):
             comp_filename = Path(primary["comparison"]).name
             comparison_url = f"/api/outputs/{comp_filename}"
 
+        status = "partial_success" if successful and failed else "success" if successful else "error"
+        comparisons = [
+            {
+                "run_id": record.get("run_id"),
+                "input_index": record.get("input_index"),
+                "url": f"/api/outputs/{Path(record['comparison']).name}",
+            }
+            for record in output_records if record.get("comparison")
+        ]
+        error = None
+        if status == "error":
+            error = {
+                "type": "InputBatchFailed",
+                "message": "All input image attempts failed.",
+            }
         return {
-            "status": "success",
+            "status": status,
             "job_id": job.job_id,
             "run_id": primary.get("run_id", job.job_id),
             "records": records,
             "record": primary,
             "outputs": outputs,
             "comparison_url": comparison_url,
-            "error": None,
+            "comparisons": comparisons,
+            "errors": [
+                {
+                    "run_id": record.get("run_id"),
+                    "input_index": record.get("input_index"),
+                    "error": record.get("error"),
+                }
+                for record in failed
+            ],
+            "error": error,
         }
 
     def _inspect_or_build_error(self, job: RunJob, exc: BaseException) -> Dict[str, Any]:
