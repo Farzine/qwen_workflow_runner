@@ -342,8 +342,10 @@ qwen_workflow_runner/
 │   └── runner.py                # Repeats, warmups, output saving and JSON logs
 ├── scripts/
 │   ├── download_examples.py
-│   └── summarize_logs.py
+│   ├── summarize_logs.py
+│   └── validate_browser_production.js # Hardware-gated real-browser check
 ├── tests/
+├── VALIDATION_MATRIX.md         # Final functional and hardware evidence
 ├── workflow/
 │   ├── original.json
 │   ├── PORTING_NOTES.md
@@ -389,14 +391,20 @@ The project does not bypass access restrictions.
 ## Validation
 
 ```bash
-python -m unittest discover -s tests -v
+.venv/bin/python -m pytest -q tests
+timeout 300 .venv/bin/python -m pytest -q ui/tests
+node ui/tests/test_challenger_m2_node.js
+node ui/tests/test_tier5_node_stress.js
 ```
 
 Core tests do not download weights. Runtime tests use tiny, randomly initialized
 networks and temporary GGUF files. They test execution and logging, not image
-quality. See `TEST_REPORT.md` for what was actually validated for this delivery.
-Full pretrained inference, CUDA peak measurements, offload behavior on a real
-GPU and output-quality parity need to be checked on your target hardware.
+quality. The final local validation also ran the cached full model through the
+actual browser with two process inputs, one shared reference, SSE progress,
+`cuda:0`, BF16/model offload, saved comparisons, records, history, and rendered
+results. See `VALIDATION_MATRIX.md` for the scenario-by-scenario evidence and
+remaining asset-dependent LoRA limitation. Pixel-identical ComfyUI parity and
+quality on other hardware still require evaluation on that target system.
 
 ## Sources and licensing
 

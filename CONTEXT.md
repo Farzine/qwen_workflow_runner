@@ -43,6 +43,8 @@ The active checkout is `/mnt/lab/farzine/qwen_workflow_runner`. The path origina
 | `workflow/source_manifest.json` | Source model/workflow provenance. |
 | `scripts/download_examples.py` | Example input download helper. |
 | `scripts/summarize_logs.py` | Durable run-log summarizer. |
+| `scripts/validate_browser_production.js` | Hardware-gated Chrome DevTools driver for real UI selection, production submission, SSE/result inspection, and screenshots. |
+| `VALIDATION_MATRIX.md` | Final scenario-by-scenario automated and live-hardware evidence, including remaining asset-dependent limitations. |
 | `models/`, `outputs/`, `inputs/`, `.cache/` | Ignored runtime assets, results, configured inputs, and thumbnails. |
 
 The repository had 62 tracked files and about 24,478 tracked lines at the audit. The local virtual environment and model/output data are intentionally ignored. The cached full model manifest reports approximately 33.13 GB of selected files.
@@ -129,11 +131,11 @@ The original ComfyUI graph follows the same broad semantics: its `KSampler` rece
 
 ## Current Goal
 
-Make the application a reliable production image-generation workflow: run real Qwen inference end to end, separate process inputs from references, support multiple input images, manage and apply LoRAs, expose and honor device selection, improve error visibility, then redesign and document the UI without regressing the tested workflow.
+Maintain the completed production image-generation workflow: real Qwen inference runs end to end, process inputs and references are separate, multiple inputs are supported, LoRAs and devices are managed explicitly, errors are actionable, and the responsive UI is documented and regression-tested.
 
 ## Active Task
 
-Phase 8 — execute the final input/reference/LoRA/GPU/inference/browser validation matrix, resolve remaining failures, and stabilize documentation. Phase 7 parameter help is complete.
+Phase 8 is complete. The final input/reference/LoRA/GPU/inference/browser matrix, real multi-input browser run, artifact verification, regression suites, and documentation stabilization all passed.
 
 ## Completed Tasks
 
@@ -184,6 +186,10 @@ Phase 8 — execute the final input/reference/LoRA/GPU/inference/browser validat
 - [x] Derived every help entry from the implemented config, image resizing, sigma schedule, KV cache, runner, model loader, and validated production behavior, including higher/lower effects, ranges, interactions, and resource trade-offs.
 - [x] Corrected the negative-prompt activation text to match `CFG != 1`, added an explicit native-resolution VRAM warning, and corrected the float32 option description.
 - [x] Validated help discovery, content, focus/Escape behavior, click/touch dismissal, advanced-model coverage, and desktop/phone collision handling in a real browser.
+- [x] Completed the documented Phase 8 validation matrix across inputs, references, LoRA, GPUs, inference, outputs, UI states, responsive layouts, and parameter help.
+- [x] Drove a real two-input plus one-reference production batch through the actual browser controls on `cuda:0`, observed SSE completion at 100%, rendered both outputs/comparison/history, and verified every durable artifact.
+- [x] Quantified both full-model outputs against their respective sources, confirming record hashes and 97.47%/98.30% changed pixels at the selected threshold.
+- [x] Reconciled the root/UI/project/porting documentation with final behavior, evidence, supported launch/test commands, and remaining asset-dependent limits.
 
 ## Remaining Tasks
 
@@ -196,7 +202,7 @@ Phase 8 — execute the final input/reference/LoRA/GPU/inference/browser validat
 - [x] Phase 5: add system/GPU inventory and configuration API/page; validate and honor manual device selection.
 - [x] Phase 6: reorganize the UI around the production workflow and improve responsive behavior, accessibility, loading, progress, and long-list states.
 - [x] Phase 7: add implementation-backed information controls for all meaningful parameters.
-- [ ] Phase 8: run the complete input/reference/LoRA/GPU/inference/UI validation matrix, fix remaining failures, and stabilize documentation.
+- [x] Phase 8: run the complete input/reference/LoRA/GPU/inference/UI validation matrix, fix remaining failures, and stabilize documentation.
 
 ## Current Problems
 
@@ -329,7 +335,7 @@ Useful concepts to adapt are the separation of base input from optional referenc
 
 | Concern | Reference script | Current project | Implication |
 | --- | --- | --- | --- |
-| Input processing | Iterates independent base images | Core/API and browser expand ordered `input_images` into independent durable generations and results | Real full-model multi-input validation remains in the final matrix. |
+| Input processing | Iterates independent base images | Core/API and browser expand ordered `input_images` into independent durable generations and results | Phase 8 proved two ordered inputs through the real browser/full-model path. |
 | References | Separate optional reference field | Browser and API keep ordered shared `reference_images` separate and preserve `[input, *references]` conditioning order | The transport and UI distinction are complete; adherence quality remains model/prompt dependent. |
 | LoRA | Sends optional `adapter_name` | Discovers/uploads one local SafeTensors adapter, applies it through Diffusers/PEFT, and records effective state | Full pretrained testing requires a compatible user adapter; invalid/load failures are explicit. |
 | Device/model | Remote service owns them | Local `QwenBackend` owns them | Local capability reporting and strict device errors are required. |
@@ -410,6 +416,13 @@ Phase 7 additions to the cumulative files above:
 - `ui/tests/test_frontend.py` — added exact help coverage, target existence, accessibility contract, CSS/controller integration, and verified edge-case content tests.
 - `ui/README.md`, `PROJECT.md` — documented help access patterns, implementation-specific guidance, and the completed feature inventory.
 - `CONTEXT.md` — recorded Phase 7 findings, validation, modified files, remaining limitations, and the Phase 8 handoff.
+
+Phase 8 additions to the cumulative files above:
+
+- `scripts/validate_browser_production.js` — added a reusable hardware-gated CDP driver that selects gallery inputs/references, applies production device/runtime controls, submits through the browser, observes progress/results/history, retrieves records, and captures a diagnostic screenshot. Its `--collect-existing` mode inspects a completed tab without rerunning the model.
+- `VALIDATION_MATRIX.md` — recorded every required input, reference, LoRA, GPU, inference, output, UI, responsive, and help scenario with automated or live-hardware evidence and the sole production-LoRA asset limitation.
+- `README.md`, `ui/README.md`, `PROJECT.md`, `workflow/PORTING_NOTES.md` — replaced stale test counts and planned milestone states, documented the final production browser evidence and validation commands, corrected explicit input/reference limits, and linked the final matrix and browser driver.
+- `CONTEXT.md` — recorded Phase 8 completion, exact production records/metrics, final tests, remaining limitations, and the maintenance handoff.
 
 ## Tests Performed
 
@@ -493,12 +506,20 @@ Phase 7 additions to the cumulative files above:
 - Phase 7 `.venv/bin/python -m pytest -q tests` — 31 passed plus 8 parameterized subtests in 3.04 seconds.
 - Final Phase 7 host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — all 417 passed in 20.14 seconds; only the known Starlette/AnyIO deprecation warnings remain.
 - Final Phase 7 `.venv/bin/python -m compileall -q qwen_runner ui run.py benchmark.py`, `.venv/bin/python -m pip check`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
+- Phase 8 host inventory — `/api/system` and `nvidia-smi` reported two ready RTX A6000 GPUs with CUDA 12.6 and PyTorch `2.11.0+cu126`; `cuda:0` had about 33.7 GiB free and was selected for the live run.
+- Phase 8 production browser run — Chrome selected two ordered process inputs (`Child/img_1.jpeg`, `Child/img_10.jpg`), one separate shared reference (`Child/img_11.jpg`), `cuda:0`, BF16, model offload, four steps, resolution 512, and a custom 256×256 output. Aggregate job `20260924T112147_5b0c9daa4c_run_000` completed both real `WorkflowQwenImage21Pipeline` records in 33.97 and 16.24 seconds with one shared model load.
+- Phase 8 browser evidence — visible status reached `Completed` and 100%; two output thumbnails loaded, the comparison before/after sources loaded, history refreshed, and terminal output retained the job submission, SSE connection, model loading, both progress sequences, and success records. `/tmp/phase8-browser-production.png` was visually inspected and showed the requested watercolor transformation.
+- Phase 8 artifact/difference verification — both saved PNG SHA-256 values match their JSON records; comparisons are present; each record contains `[current_input, Child/img_11.jpg]`, `cuda:0`, BF16/model offload, and the production pipeline. Resized source/output comparison measured normalized RMSE 0.3180/0.2865, MAE 0.2510/0.2358, and 97.47%/98.30% of pixels changed by more than 10.
+- Final Phase 8 `.venv/bin/python -m pytest -q tests` — 31 passed plus 8 parameterized subtests in 2.71 seconds.
+- Final Phase 8 host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — all 417 passed in 19.96 seconds; only the known Starlette/AnyIO deprecation warnings remain.
+- Final Phase 8 `node ui/tests/test_challenger_m2_node.js` and `node ui/tests/test_tier5_node_stress.js` — 33/33 and 15/15 passed.
+- Final Phase 8 `.venv/bin/python -m compileall -q qwen_runner ui run.py benchmark.py scripts`, `.venv/bin/python -m pip check`, `node --check ui/static/js/app.js`, `node --check scripts/validate_browser_production.js`, and `git diff --check` — passed.
 
 ## Known Issues
 
-- Real production execution is proven through the API, SSE, history, persistence, and file-serving path. A real browser automation pass with full model inference remains deferred to final end-to-end stabilization.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
-- Multi-reference transport is proven, but adherence is weak in the tested hairstyle transfer. Multiple process inputs and separate references are validated through the core, synthetic API/SSE path, browser state machine, and live responsive rendering; a real full-model multi-input batch initiated through browser controls remains for final end-to-end stabilization. LoRA application is proven with a real tiny Qwen transformer, while full pretrained inference with a compatible user LoRA remains in the final validation matrix. Selected-GPU execution is proven on both `cuda:0` and `cuda:1`.
+- Multi-reference transport and conditioning effects are proven, but adherence was weak in the tested hairstyle-transfer example. Prompt/reference quality remains model- and asset-dependent rather than a transport defect.
+- LoRA application is proven with a real tiny Qwen Image 2.1 transformer, including output effect, strength, hash metadata, unload, replacement, and incompatible-target handling. No compatible user adapter exists in `models/loras/`, so the full 33 GB checkpoint was not run with a production LoRA during Phase 8. A valid SafeTensors header cannot prove model/training compatibility.
 - The System page reports memory at probe time; values can change immediately when other processes allocate VRAM. Applying configuration affects the next submitted job because the single-worker runner does not mutate an active pipeline.
 - `resolution=0` intentionally preserves native reference sizes. Very large references can consume nearly all GPU memory, take several minutes, and produce unusable output when the output canvas is much smaller. Phase 7 now warns inline and in accessible help, but the default remains native size for workflow compatibility.
 - Starlette 1.6 warns that its HTTPX fallback is deprecated. Installing `httpx2` 2.13.1 made TestClient unusable in this environment, so it was removed; current tests pass with HTTPX 0.28.1 when host IPC/loopback is available.
@@ -510,13 +531,12 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 8 as the final end-to-end validation and stabilization pass:
+The requested repository improvement program is complete. For later maintenance:
 
-1. Build a documented matrix covering empty/single/multiple/invalid inputs; missing/single/multiple references; no/existing/uploaded/invalid LoRA; both GPUs and invalid-device handling; desktop/phone loading, success, error, long-name, and many-item states.
-2. Exercise the complete browser workflow with real production inference at a bounded safe resolution, including separate inputs/references, selected device propagation, saved output/comparison/record files, SSE progress, and result/history display.
-3. Run a real multi-input production batch and confirm each result differs appropriately from its source. Run a full-model compatible LoRA case if a suitable adapter is available; otherwise preserve the proven tiny-transformer application evidence and document the asset limitation explicitly.
-4. Correct any failures found, then run core, JavaScript, API/UI, compile, dependency, and diff checks once at final scope.
-5. Reconcile `README.md`, `ui/README.md`, `PROJECT.md`, `workflow/PORTING_NOTES.md`, and this file with the final supported behavior, limitations, launch commands, and validation evidence.
+1. Read `VALIDATION_MATRIX.md` before changing workflow contracts or declaring a regression fixed.
+2. Run the core, full UI/API, and Node commands documented there after meaningful code changes.
+3. Use `scripts/validate_browser_production.js` for hardware-gated browser validation when inference, device, SSE, or result presentation changes.
+4. If a compatible production LoRA is supplied later, add its full-model visual-quality result to the matrix; the loader/application contract itself is already validated.
 
 ## Resume Instructions
 

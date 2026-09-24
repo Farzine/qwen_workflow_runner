@@ -65,7 +65,10 @@ cast to model precision during Euler accumulation.
 6. **Architecture scope:** this is the Qwen Image 2.1 graph. Earlier Qwen Image
    and Qwen Image Edit architectures, masks and unrelated custom nodes are not
    silently accepted. One compatible Qwen Image 2.1 transformer LoRA can be
-   applied through Diffusers/PEFT. One to ten ordered references are supported.
+   applied through Diffusers/PEFT. New requests support one to ten ordered
+   process inputs and up to nine shared references; each model call contains
+   the current process input plus those references, for at most ten conditioning
+   images. The legacy combined field supports one to ten ordered images.
 
 These bounds are recorded or explained so a successful load is not mistaken
 for a demonstrated pixel-for-pixel reproduction. `original.json` remains the

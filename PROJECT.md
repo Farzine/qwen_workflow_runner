@@ -28,7 +28,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
 | 1 | Input Directory Scanner | Scans `/mnt/lab/farzine/inputs/`, groups images by subfolder, filters `.DS_Store` | M1, M2 | R1, survey |
-| 2 | Reference Image Ordering | Enforces 1–10 ordered image selection where slot 1 is canvas; rejects >10 with error | M1, M2 | R1, survey |
+| 2 | Separate Input & Reference Ordering | Keeps 1–10 ordered process inputs separate from up to nine shared references; each input produces an independent output | M1, M2 | R1, survey |
 | 3 | Image Previews & Thumbnails | Displays responsive thumbnails in selection order before run with fast server caching | M1, M2 | R1, survey |
 | 4 | Prompt & Negative Controls | Prompt text with `<image1>`..`<image10>` and negative prompt conditioning | M1, M2 | R2, survey |
 | 5 | Steps & Batch Size | Steps slider (1–10000) and batch_size (>=1) with validation hints | M1, M2 | R2, survey |
@@ -65,10 +65,10 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Backend API & Runner Integration | Fast backend server (`ui/server.py`, `ui/api.py`), endpoints for inputs scanning, thumbnail caching, model upload/download/caching, parameter validation via `Config.validate()`, background runner execution with SSE log streaming, and explicit synthetic demo mode | none | PLANNED |
-| M2 | Modern Frontend Web UI | Single-page application (`ui/static/`, `ui/templates/index.html`) implementing R1 (Input browser, 1-10 selector, previews), R2 (Full parameter controls, range hints, validation error banners), R3 (Model selector, HF download progress, local upload, cached dropdown), R4 (Run controls, live console log stream, output viewer, comparison viewer, JSON inspector, run history) | M1 contracts | PLANNED |
-| M3 | App Startup, CLI & Packaging | Entrypoint script (`ui/app.py`), single-command startup (`python app.py` from `ui/`), configurable port (default 7878 with automatic open port detection), comprehensive `ui/README.md`, dependencies specification | M1, M2 | PLANNED |
-| M4 | E2E Verification & Adversarial Hardening | Phase 1: Verify 100% pass across all Tiers 1-4 E2E tests in test suite published by E2E Testing Track. Phase 2: Tier 5 adversarial testing & coverage hardening | M1, M2, M3, TEST_READY.md | PLANNED |
+| M1 | Backend API & Runner Integration | Fast backend server (`ui/server.py`), endpoints for inputs scanning, thumbnail caching, model upload/download/caching, parameter validation via `Config.validate()`, background runner execution with SSE log streaming, and explicit synthetic demo mode | none | COMPLETE |
+| M2 | Modern Frontend Web UI | Single-page application (`ui/static/`, `ui/templates/index.html`) implementing separate input/reference selection, full parameter and system controls, model/LoRA management, responsive navigation, accessible help, live execution, outputs, comparison, records, and history | M1 contracts | COMPLETE |
+| M3 | App Startup, CLI & Packaging | Entrypoint script (`ui/app.py`), configurable port fallback, directory overrides, documentation, and dependency profiles | M1, M2 | COMPLETE |
+| M4 | E2E Verification & Adversarial Hardening | Full automated suites plus hardware-gated browser production validation; evidence in `VALIDATION_MATRIX.md` | M1, M2, M3 | COMPLETE |
 
 ## Interface Contracts
 ### Client ↔ Server API Endpoints
@@ -106,13 +106,16 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 ## Code Layout
 ```
 /mnt/lab/farzine/qwen_workflow_runner/
-├── qwen_runner/           # Core library (unmodified reference implementation)
+├── qwen_runner/           # Core model, scheduling, caching, inference, metrics, and persistence
 │   ├── config.py
 │   ├── runner.py
 │   ├── backend.py
 │   ├── pipeline.py
 │   └── ...
 ├── models/                # Local model weights directory
+├── VALIDATION_MATRIX.md   # Final automated and live-hardware evidence
+├── scripts/
+│   └── validate_browser_production.js # Hardware-gated browser driver
 ├── ui/                    # Web Application Directory
 │   ├── app.py             # Single-command startup entrypoint (`python app.py`)
 │   ├── server.py          # FastAPI/Starlette application & routes
@@ -122,12 +125,12 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 │   │   └── js/app.js      # Vanilla ES6 SPA controller (modular components)
 │   ├── templates/
 │   │   └── index.html     # Semantic single-page HTML
-│   ├── tests/             # E2E test suite (owned by E2E Testing Track)
-│   │   ├── run_tests.py   # Test runner
-│   │   ├── test_tier1.py  # Tier 1: Feature coverage
-│   │   ├── test_tier2.py  # Tier 2: Boundary & corner cases
-│   │   ├── test_tier3.py  # Tier 3: Pairwise combinations
-│   │   └── test_tier4.py  # Tier 4: Real-world application scenarios
+│   ├── tests/             # API, DOM, accessibility, stress, and E2E suites
+│   │   ├── test_backend.py
+│   │   ├── test_frontend.py
+│   │   ├── test_challenger_m2_node.js
+│   │   ├── test_tier5_node_stress.js
+│   │   └── e2e/           # Four-tier feature/boundary/pairwise/scenario tests
 │   ├── README.md          # Startup documentation, dependencies, API docs
 │   └── requirements.txt   # UI dependencies (fastapi, uvicorn, python-multipart, etc.)
 ```

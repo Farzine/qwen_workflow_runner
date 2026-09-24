@@ -320,12 +320,13 @@ ui/
     ├── test_backend.py         # Backend endpoints, concurrency & boundary tests
     ├── test_frontend.py        # Template validation, parameter coverage & asset checks
     ├── test_challenger_m2_node.js # Headless DOM state machine tests
+    ├── test_tier5_node_stress.js # Adversarial frontend state tests
     └── e2e/
         ├── runner.py           # Master 4-tier E2E test suite runner
-        ├── test_e2e_features.py # Tier 1: 16 core features
-        ├── test_e2e_boundaries.py # Tier 2: 113 boundary cases
-        ├── test_e2e_pairwise.py # Tier 3: 20 pairwise combinations
-        └── test_e2e_scenarios.py # Tier 4: Real-world workflows
+        ├── test_tier1_features.py # Tier 1: core features
+        ├── test_tier2_boundaries.py # Tier 2: boundary cases
+        ├── test_tier3_pairwise.py # Tier 3: pairwise combinations
+        └── test_tier4_scenarios.py # Tier 4: real-world workflows
 ```
 
 ---
@@ -335,23 +336,21 @@ ui/
 Run the full verification suite across all layers of the application:
 
 ```bash
-# 1. Verify CLI argument parsing and help output
-python ui/app.py --help
+# Core configuration, model, scheduler, LoRA, and runtime tests
+.venv/bin/python -m pytest -q tests
 
-# 2. Run App Startup & CLI Unit Tests (17 tests)
-python -m unittest ui.tests.test_app -v
+# Complete API, DOM, accessibility, boundary, stress, and E2E suite.
+# Host IPC/loopback access is required by Starlette TestClient here.
+timeout 300 .venv/bin/python -m pytest -q ui/tests
 
-# 3. Run Frontend Serving & DOM Unit Tests (24 tests)
-python -m unittest ui.tests.test_frontend -v
-
-# 4. Run Backend & SSE Concurrency Tests (13 tests)
-python -m unittest ui.tests.test_backend -v
-
-# 5. Run Master 4-Tier E2E Test Suite (227 tests)
-python ui/tests/e2e/runner.py
+# Browser state-machine and adversarial frontend harnesses
+node ui/tests/test_challenger_m2_node.js
+node ui/tests/test_tier5_node_stress.js
 ```
 
-Expected result: **100% passing across all 281 tests (0 failures, 0 errors)**.
+The final Phase 8 result is 31 core tests plus 8 parameterized subtests, 417
+UI/API/E2E tests, and 33/33 plus 15/15 Node cases. The full-model production
+browser run and scenario matrix are recorded in `../VALIDATION_MATRIX.md`.
 
 ---
 
