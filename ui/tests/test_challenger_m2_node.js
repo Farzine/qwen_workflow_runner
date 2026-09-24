@@ -956,6 +956,33 @@ runTest("LoRA discovery, selection, strength, upload, and clear state stay synch
   ApiClient.uploadLora = originalUpload;
 });
 
+runTest("LoRA deletion confirms, removes stored file, and refreshes selection", async () => {
+  const item = { name: "obsolete.safetensors", path: "/models/loras/obsolete.safetensors", size: 2048, valid: false };
+  const originalDelete = ApiClient.deleteLora;
+  const originalList = ApiClient.listLoras;
+  const originalConfirm = mockWindow.confirm;
+  let removed = null;
+  ApiClient.deleteLora = async (filename) => { removed = filename; return { deleted: true }; };
+  ApiClient.listLoras = async () => ({ loras: [] });
+  LoRAManager.filesList = domRegistry.get("lora-files-list");
+  Store.state.loras.available = [item];
+  Store.state.config.model.lora_path = item.path;
+  LoRAManager.renderFiles();
+  assert.strictEqual(LoRAManager.filesList.children.length, 1);
+  assert.strictEqual(LoRAManager.filesList.children[0].children[1].textContent, "Delete");
+  mockWindow.confirm = () => false;
+  await LoRAManager.deleteFile(item);
+  assert.strictEqual(removed, null);
+  mockWindow.confirm = () => true;
+  await LoRAManager.deleteFile(item);
+  assert.strictEqual(removed, item.name);
+  assert.strictEqual(Store.state.config.model.lora_path, null);
+  assert.strictEqual(LoRAManager.filesList.textContent, "No stored LoRA files.");
+  ApiClient.deleteLora = originalDelete;
+  ApiClient.listLoras = originalList;
+  mockWindow.confirm = originalConfirm;
+});
+
 runTest("System inventory dynamically lists GPUs and applies the selected production device", async () => {
   SystemManager.init();
   const capabilities = {

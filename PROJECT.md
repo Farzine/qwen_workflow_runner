@@ -70,7 +70,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | M3 | App Startup, CLI & Packaging | Entrypoint script (`ui/app.py`), configurable port fallback, directory overrides, documentation, and dependency profiles | M1, M2 | COMPLETE |
 | M4 | E2E Verification & Adversarial Hardening | Full automated suites plus hardware-gated browser production validation; evidence in `VALIDATION_MATRIX.md` | M1, M2, M3 | COMPLETE |
 | M5 | Persistent Resource Lifecycle | One exclusive cached production pipeline per device, compatible reuse, LoRA switching, runtime telemetry, and explicit shutdown cleanup | M1, M4 | COMPLETE |
-| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | IN PROGRESS (selection and progress complete) |
+| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | IN PROGRESS (selection, progress, LoRA deletion complete) |
 | M7 | Records, Batch UX & Task Pages | Versioned human-readable metadata, detailed batch state/ETA, and Dashboard/Models/LoRAs/Inference/Batch/History/Outputs views | M6 | PLANNED |
 
 ## Interface Contracts
@@ -93,6 +93,8 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
   - Returns valid and invalid `.safetensors` adapters discovered in the configured LoRA directory.
 - `POST /api/loras/upload`:
   - Validates and atomically stores one LoRA SafeTensors file, then returns its selectable path and metadata.
+- `DELETE /api/loras/{filename}`:
+  - Removes one direct local adapter after checking queued/running use and unloading any idle resident pipeline that holds it; returns HTTP 409 for active use.
 - `POST /api/config/validate`:
   - Body: JSON config payload; optional top-level `selected_model_id` selects a compatible downloaded checkpoint and overrides any nested source/base fields.
   - Returns: `{"valid": true}` or `{"valid": false, "errors": ["..."]}`

@@ -248,7 +248,10 @@ is kept unfused and activated through Diffusers/PEFT so `lora_scale` remains
 explicit and is recorded in each run. A scale of `0` disables the adapter's
 effect, `1` uses its trained strength, and values up to `2` are accepted. The
 web UI discovers and validates files in `models/loras/` by default and supports
-uploading an adapter into that directory. A SafeTensors header check cannot
+uploading an adapter into that directory. The LoRA list can also delete a
+stored adapter after confirmation. Deletion refuses adapters used by queued or
+running inference; an idle resident pipeline using the adapter is unloaded
+before its file is removed. A SafeTensors header check cannot
 prove architecture compatibility; an incompatible adapter fails during model
 loading with the adapter filename and Diffusers error in the diagnostic.
 

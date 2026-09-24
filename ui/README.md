@@ -268,6 +268,12 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
 - **`POST /api/loras/upload`**
   - Accepts one `.safetensors` multipart file, streams it with a 4 GiB limit, validates its SafeTensors header and LoRA tensor keys, and atomically stores it under a sanitized collision-safe name.
   - A successful upload is refreshed into the catalog and selected automatically.
+- **`DELETE /api/loras/{filename}`**
+  - Deletes one direct `.safetensors` file in the configured LoRA directory.
+    Symlinks and traversal paths are rejected. Returns HTTP 409 when a queued
+    or running job uses the adapter; an idle resident pipeline holding it is
+    unloaded before deletion. The browser confirms deletion, clears a selected
+    adapter, refreshes the list, and reports errors.
 
 The selected file path and strength are sent as `model.lora_path` and
 `model.lora_scale`. Production inference loads and activates the adapter before

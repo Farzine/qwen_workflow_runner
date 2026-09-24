@@ -614,7 +614,7 @@ async def list_loras():
     root = get_loras_dir().resolve()
     entries = []
     for path in sorted(root.glob("*.safetensors"), key=lambda item: item.name.lower()):
-        if not path.is_file() or path.name.startswith("."):
+        if path.is_symlink() or not path.is_file() or path.name.startswith("."):
             continue
         inspection = inspect_lora_file(path)
         entries.append({

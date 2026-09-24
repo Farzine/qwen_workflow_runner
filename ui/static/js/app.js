@@ -852,6 +852,15 @@
       return await res.json();
     },
 
+    async deleteLora(filename) {
+      const res = await fetch(`/api/loras/${encodeURIComponent(filename)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "LoRA deletion failed" }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    },
+
     async downloadModel(repoId, filename = null, revision = "main") {
       const payload = { repo_id: repoId, revision: revision || "main" };
       if (filename) payload.filename = filename;
@@ -2473,6 +2482,7 @@
     dropzone: null,
     fileInput: null,
     uploadStatus: null,
+    filesList: null,
 
     init() {
       this.select = document.getElementById("param-model-lora-path");
@@ -2483,6 +2493,7 @@
       this.dropzone = document.getElementById("lora-upload-dropzone");
       this.fileInput = document.getElementById("lora-file-input");
       this.uploadStatus = document.getElementById("lora-upload-status");
+      this.filesList = document.getElementById("lora-files-list");
 
       if (this.refreshBtn) this.refreshBtn.addEventListener("click", () => this.loadLoras(true));
       if (this.clearBtn) this.clearBtn.addEventListener("click", () => this.clearSelection());
@@ -2498,6 +2509,7 @@
         const data = await ApiClient.listLoras();
         Store.state.loras.available = data.loras || [];
         this.renderOptions();
+        this.renderFiles();
         if (showToast) Toast.show(`Found ${Store.state.loras.available.length} LoRA adapter(s).`, "success");
       } catch (err) {
         console.error("Failed to list LoRA adapters:", err);
@@ -2531,6 +2543,40 @@
         this.select.value = "";
       }
       this.renderActiveStatus();
+    },
+
+    renderFiles() {
+      if (!this.filesList) return;
+      this.filesList.innerHTML = "";
+      if (!Store.state.loras.available.length) {
+        this.filesList.textContent = "No stored LoRA files.";
+        return;
+      }
+      for (const item of Store.state.loras.available) {
+        this.filesList.appendChild(Utils.el("div", { class: "lora-file-row" },
+          Utils.el("span", { class: "lora-file-name", title: item.name },
+            `${item.name} · ${Utils.formatBytes(item.size || 0)}${item.valid ? "" : " · invalid"}`),
+          Utils.el("button", { class: "btn btn-ghost btn-xs", type: "button",
+            title: `Delete ${item.name}`, onclick: () => this.deleteFile(item) }, "Delete")
+        ));
+      }
+    },
+
+    async deleteFile(item) {
+      if (!window.confirm(`Delete LoRA "${item.name}" from local storage? Any idle pipeline using it will be unloaded.`)) return;
+      try {
+        await ApiClient.deleteLora(item.name);
+        if (Store.state.config.model.lora_path === item.path) {
+          Store.state.config.model.lora_path = null;
+        }
+        await this.loadLoras(false);
+        ParamForm.triggerValidation();
+        this.setUploadStatus(`Deleted ${item.name}.`, false);
+        Toast.show(`Deleted LoRA: ${item.name}`, "success");
+      } catch (error) {
+        this.setUploadStatus(`Could not delete ${item.name}: ${error.message}`, true);
+        Toast.show(`LoRA deletion failed: ${error.message}`, "error");
+      }
     },
 
     applySelection() {

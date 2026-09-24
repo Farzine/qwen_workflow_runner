@@ -929,6 +929,31 @@ code, pre, .font-mono {
   min-height: 16px;
   margin-top: 6px;
 }
+.lora-files-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.lora-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+.lora-file-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.lora-file-row .btn { flex: 0 0 auto; }
 .lora-upload-status.error {
   color: var(--accent-rose);
 }
