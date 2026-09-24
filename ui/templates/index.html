@@ -50,6 +50,22 @@
     </div>
   </header>
 
+  <!-- Compact section navigation for tablet and phone layouts -->
+  <nav class="workflow-mobile-nav" aria-label="Workflow sections">
+    <button type="button" class="workflow-nav-btn active" data-workflow-target="panel-inputs" aria-controls="panel-inputs" aria-pressed="true">
+      <span class="workflow-step-number" aria-hidden="true">1</span>
+      <span>Inputs</span>
+    </button>
+    <button type="button" class="workflow-nav-btn" data-workflow-target="panel-config" aria-controls="panel-config" aria-pressed="false">
+      <span class="workflow-step-number" aria-hidden="true">2</span>
+      <span>Configure</span>
+    </button>
+    <button type="button" class="workflow-nav-btn" data-workflow-target="panel-output" aria-controls="panel-output" aria-pressed="false" aria-expanded="false">
+      <span class="workflow-step-number" aria-hidden="true">3</span>
+      <span>Results</span>
+    </button>
+  </nav>
+
   <!-- Global Validation and Notification Banner -->
   <aside id="global-alert-container" class="alert-container hidden" role="alert" aria-live="assertive">
     <div class="alert-content">
@@ -67,6 +83,8 @@
       <button id="btn-dismiss-alert" class="btn-close" aria-label="Dismiss alert">&times;</button>
     </div>
   </aside>
+
+  <div class="output-drawer-backdrop hidden" aria-hidden="true"></div>
 
   <!-- Main Multi-Column Interactive Workspace -->
   <main class="app-layout" id="main-workspace">
@@ -850,7 +868,7 @@
     <!-- ==================================================================== -->
     <!-- COLUMN 3: LIVE TERMINAL, OUTPUT & COMPARISON VIEWER (R4)             -->
     <!-- ==================================================================== -->
-    <section class="panel panel-output" id="panel-output" aria-labelledby="heading-output">
+    <section class="panel panel-output" id="panel-output" aria-labelledby="heading-output" aria-busy="false">
       <div class="panel-header">
         <div class="panel-title-group">
           <svg class="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -861,13 +879,14 @@
           <h2 id="heading-output" class="panel-title">Execution Hub</h2>
         </div>
 
-        <div class="status-indicator-group">
+        <div class="status-indicator-group output-header-actions">
           <span id="run-status-badge" class="badge badge-muted">Idle</span>
+          <button type="button" class="btn-close output-drawer-close" aria-label="Close results panel">&times;</button>
         </div>
       </div>
 
       <!-- Live Execution Progress Bar -->
-      <div class="execution-progress-container" id="execution-progress-container">
+      <div class="execution-progress-container" id="execution-progress-container" role="status" aria-live="polite">
         <div class="progress-details-row">
           <span id="run-step-counter" class="progress-step-text">Step 0 / 0</span>
           <span id="run-percent-label" class="progress-percent-text">0%</span>

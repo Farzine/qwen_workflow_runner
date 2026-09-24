@@ -253,10 +253,13 @@ class TestInteractiveComponentIDs(unittest.TestCase):
         cls.repo_root = Path(__file__).resolve().parent.parent.parent
         cls.index_path = cls.repo_root / "ui" / "templates" / "index.html"
         cls.js_path = cls.repo_root / "ui" / "static" / "js" / "app.js"
+        cls.css_path = cls.repo_root / "ui" / "static" / "css" / "style.css"
         with open(cls.index_path, encoding="utf-8") as f:
             cls.html = f.read()
         with open(cls.js_path, encoding="utf-8") as f:
             cls.js = f.read()
+        with open(cls.css_path, encoding="utf-8") as f:
+            cls.css = f.read()
 
     def test_r1_input_browser_elements(self):
         """Input browser R1 elements are present."""
@@ -362,6 +365,35 @@ class TestInteractiveComponentIDs(unittest.TestCase):
         ]
         for elem_id in expected:
             self.assertIn(f'id="{elem_id}"', self.html, f"Missing R4 element: {elem_id}")
+
+    def test_responsive_workflow_navigation_and_results_drawer_contract(self):
+        """Narrow layouts expose all three workflow sections and an accessible results drawer."""
+        targets = re.findall(r'data-workflow-target="([^"]+)"', self.html)
+        self.assertEqual(targets, ["panel-inputs", "panel-config", "panel-output"])
+        for target in targets:
+            self.assertIn(f'aria-controls="{target}"', self.html)
+
+        self.assertIn('class="btn-close output-drawer-close"', self.html)
+        self.assertIn('class="output-drawer-backdrop hidden" aria-hidden="true"', self.html)
+        self.assertIn('id="panel-output" aria-labelledby="heading-output" aria-busy="false"', self.html)
+        self.assertIn('id="execution-progress-container" role="status" aria-live="polite"', self.html)
+
+        self.assertIn("const ResponsiveWorkspace", self.js)
+        self.assertIn('event.key === "Escape"', self.js)
+        self.assertIn('this.runBtn.setAttribute("aria-busy"', self.js)
+        self.assertIn(".workflow-mobile-nav", self.css)
+        self.assertIn(".panel-output.drawer-open", self.css)
+        self.assertRegex(self.css, r"@media \(max-width: 768px\)[\s\S]+?\.workflow-mobile-nav\s*\{[\s\S]+?position: fixed")
+
+    def test_validation_alert_participates_in_layout(self):
+        """Validation feedback consumes layout space instead of covering form navigation."""
+        rule = re.search(r"\.alert-container\s*\{([^}]+)\}", self.css, re.DOTALL)
+        self.assertIsNotNone(rule)
+        declarations = rule.group(1)
+        self.assertIn("position: relative", declarations)
+        self.assertIn("overflow-y: auto", declarations)
+        self.assertNotIn("position: absolute", declarations)
+        self.assertNotIn("position: fixed", declarations)
 
     def test_all_js_get_element_by_id_calls_match_html(self):
         """Every element ID queried in app.js exists in index.html."""

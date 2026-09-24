@@ -133,7 +133,7 @@ Make the application a reliable production image-generation workflow: run real Q
 
 ## Active Task
 
-Phase 6 — reorganize and polish the production workflow UI, with emphasis on responsive navigation, accessible states, long lists, and clear loading/progress behavior. Phase 5 system/device configuration is complete.
+Phase 7 — add implementation-backed parameter help and accessible information controls. Phase 6 responsive workflow navigation and UI-state polish is complete.
 
 ## Completed Tasks
 
@@ -176,6 +176,10 @@ Phase 6 — reorganize and polish the production workflow UI, with emphasis on r
 - [x] Exposed truthful per-run model lifecycle state, including active requested model/device/LoRA and effective last-run metadata when held by the current server process.
 - [x] Recorded production device/offload metadata and verified both RTX A6000 GPUs accept BF16 allocation and report ready through the same probe used by `QwenBackend`.
 - [x] Completed Phase 5 core, API, DOM, JavaScript, full UI regression, and live desktop/narrow rendering validation.
+- [x] Added a compact Inputs → Configure → Results navigator for tablet and phone layouts, including direct section jumps on phones and a focused Results drawer on tablets.
+- [x] Added accessible Results drawer state, backdrop/click/Escape dismissal, focus restoration, run/output `aria-busy` state, and a visible running spinner.
+- [x] Moved validation feedback into normal document flow so it no longer covers configuration tabs, and preserved actionable alert content with bounded scrolling.
+- [x] Fixed the folder-chip class mismatch, bounded large folder lists, restored readable truncation, made gallery empty/loading states span the grid, and validated live desktop/tablet/phone rendering.
 
 ## Remaining Tasks
 
@@ -186,7 +190,7 @@ Phase 6 — reorganize and polish the production workflow UI, with emphasis on r
 - [x] Phase 3: add multi-file image upload, drag-and-drop, previews, ordering, individual removal, validation, and clear empty/error states.
 - [x] Phase 4: add LoRA directory discovery, validated upload, selection, active-state reporting, backend loading/application, metadata, and tests.
 - [x] Phase 5: add system/GPU inventory and configuration API/page; validate and honor manual device selection.
-- [ ] Phase 6: reorganize the UI around the production workflow and improve responsive behavior, accessibility, loading, progress, and long-list states.
+- [x] Phase 6: reorganize the UI around the production workflow and improve responsive behavior, accessibility, loading, progress, and long-list states.
 - [ ] Phase 7: add implementation-backed information controls for all meaningful parameters.
 - [ ] Phase 8: run the complete input/reference/LoRA/GPU/inference/UI validation matrix, fix remaining failures, and stabilize documentation.
 
@@ -230,7 +234,15 @@ Phase 6 — reorganize and polish the production workflow UI, with emphasis on r
 - The completed-job SSE hang was caused by running Starlette `TestClient` inside the restricted command sandbox. The exact test and full UI suite pass with the local IPC/loopback access already required by these tests; no streaming code change was needed.
 - Backend choice is explicit. The new runtime probe validates the selected device/dtype/offload combination before model loading and returns the same actionable message used by `QwenBackend`.
 - Parameter hints exist for several fields, but there is no complete, consistent help system based on actual implementation behavior.
-- The UI suite contains 413 tests after Phase 5 and completes in about 20 seconds when local loopback sockets are permitted.
+- The UI suite contains 415 tests after Phase 6 and completes in about 21 seconds when local loopback sockets are permitted.
+
+### Responsive workflow UI
+
+- Desktop retains the three-panel workspace. Validation errors now consume a bounded row between the header and workspace, so the alert cannot cover configuration tabs or controls.
+- Widths from 769–1024 px show an Inputs/Configure/Results navigator. Results opens the existing output panel as a modal-style drawer with a backdrop, focused close control, Escape dismissal, and truthful `aria-expanded` state.
+- Widths up to 768 px keep all panels in document flow and expose the same navigator as a fixed bottom bar. Configure and Results scroll/focus their target panels directly, avoiding the previous requirement to traverse the entire input panel.
+- Starting a run now marks both the launch button and output panel busy, adds a spinner, and exposes the Results state; tablet runs reveal the output drawer automatically.
+- The dynamic input browser creates `subfolder-chip` elements. Its stylesheet previously targeted only `folder-chip`, producing default white buttons and allowing a large folder set to consume most of the input panel. Both classes now share bounded, ellipsized dark-theme styling.
 
 ## Important Technical Findings
 
@@ -246,7 +258,7 @@ Phase 6 — reorganize and polish the production workflow UI, with emphasis on r
 
 - The cached full Diffusers snapshot has a valid manifest for the selected files at model revision `790c926...`; model absence is not the immediate cause of demo output.
 - `QwenBackend` supports full Diffusers directories, a supported GGUF transformer plus companion model, and floating-point single-file transformer weights. It intentionally rejects incompatible older Qwen pipeline classes and Comfy `int8_convrot` files.
-- The core applies the requested `runtime.device` with `torch.cuda.set_device` or pipeline placement/offload. The web UI currently lacks trustworthy capability discovery around that control.
+- The core applies the requested `runtime.device` with `torch.cuda.set_device` or pipeline placement/offload. The System tab now discovers available devices and validates the exact requested placement before submission.
 - Output persistence is structurally sound: generated PIL results are saved, hashed, recorded, and exposed through output APIs. In the failing scenario the wrong backend produced the image; saving/display did not replace a valid production result with the input.
 - `qwen_runner.system.probe_runtime_capabilities` reports Python/PyTorch versions, CUDA/MPS state, devices, diagnostics, and readiness for the requested device/dtype/offload without loading model weights.
 - `/api/system` adds explicit server demo-default metadata. The browser uses this endpoint at startup and whenever the selected device changes.
@@ -271,12 +283,13 @@ Phase 6 — reorganize and polish the production workflow UI, with emphasis on r
 - At validation time `cuda:0` reported about 33.8 GiB free and `cuda:1` about 45.8 GiB free. A BF16 tensor allocation completed after explicitly calling `torch.cuda.set_device` on each GPU, and both selected-device reports returned production `ready: true`.
 - `QwenBackend.load` already honored `runtime.device`; Phase 5 made that contract visible and testable. It calls `torch.cuda.set_device(device)` before loading, passes the same device to Accelerate model/sequential offload or `pipe.to(device)`, and now records `device` and `offload` in backend metadata.
 - `RunnerBridge.runtime_snapshot` intentionally does not claim persistent residency. It reports queued/running requested state and effective metadata from the most recent in-memory completed run, while documenting that model/LoRA changes apply to the next job.
+- Phase 6 headless-Chrome assertions proved the validation alert ended before the workspace without intersecting tabs, the tablet Results drawer opened with close focus and closed with Escape, and the phone navigator jumped to Configure/Results while remaining fixed at the viewport bottom.
 
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Current Phase 5 checkpoint: branch `main`, commit `c1b1bb9`, matching `origin/main`, with the uncommitted Phase 4 and Phase 5 files listed below modified. Phase 3.2 was committed as `c1b1bb9` before these checkpoints were finalized.
-- There were only two commits: the initial implementation and a Tier 5 frontend/adversarial test addition.
+- Current Phase 6 checkpoint: branch `main`, commit `593f631`, matching `origin/main`; Phase 6 has four uncommitted tracked files (`ui/templates/index.html`, `ui/static/css/style.css`, `ui/static/js/app.js`, and `ui/tests/test_frontend.py`) plus this context update.
+- Phase 4 and Phase 5 were committed together as `593f631`; Phase 3.2 was committed as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
 
@@ -366,6 +379,14 @@ Phase 5 additions to the cumulative files above:
 - `ui/tests/test_frontend.py`, `ui/tests/test_tier5_frontend_stress.py`, `ui/tests/test_challenger_m2_node.js` — updated the DOM contract and added dynamic two-GPU selection/application state testing.
 - `README.md`, `ui/README.md`, `PROJECT.md` — documented the System tab, expanded endpoint contract, next-run lifecycle, and authoritative backend device placement.
 
+Phase 6 additions to the cumulative files above:
+
+- `ui/templates/index.html` — added the responsive three-step workflow navigator, tablet Results drawer close/backdrop controls, and live/busy accessibility attributes.
+- `ui/static/js/app.js` — added responsive section navigation, drawer focus/Escape/resize behavior, automatic tablet run-status reveal, and launch/output busy-state management.
+- `ui/static/css/style.css` — added tablet/phone navigation, drawer/backdrop presentation, in-flow validation alerts, compact mobile section sizing, loading feedback, and corrected bounded folder/empty-state styles.
+- `ui/tests/test_frontend.py` — added responsive navigation, drawer accessibility, busy-state, and non-overlapping validation-alert contracts while retaining exactly 208 unique DOM IDs.
+- `CONTEXT.md` — recorded the Phase 6 implementation, validation evidence, remaining work, and Phase 7 handoff.
+
 ## Tests Performed
 
 - `.venv/bin/python -m compileall -q qwen_runner ui` — passed.
@@ -436,6 +457,12 @@ Phase 5 additions to the cumulative files above:
 - Final Phase 5 host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — all 413 passed in 21.09 seconds; only the known Starlette/AnyIO deprecation warnings remain.
 - Phase 5 headless Chrome validation — the live `#system` view rendered at 1440x1000 with both GPU cards, readiness, CPU/RAM/software data, selection, Apply Configuration, and lifecycle content; the 390x844 stacked layout retained scroll access through the input panel to configuration.
 - Final Phase 5 `.venv/bin/python -m compileall -q qwen_runner ui run.py benchmark.py`, `.venv/bin/python -m pip check`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
+- Phase 6 targeted responsive/DOM tests — 13 passed, covering the three workflow destinations, ARIA relationships, drawer controls, live/busy output state, JavaScript/HTML ID alignment, and the in-flow validation alert.
+- Phase 6 `.venv/bin/python -m pytest -q tests` — 31 passed plus 8 parameterized subtests in 2.75 seconds.
+- Phase 6 `node ui/tests/test_challenger_m2_node.js` and `node ui/tests/test_tier5_node_stress.js` — 33/33 and 15/15 passed.
+- Phase 6 headless-Chrome interaction pass at 1440x900, 900x800, and 390x844 — confirmed desktop non-overlap, tablet drawer/backdrop/focus/Escape behavior, phone direct Configure/Results navigation, a persistent bottom navigator, readable bounded folder chips, and restored input/reference space. Screenshots were visually inspected.
+- Final Phase 6 host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — all 415 passed in 20.99 seconds; only the known Starlette/AnyIO deprecation warnings remain.
+- Final Phase 6 `.venv/bin/python -m compileall -q qwen_runner ui run.py benchmark.py`, `.venv/bin/python -m pip check`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
 
 ## Known Issues
 
@@ -453,13 +480,13 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 6 as a focused production-workflow UI/UX slice:
+Implement Phase 7 as a focused parameter-help slice:
 
-1. Audit the live desktop and narrow layouts, navigation depth, validation banner behavior, scroll/focus order, empty/loading/error states, long filenames, and large input/reference/LoRA lists using the existing screenshots and test harnesses.
-2. Define a clearer workflow hierarchy across Inputs, References, Generation, Model/LoRA, System, Run, and Results without changing the completed backend contracts.
-3. Improve responsive navigation so narrow users can reach configuration/results quickly instead of scrolling through the full input panel; preserve accessible labels, keyboard operation, and visible status.
-4. Refine loading/progress, success/error, empty, truncation, and many-item presentation with small CSS/markup/controller changes rather than a wholesale framework rewrite.
-5. Validate desktop and narrow viewports, keyboard/tab behavior, long names, maximum image lists, system/model states, and the complete 413-test API/UI baseline before moving to parameter help.
+1. Inventory every meaningful user-facing inference/model/runtime parameter and trace each value to config validation, backend behavior, and known model constraints.
+2. Define concise help text for what each parameter changes, higher/lower effects, reasonable implementation-backed ranges/defaults, and material speed, memory, or quality trade-offs.
+3. Add keyboard-accessible information controls with hover, focus, touch/click behavior and appropriate ARIA relationships; avoid hiding required validation guidance inside tooltips.
+4. Include the native-resolution (`resolution=0`) memory/quality risk discovered during full-model multi-reference testing and clarify interactions such as CFG/negative prompt, steps/strength, KV cache, dtype/device, and offload.
+5. Validate desktop/phone placement, keyboard access, clipping/overflow, exact DOM/label contracts, both Node harnesses, core tests, and the complete 415-test UI baseline.
 
 ## Resume Instructions
 

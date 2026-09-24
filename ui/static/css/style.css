@@ -248,6 +248,44 @@ code, pre, .font-mono {
   gap: 8px;
 }
 
+.workflow-mobile-nav {
+  display: none;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-header);
+}
+.workflow-nav-btn {
+  min-width: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.workflow-nav-btn:hover,
+.workflow-nav-btn:focus-visible {
+  color: var(--text-main);
+  background: var(--bg-card);
+  outline: none;
+}
+.workflow-nav-btn.active {
+  color: var(--accent-cyan);
+  border-bottom-color: var(--accent-cyan);
+}
+.workflow-step-number {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  margin-right: 5px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 10px;
+}
+
 /* Multi-Column Main Layout */
 .app-layout {
   flex: 1;
@@ -266,6 +304,10 @@ code, pre, .font-mono {
   overflow: hidden;
   position: relative;
 }
+.panel[tabindex="-1"]:focus {
+  outline: 2px solid rgba(34, 211, 238, .45);
+  outline-offset: -2px;
+}
 
 .panel-inputs {
   border-right: 1px solid var(--border-subtle);
@@ -278,6 +320,15 @@ code, pre, .font-mono {
 
 .panel-output {
   background-color: var(--bg-panel);
+}
+.output-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.output-drawer-close,
+.output-drawer-backdrop {
+  display: none;
 }
 
 /* Panel Header */
@@ -374,6 +425,15 @@ code, pre, .font-mono {
 
 .btn-glow {
   box-shadow: 0 0 16px var(--accent-primary-glow);
+}
+.btn.is-loading::before {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, .35);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  content: "";
+  animation: spin .75s linear infinite;
 }
 
 .btn-outline {
@@ -810,11 +870,16 @@ code, pre, .font-mono {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  max-height: 112px;
+  overflow-y: auto;
 }
-.folder-chip {
+.folder-chip,
+.subfolder-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+  max-width: 100%;
   padding: 3px 8px;
   background-color: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -823,8 +888,12 @@ code, pre, .font-mono {
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--trans-fast);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.folder-chip:hover {
+.folder-chip:hover,
+.subfolder-chip:hover {
   border-color: var(--accent-primary);
   color: var(--text-main);
 }
@@ -917,6 +986,11 @@ code, pre, .font-mono {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
   gap: 8px;
+}
+.thumbnail-grid > .empty-state-text,
+.thumbnail-grid > .loading-state {
+  grid-column: 1 / -1;
+  min-height: 140px;
 }
 
 .input-image-card {
@@ -1732,24 +1806,21 @@ code, pre, .font-mono {
    9. Global Validation Alert Banner
    ========================================================================== */
 .alert-container {
-  position: absolute;
-  top: 64px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 90%;
-  max-width: 800px;
+  position: relative;
+  width: 100%;
+  max-height: 140px;
+  flex-shrink: 0;
+  overflow-y: auto;
   background-color: rgba(26, 12, 18, 0.95);
   border: 1px solid var(--accent-rose);
   border-left: 4px solid var(--accent-rose);
-  border-radius: var(--radius-md);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
-  z-index: 100;
-  backdrop-filter: blur(10px);
-  animation: slideDown 0.25s ease-out;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  z-index: 25;
+  animation: revealAlert 0.2s ease-out;
 }
-@keyframes slideDown {
-  from { opacity: 0; transform: translate(-50%, -15px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+@keyframes revealAlert {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 140px; }
 }
 .alert-content {
   display: flex;
@@ -1974,20 +2045,36 @@ code, pre, .font-mono {
 }
 
 @media (max-width: 1024px) {
+  .workflow-mobile-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    z-index: 32;
+  }
   .app-layout {
     grid-template-columns: 260px 1fr;
   }
   .panel-output {
     position: fixed;
-    top: 56px; right: 0; bottom: 28px;
-    width: 440px;
+    top: 97px; right: 0; bottom: 28px;
+    width: min(440px, calc(100vw - 32px));
     box-shadow: -6px 0 20px rgba(0, 0, 0, 0.6);
-    z-index: 30;
+    z-index: 36;
     transform: translateX(100%);
     transition: transform var(--trans-normal);
   }
   .panel-output.drawer-open {
     transform: translateX(0);
+  }
+  .output-drawer-close {
+    display: inline-flex;
+  }
+  .output-drawer-backdrop {
+    position: fixed;
+    inset: 97px 0 28px;
+    display: block;
+    z-index: 35;
+    background: rgba(0, 0, 0, .58);
+    backdrop-filter: blur(2px);
   }
 }
 
@@ -1995,6 +2082,7 @@ code, pre, .font-mono {
   .app-body {
     height: auto;
     min-height: 100vh;
+    padding-bottom: 44px;
   }
   .app-header {
     height: auto;
@@ -2020,12 +2108,19 @@ code, pre, .font-mono {
     width: 100%;
     justify-content: center;
   }
-  .alert-container {
+  .workflow-mobile-nav {
     position: fixed;
-    top: 96px;
-    width: calc(100% - 24px);
-    max-height: 45vh;
-    overflow-y: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    min-height: 44px;
+    border-top: 1px solid var(--border-medium);
+    border-bottom: 0;
+    box-shadow: 0 -5px 16px rgba(0, 0, 0, .4);
+    z-index: 45;
+  }
+  .alert-container {
+    max-height: 35vh;
   }
   .app-layout {
     flex: none;
@@ -2035,12 +2130,12 @@ code, pre, .font-mono {
   }
   .panel-inputs {
     display: flex;
-    min-height: 820px;
+    min-height: max(680px, calc(100svh - 44px));
     border-right: 0;
     border-bottom: 1px solid var(--border-subtle);
   }
   .panel-config {
-    min-height: 760px;
+    min-height: max(680px, calc(100svh - 44px));
     border-right: 0;
     border-bottom: 1px solid var(--border-subtle);
   }
@@ -2048,9 +2143,13 @@ code, pre, .font-mono {
     position: relative;
     inset: auto;
     width: auto;
-    min-height: 680px;
+    min-height: max(640px, calc(100svh - 44px));
     transform: none;
     box-shadow: none;
+  }
+  .output-drawer-close,
+  .output-drawer-backdrop {
+    display: none;
   }
   .form-grid-2, .form-grid-3 {
     grid-template-columns: 1fr;
@@ -2061,6 +2160,7 @@ code, pre, .font-mono {
   .system-lifecycle-grid { grid-template-columns: 1fr; }
   .workflow-image-selections { max-height: 420px; }
   .asset-role-toolbar { align-items: flex-start; flex-direction: column; }
+  .app-statusbar { display: none; }
 }
 
 /* ==========================================================================

@@ -315,6 +315,111 @@
     },
   };
 
+
+  // ==========================================================================
+  // 4. RESPONSIVE WORKSPACE NAVIGATION
+  // ==========================================================================
+
+  const ResponsiveWorkspace = {
+    navButtons: [],
+    outputPanel: null,
+    outputBackdrop: null,
+    outputCloseBtn: null,
+    lastTrigger: null,
+
+    init() {
+      this.navButtons = Array.from(document.querySelectorAll("[data-workflow-target]"));
+      this.outputPanel = document.getElementById("panel-output");
+      this.outputBackdrop = document.querySelector(".output-drawer-backdrop");
+      this.outputCloseBtn = document.querySelector(".output-drawer-close");
+
+      this.navButtons.forEach((button) => {
+        button.addEventListener("click", () => this.showSection(button.dataset.workflowTarget, button));
+      });
+      if (this.outputCloseBtn) this.outputCloseBtn.addEventListener("click", () => this.closeOutput(true));
+      if (this.outputBackdrop) this.outputBackdrop.addEventListener("click", () => this.closeOutput(true));
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && this.outputPanel && this.outputPanel.classList.contains("drawer-open")) {
+          this.closeOutput(true);
+        }
+      });
+      if (typeof window.addEventListener === "function") {
+        window.addEventListener("resize", () => this.handleResize());
+      }
+    },
+
+    viewportWidth() {
+      return window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 1200;
+    },
+
+    setActive(targetId) {
+      this.navButtons.forEach((button) => {
+        const active = button.dataset.workflowTarget === targetId;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    },
+
+    showSection(targetId, trigger = null) {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      this.setActive(targetId);
+
+      const width = this.viewportWidth();
+      if (targetId === "panel-output" && width > 768 && width <= 1024) {
+        this.openOutput(trigger);
+        return;
+      }
+
+      this.closeOutput(false);
+      if (typeof target.scrollIntoView === "function") {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      target.setAttribute("tabindex", "-1");
+      if (typeof target.focus === "function") target.focus({ preventScroll: true });
+    },
+
+    openOutput(trigger = null) {
+      if (!this.outputPanel) return;
+      this.lastTrigger = trigger || this.lastTrigger;
+      this.outputPanel.classList.add("drawer-open");
+      const resultsButton = this.navButtons.find((button) => button.dataset.workflowTarget === "panel-output");
+      if (resultsButton) resultsButton.setAttribute("aria-expanded", "true");
+      if (this.outputBackdrop) {
+        this.outputBackdrop.classList.remove("hidden");
+        this.outputBackdrop.setAttribute("aria-hidden", "false");
+      }
+      if (this.outputCloseBtn && typeof this.outputCloseBtn.focus === "function") {
+        this.outputCloseBtn.focus();
+      }
+    },
+
+    closeOutput(restoreFocus = false) {
+      if (this.outputPanel) this.outputPanel.classList.remove("drawer-open");
+      const resultsButton = this.navButtons.find((button) => button.dataset.workflowTarget === "panel-output");
+      if (resultsButton) resultsButton.setAttribute("aria-expanded", "false");
+      if (this.outputBackdrop) {
+        this.outputBackdrop.classList.add("hidden");
+        this.outputBackdrop.setAttribute("aria-hidden", "true");
+      }
+      if (restoreFocus && this.lastTrigger && typeof this.lastTrigger.focus === "function") {
+        this.lastTrigger.focus();
+      }
+    },
+
+    handleResize() {
+      const width = this.viewportWidth();
+      if (width > 1024 || width <= 768) this.closeOutput(false);
+    },
+
+    revealRunStatus() {
+      const width = this.viewportWidth();
+      this.setActive("panel-output");
+      if (width > 768 && width <= 1024) this.openOutput();
+    },
+  };
+
   // Non-enumerable migration aliases keep embedded integrations functional
   // without putting the retired combined field into API request JSON.
   Object.defineProperty(Store.state.inputs, "selected", {
@@ -2537,6 +2642,8 @@
 
       if (this.runBtn) {
         this.runBtn.disabled = isRunning;
+        this.runBtn.classList.toggle("is-loading", isRunning);
+        this.runBtn.setAttribute("aria-busy", isRunning ? "true" : "false");
       }
       if (this.runText) {
         this.runText.textContent = isRunning ? "Running..." : "Run Pipeline";
@@ -2558,6 +2665,9 @@
         if (isRunning) this.progressWrap.classList.remove("hidden");
         else this.progressWrap.classList.add("hidden");
       }
+      const outputPanel = document.getElementById("panel-output");
+      if (outputPanel) outputPanel.setAttribute("aria-busy", isRunning ? "true" : "false");
+      if (isRunning) ResponsiveWorkspace.revealRunStatus();
     },
 
     cancelRun() {
@@ -3311,6 +3421,7 @@
       console.log("Qwen Image 2.1 Workflow UI: Starting application controller...");
 
       Toast.init();
+      ResponsiveWorkspace.init();
       InputBrowser.init();
       ParamForm.init();
       SystemManager.init();
