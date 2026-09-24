@@ -205,6 +205,17 @@ Important parameter semantics:
 
 ## Models and cache
 
+The web server keeps one compatible production pipeline resident per selected
+device. A later request on the same device reuses it when the model, companion
+components, precision, offload mode, and VAE mode match. Prompt, sampling,
+image, and LoRA-strength changes do not rebuild compatible base weights; LoRA
+changes are applied under the same exclusive device lease. Selecting an
+incompatible model/runtime replaces only that device's slot. Server shutdown
+drains the single-worker queue, removes Diffusers/Accelerate hooks, releases
+pipeline references, synchronizes CUDA, and clears the CUDA allocator cache.
+`GET /api/system` reports each slot's model, device, LoRA, state, and load/reuse
+counts.
+
 Supported sources:
 
 | Source | Handling |

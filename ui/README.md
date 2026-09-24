@@ -249,8 +249,8 @@ applied because it does not load a model.
 ### 4. Configuration & Validation
 
 - **`GET /api/system?device=cuda:0&dtype=bfloat16&offload=model`**
-  - Reports Python/PyTorch/CUDA versions, CPU and system RAM, CUDA and MPS availability, per-GPU total/free/used and process memory, selected-device readiness, server backend defaults, and active/last-run model and LoRA state where available.
-  - The model lifecycle is per run. Applying a device configuration changes the next submitted request; it does not move or mutate an active pipeline.
+  - Reports Python/PyTorch/CUDA versions, CPU and system RAM, CUDA and MPS availability, per-GPU total/free/used and process memory, selected-device readiness, server backend defaults, active/last-run state, and resident pipeline cache slots.
+  - The server retains one compatible production pipeline per device. Applying configuration changes the next submitted request; it never moves or mutates a pipeline held by an active job. Model/runtime incompatibility replaces only that device's slot, while compatible requests reuse its weights.
 
 The browser’s **System** tab builds its device list from this response. Selecting
 CPU automatically uses `float32` with no offload; selecting MPS disables

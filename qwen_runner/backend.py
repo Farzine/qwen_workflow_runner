@@ -11,6 +11,8 @@ class QwenBackend:
         self.config = config
         self.metadata = {}
         self._loaded_lora_adapter = None
+        self._loaded_lora_path = None
+        self._loaded_lora_scale = None
 
     @staticmethod
     def _file_sha256(path):
@@ -23,20 +25,31 @@ class QwenBackend:
     def _apply_configured_lora(self):
         """Load one unfused adapter and verify that Diffusers activated it."""
         c = self.config.model
+        requested_path = str(Path(c.lora_path).expanduser().resolve()) if c.lora_path else None
+        requested_scale = float(c.lora_scale)
+        if self._loaded_lora_adapter and self._loaded_lora_path == requested_path:
+            if self._loaded_lora_scale != requested_scale:
+                self.pipe.set_adapters(self._loaded_lora_adapter, adapter_weights=requested_scale)
+                self._loaded_lora_scale = requested_scale
+            self.metadata['lora']['scale'] = requested_scale
+            return
+
         if self._loaded_lora_adapter:
             self.pipe.unload_lora_weights()
             self._loaded_lora_adapter = None
+            self._loaded_lora_path = None
+            self._loaded_lora_scale = None
 
         if not c.lora_path:
             self.metadata['lora'] = {
                 'enabled': False,
                 'applied': False,
                 'path': None,
-                'scale': float(c.lora_scale),
+                'scale': requested_scale,
             }
             return
 
-        path = Path(c.lora_path).expanduser().resolve()
+        path = Path(requested_path)
         if not path.is_file():
             raise FileNotFoundError(f'LoRA file not found: {path}')
         if path.suffix.lower() != '.safetensors':
@@ -51,7 +64,7 @@ class QwenBackend:
                 local_files_only=True,
                 use_safetensors=True,
             )
-            self.pipe.set_adapters(adapter_name, adapter_weights=float(c.lora_scale))
+            self.pipe.set_adapters(adapter_name, adapter_weights=requested_scale)
             active = list(self.pipe.get_active_adapters())
             available = self.pipe.get_list_adapters()
             if adapter_name not in active:
@@ -64,6 +77,8 @@ class QwenBackend:
             raise RuntimeError(f"LoRA loading failed for '{path.name}': {error}") from error
 
         self._loaded_lora_adapter = adapter_name
+        self._loaded_lora_path = str(path)
+        self._loaded_lora_scale = requested_scale
         self.metadata['lora'] = {
             'enabled': True,
             'applied': True,
@@ -71,13 +86,15 @@ class QwenBackend:
             'filename': path.name,
             'sha256': self._file_sha256(path),
             'adapter_name': adapter_name,
-            'scale': float(c.lora_scale),
+            'scale': requested_scale,
             'active_adapters': active,
             'available_adapters': available,
             'fused': False,
         }
 
     def load(self):
+        if getattr(self, 'pipe', None) is not None:
+            return self
         import torch
         from diffusers import FlowMatchEulerDiscreteScheduler, QwenImage21Transformer2DModel
         from .pipeline import WorkflowQwenImage21Pipeline
@@ -157,6 +174,40 @@ class QwenBackend:
             kv_cache_policy='Lossless prefix cache; auto keeps CUDA reserve then spills to CPU; synchronous CPU transfers, no Comfy prefetch',
         )
         return self
+
+    def prepare_for_config(self, config):
+        """Apply request-scoped state without rebuilding compatible weights."""
+        self.config = config
+        self._apply_configured_lora()
+        return self
+
+    def unload(self):
+        """Drop pipeline/component references before device cache cleanup."""
+        pipe = getattr(self, 'pipe', None)
+        if pipe is None:
+            return
+        try:
+            if self._loaded_lora_adapter:
+                pipe.unload_lora_weights()
+        except Exception:
+            pass
+        try:
+            pipe.maybe_free_model_hooks()
+        except Exception:
+            pass
+        try:
+            pipe.remove_all_hooks()
+        except Exception:
+            pass
+        try:
+            pipe.to('cpu')
+        except Exception:
+            pass
+        self._loaded_lora_adapter = None
+        self._loaded_lora_path = None
+        self._loaded_lora_scale = None
+        self.pipe = None
+        self.metadata['lifecycle_state'] = 'unloaded'
 
     def generate(self, images, canvas, seed):
         g = self.config.generation

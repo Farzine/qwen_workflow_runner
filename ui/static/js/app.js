@@ -2711,6 +2711,13 @@
       const execution = capabilities.execution || {};
       const active = execution.active_job;
       const last = execution.last_run;
+      const cache = execution.cache || {};
+      const slots = Array.isArray(cache.slots) ? cache.slots : [];
+      const selectedDevice = Store.state.config.runtime.device === "cuda"
+        ? "cuda:0"
+        : Store.state.config.runtime.device;
+      const resident = slots.find((slot) => slot.device === selectedDevice && slot.pipeline)
+        || slots.find((slot) => slot.pipeline);
       const backend = capabilities.backend || {};
       const setText = (id, value) => {
         const element = document.getElementById(id);
@@ -2720,6 +2727,12 @@
       if (active) {
         setText("system-model-state", `${active.status}: ${active.requested_model}`);
         setText("system-lora-state", active.requested_lora ? `Requested: ${active.requested_lora.split(/[\\/]/).pop()}` : "No LoRA requested");
+      } else if (resident) {
+        const model = resident.model || {};
+        const lora = resident.lora || {};
+        const source = model.source || "loaded model";
+        setText("system-model-state", `Loaded on ${resident.device}: ${source}`);
+        setText("system-lora-state", lora.applied ? `Loaded: ${lora.filename || lora.path || "adapter"}` : "No loaded LoRA");
       } else if (last) {
         const model = last.model || {};
         const lora = last.lora || {};
@@ -2729,7 +2742,7 @@
         setText("system-model-state", "No active run");
         setText("system-lora-state", "No run state available");
       }
-      setText("system-lifecycle-message", execution.message || "Models are loaded per run.");
+      setText("system-lifecycle-message", execution.message || "Pipeline lifecycle information is unavailable.");
     },
   };
 

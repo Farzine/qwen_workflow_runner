@@ -69,6 +69,9 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | M2 | Modern Frontend Web UI | Single-page application (`ui/static/`, `ui/templates/index.html`) implementing separate input/reference selection, full parameter and system controls, model/LoRA management, responsive navigation, accessible help, live execution, outputs, comparison, records, and history | M1 contracts | COMPLETE |
 | M3 | App Startup, CLI & Packaging | Entrypoint script (`ui/app.py`), configurable port fallback, directory overrides, documentation, and dependency profiles | M1, M2 | COMPLETE |
 | M4 | E2E Verification & Adversarial Hardening | Full automated suites plus hardware-gated browser production validation; evidence in `VALIDATION_MATRIX.md` | M1, M2, M3 | COMPLETE |
+| M5 | Persistent Resource Lifecycle | One exclusive cached production pipeline per device, compatible reuse, LoRA switching, runtime telemetry, and explicit shutdown cleanup | M1, M4 | COMPLETE |
+| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | PLANNED |
+| M7 | Records, Batch UX & Task Pages | Versioned human-readable metadata, detailed batch state/ETA, and Dashboard/Models/LoRAs/Inference/Batch/History/Outputs views | M6 | PLANNED |
 
 ## Interface Contracts
 ### Client ↔ Server API Endpoints
@@ -110,6 +113,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 │   ├── config.py
 │   ├── runner.py
 │   ├── backend.py
+│   ├── resources.py       # Per-device persistent pipeline ownership and cleanup
 │   ├── pipeline.py
 │   └── ...
 ├── models/                # Local model weights directory

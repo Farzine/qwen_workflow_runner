@@ -9,7 +9,7 @@ Last updated: 2026-09-24 (Asia/Dhaka)
 - A command-line runner (`run.py`) backed by `qwen_runner`.
 - A FastAPI application (`ui`) with a vanilla HTML/CSS/JavaScript single-page interface, background execution, SSE progress events, model discovery/download/upload, output history, and image comparison.
 
-The core production backend loads the Qwen Image 2.1 Diffusers pipeline and reproduces the source workflow's image conditioning, Euler flow sampling, optional GGUF transformer loading, KV caching, output persistence, and run metadata. The web layer also contains a synthetic `DemoBackend` intended for quick UI testing.
+The core production backend loads the Qwen Image 2.1 Diffusers pipeline and reproduces the source workflow's image conditioning, Euler flow sampling, optional GGUF transformer loading, KV caching, output persistence, and run metadata. The web server retains one compatible production pipeline per device through a shared `PipelineManager`; the web layer also contains a synthetic `DemoBackend` intended for quick UI testing.
 
 The active checkout is `/mnt/lab/farzine/qwen_workflow_runner`. The path originally supplied as the primary checkout, `/mnt/lab/farzine/projects/qwen_workflow_runner`, did not exist during the audit. The Git remote is `https://github.com/Farzine/qwen_workflow_runner.git`.
 
@@ -27,6 +27,7 @@ The active checkout is `/mnt/lab/farzine/qwen_workflow_runner`. The path origina
 | `qwen_runner/kv_cache.py` | Lossless transformer prefix KV cache and GPU/CPU placement policy. |
 | `qwen_runner/pipeline.py` | Custom `WorkflowQwenImage21Pipeline`: prompt/image encoding, conditioning latent assembly, denoising, and VAE decoding. |
 | `qwen_runner/backend.py` | Production `QwenBackend`: device/model initialization and pipeline invocation. |
+| `qwen_runner/resources.py` | Exclusive per-device pipeline leases, compatibility keys, reuse/replacement telemetry, and shutdown cleanup. |
 | `qwen_runner/metrics.py` | Inference timing and memory metrics. |
 | `qwen_runner/runner.py` | End-to-end orchestration, durable JSON records, output PNG saving, comparisons, and error records. |
 | `ui/app.py` | Uvicorn launcher, CLI flags, directory setup, and port selection. |
@@ -58,11 +59,13 @@ flowchart LR
     Browser[Browser SPA<br/>index.html + app.js] -->|REST JSON| Server[ui.server<br/>FastAPI]
     Browser <-->|SSE events| Server
     Server --> Bridge[ui.runner_bridge<br/>RunnerBridge]
+    Bridge --> Manager[qwen_runner.resources<br/>PipelineManager]
     Bridge --> Runner[qwen_runner.runner]
     Runner --> Images[qwen_runner.images]
     Runner --> Metrics[qwen_runner.metrics]
     Runner --> Sampling[qwen_runner.sampling]
-    Runner --> Backend[qwen_runner.backend<br/>QwenBackend]
+    Manager --> Backend[qwen_runner.backend<br/>QwenBackend]
+    Runner -. borrowed loaded backend .-> Backend
     Bridge -. explicit synthetic demo .-> Demo[DemoBackend]
     Backend --> Models[qwen_runner.models]
     Backend --> GGUF[qwen_runner.gguf_loader]
@@ -81,7 +84,7 @@ qwen_runner.pipeline -> qwen_runner.kv_cache
 qwen_runner.runner -> qwen_runner.backend, images, metrics, sampling
 ui.app -> ui.server
 ui.server -> qwen_runner.config, qwen_runner.models, ui.runner_bridge
-ui.runner_bridge -> qwen_runner.backend, qwen_runner.config, qwen_runner.runner, ui.server
+ui.runner_bridge -> qwen_runner.backend, qwen_runner.config, qwen_runner.resources, qwen_runner.runner, ui.server
 ```
 
 ### Current request flow
@@ -101,8 +104,9 @@ sequenceDiagram
     API->>API: Build Config and validate image paths
     API->>B: submit_run(config, demo_mode)
     B->>B: resolve_backend_factory
-    B->>R: run(config, backend_factory)
-    R->>E: load()
+    B->>B: acquire exclusive per-device pipeline lease
+    B->>E: load or reuse compatible backend; switch LoRA if needed
+    B->>R: run(config, borrowed loaded backend)
     loop Each explicit input (legacy requests have one)
         R->>F: Load [current input, ordered shared references]
         R->>E: generate(images, canvas, seed)
@@ -122,20 +126,21 @@ sequenceDiagram
 
 1. New callers use `GenerationConfig.input_images` plus `reference_images`. The runner expands these into one inference per input with `[current_input, *reference_images]`. Legacy `images` remains one combined sequence whose first image is the input/canvas.
 2. `load_references` opens each expanded conditioning sequence with Pillow, applies EXIF orientation, converts to RGB/RGBA, rounds sizes to model-compatible values, and returns images plus canvas metadata.
-3. `QwenBackend.load` validates the selected device, resolves the main model and optional companion files, loads a Diffusers or supported GGUF transformer, builds `WorkflowQwenImage21Pipeline`, installs the flow-matching scheduler, and applies device/offload settings.
-4. `QwenBackend.generate` constructs deterministic CPU `float32` noise, applies the configured sigma schedule, packs the empty starting latent, and supplies the prompt and all conditioning images to the pipeline.
-5. The pipeline encodes text and images with Qwen3-VL and the VAE, concatenates reference conditioning, denoises only the generated target latent, and decodes it to PIL images.
-6. `qwen_runner.runner.run` loads the model once, preserves input order, uses the same seed for all inputs in a repeat, and saves one durable record/output group per input attempt. Explicit multi-input jobs isolate ordinary per-input failures and report mixed outcomes as `partial_success` through the API.
+3. `PipelineManager` exclusively leases the selected device for the complete job. It reuses a compatible resident backend or unloads only that device's prior backend before calling `QwenBackend.load`. Compatible requests can change LoRA state without rebuilding base weights.
+4. `QwenBackend.load` validates the selected device, resolves the main model and optional companion files, loads a Diffusers or supported GGUF transformer, builds `WorkflowQwenImage21Pipeline`, installs the flow-matching scheduler, and applies device/offload settings.
+5. `QwenBackend.generate` constructs deterministic CPU `float32` noise, applies the configured sigma schedule, packs the empty starting latent, and supplies the prompt and all conditioning images to the pipeline.
+6. The pipeline encodes text and images with Qwen3-VL and the VAE, concatenates reference conditioning, denoises only the generated target latent, and decodes it to PIL images.
+7. `qwen_runner.runner.run` preserves input order, uses the same seed for all inputs in a repeat, and saves one durable record/output group per input attempt. Explicit multi-input jobs isolate ordinary per-input failures and report mixed outcomes as `partial_success` through the API.
 
 The original ComfyUI graph follows the same broad semantics: its `KSampler` receives an empty latent selected by the graph's switch, while the loaded images feed `TextEncodeQwenImage21` as conditioning. It does not use the first image as the starting latent.
 
 ## Current Goal
 
-Maintain the completed production image-generation workflow: real Qwen inference runs end to end, process inputs and references are separate, multiple inputs are supported, LoRAs and devices are managed explicitly, errors are actionable, and the responsive UI is documented and regression-tested.
+Extend the validated Qwen workflow into a production-quality management application with authoritative compatible-model selection, efficient per-device resource reuse, observable downloads, safe deletion, human-readable records, dedicated batch workflow, and task-oriented responsive pages.
 
 ## Active Task
 
-Phase 8 is complete. The final input/reference/LoRA/GPU/inference/browser matrix, real multi-input browser run, artifact verification, regression suites, and documentation stabilization all passed.
+Expanded Phase 9.1 is complete: the web server now owns one persistent compatible production pipeline per device, reuses it under an exclusive job lease, reports live cache state, and explicitly unloads resources during server shutdown.
 
 ## Completed Tasks
 
@@ -190,6 +195,11 @@ Phase 8 is complete. The final input/reference/LoRA/GPU/inference/browser matrix
 - [x] Drove a real two-input plus one-reference production batch through the actual browser controls on `cuda:0`, observed SSE completion at 100%, rendered both outputs/comparison/history, and verified every durable artifact.
 - [x] Quantified both full-model outputs against their respective sources, confirming record hashes and 97.47%/98.30% changed pixels at the selected threshold.
 - [x] Reconciled the root/UI/project/porting documentation with final behavior, evidence, supported launch/test commands, and remaining asset-dependent limits.
+- [x] Added `PipelineManager` with one exclusive cache slot per normalized device, exact compatibility keys, safe replacement, load/reuse counters, failure recovery, snapshots, manual unload, and idempotent shutdown.
+- [x] Reused compatible full-model pipelines across web jobs and switched or rescaled LoRAs without rebuilding matching base weights.
+- [x] Added FastAPI shutdown draining and explicit Diffusers hook removal, CPU transfer, reference release, garbage collection, CUDA synchronization, and allocator cleanup.
+- [x] Exposed resident model/device/LoRA and cache lifecycle state through `/api/system` and the System page.
+- [x] Proved full-model cache reuse with two real `cuda:0` jobs and a single model load, then verified the manager slot becomes empty after shutdown.
 
 ## Remaining Tasks
 
@@ -203,6 +213,14 @@ Phase 8 is complete. The final input/reference/LoRA/GPU/inference/browser matrix
 - [x] Phase 6: reorganize the UI around the production workflow and improve responsive behavior, accessibility, loading, progress, and long-list states.
 - [x] Phase 7: add implementation-backed information controls for all meaningful parameters.
 - [x] Phase 8: run the complete input/reference/LoRA/GPU/inference/UI validation matrix, fix remaining failures, and stabilize documentation.
+- [x] Phase 9.1: add reusable per-device pipeline ownership, LoRA-aware reuse, concurrency protection, lifecycle telemetry, and shutdown cleanup.
+- [ ] Phase 9.2: make a stable, compatible downloaded-model catalog selection authoritative for inference; remove advanced-field authority and expose incompatibility reasons.
+- [ ] Phase 9.3: add truthful byte/file-aware Hugging Face download progress, retry/cancel state, and responsive background behavior.
+- [ ] Phase 9.4: add safe model, LoRA, output, and run deletion APIs plus confirmed UI actions and active-resource conflicts.
+- [ ] Phase 9.5: introduce a versioned common run metadata model and human-readable history/output details while preserving legacy record reads.
+- [ ] Phase 9.6: add aggregate batch operations, per-item stages, counts, timing, ETA, failures, and result inspection based on the reference workflow concepts.
+- [ ] Phase 9.7: reorganize the SPA into Dashboard, Models, LoRAs, Inference, Batch, History, Outputs, and System views with responsive task navigation.
+- [ ] Phase 9.8: run the expanded regression/hardware/browser matrix and reconcile all documentation.
 
 ## Current Problems
 
@@ -237,7 +255,9 @@ Phase 8 is complete. The final input/reference/LoRA/GPU/inference/browser matrix
 - `QwenBackend` loads the adapter locally under the fixed name `qwen_workflow_lora`, calls `set_adapters` with the requested strength, verifies it is active, keeps it unfused, and records its path, filename, hash, scale, active/available adapter state, and application status. Demo mode explicitly records that a selected adapter was not applied.
 - PEFT 0.21.0 is now an explicit runtime dependency. A real tiny Qwen transformer test proves that enabling the saved adapter changes transformer-layer output and that clearing the selection unloads it. Full pretrained inference with a user-supplied production LoRA remains part of the final validation matrix because no compatible LoRA asset is bundled.
 - The static device list has been replaced. Only devices reported by the runtime are offered, while a configured unavailable device remains visible with a blocked diagnostic. The page shows both A6000s independently and the selected choice is used by `QwenBackend` through `torch.cuda.set_device` and exact pipeline/offload placement.
-- The runner has no persistent model server: it builds a backend per job. System state therefore distinguishes an active job's requested configuration from effective metadata held for the latest in-process completed run and explicitly says changes apply to the next job.
+- The web runner now retains one compatible production backend per normalized device (`cuda` aliases `cuda:0`). A device lease spans the complete job, so a model or LoRA cannot be replaced during an active batch. The existing executor remains single-worker, while per-device locking keeps the cache safe if scheduling expands later.
+- Pipeline compatibility includes backend type, model source/revision/file/quantization, companion and text-encoder sources, cache directory, device, dtype, offload, and VAE tiling. Generation/image parameters and LoRA selection are deliberately excluded so compatible weights can be reused.
+- Server shutdown rejects new submissions, drains queued work, unloads adapters and Diffusers hooks, moves remaining components to CPU where possible, drops pipeline references, runs garbage collection, synchronizes CUDA, and clears allocator/IPC caches.
 
 ### Validation and maintainability
 
@@ -299,7 +319,8 @@ Phase 8 is complete. The final input/reference/LoRA/GPU/inference/browser matrix
 - The live Phase 5 probe reported a 12th Gen Intel i9-12900K (16 physical/24 logical cores), about 125.6 GiB RAM, PyTorch `2.11.0+cu126`, CUDA runtime 12.6, and two RTX A6000 GPUs with compute capability 8.6 and about 47.4 GiB each.
 - At validation time `cuda:0` reported about 33.8 GiB free and `cuda:1` about 45.8 GiB free. A BF16 tensor allocation completed after explicitly calling `torch.cuda.set_device` on each GPU, and both selected-device reports returned production `ready: true`.
 - `QwenBackend.load` already honored `runtime.device`; Phase 5 made that contract visible and testable. It calls `torch.cuda.set_device(device)` before loading, passes the same device to Accelerate model/sequential offload or `pipe.to(device)`, and now records `device` and `offload` in backend metadata.
-- `RunnerBridge.runtime_snapshot` intentionally does not claim persistent residency. It reports queued/running requested state and effective metadata from the most recent in-memory completed run, while documenting that model/LoRA changes apply to the next job.
+- `RunnerBridge.runtime_snapshot` now reports truthful persistent per-device slots, lease state, requested model identity, active LoRA, pipeline type, load/reuse counts, timestamps, and last error alongside active/last-run state.
+- A live two-job `cuda:0` validation loaded `WorkflowQwenImage21Pipeline` once: record one reported `reused: false`, `load_count: 1`; record two reported `reused: true`, `load_count: 1`, `reuse_count: 1`. Inference completed in 15.33 and 14.70 seconds. Explicit shutdown emptied the slot and reduced the 18.8 GB peak allocation to about 9.6 MB allocated/20 MB reserved inside the still-running validation process; process exit releases the remaining CUDA context allocation.
 - Phase 6 headless-Chrome assertions proved the validation alert ended before the workspace without intersecting tabs, the tablet Results drawer opened with close focus and closed with Escape, and the phone navigator jumped to Configure/Results while remaining fixed at the viewport bottom.
 - The pipeline activates negative conditioning when a negative prompt exists and `true_cfg_scale != 1`; the earlier UI badge incorrectly said `CFG > 1`. Phase 7 corrected both the inline text and help content to the exact implemented condition.
 - Denoise strength selects the tail of the flow schedule while generation still starts from CPU float32 noise; it does not blend input pixels. The help system calls this out to prevent treating Strength like conventional image-to-image blending.
@@ -308,8 +329,8 @@ Phase 8 is complete. The final input/reference/LoRA/GPU/inference/browser matrix
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Current Phase 7 checkpoint: branch `main`, commit `f923e2f`, matching `origin/main`; Phase 7 has seven uncommitted tracked implementation/documentation files (`PROJECT.md`, `qwen_runner/pipeline.py`, `ui/README.md`, `ui/templates/index.html`, `ui/static/css/style.css`, `ui/static/js/app.js`, and `ui/tests/test_frontend.py`) plus this context update.
-- Phase 6 was committed as `f923e2f`; Phase 4 and Phase 5 were committed together as `593f631`; Phase 3.2 was committed as `c1b1bb9`.
+- Current Phase 9.1 checkpoint: branch `main`, commit `be41eb4`, matching `origin/main`; Phase 9.1 changes are uncommitted and listed under **Files Modified**.
+- Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
 
@@ -424,7 +445,28 @@ Phase 8 additions to the cumulative files above:
 - `README.md`, `ui/README.md`, `PROJECT.md`, `workflow/PORTING_NOTES.md` — replaced stale test counts and planned milestone states, documented the final production browser evidence and validation commands, corrected explicit input/reference limits, and linked the final matrix and browser driver.
 - `CONTEXT.md` — recorded Phase 8 completion, exact production records/metrics, final tests, remaining limitations, and the maintenance handoff.
 
+Phase 9.1 additions to the cumulative files above:
+
+- `qwen_runner/resources.py` — added compatibility-keyed, exclusive per-device pipeline leases, safe reuse/replacement, observable snapshots, unload, and shutdown.
+- `qwen_runner/backend.py` — made compatible load calls idempotent, added request-scoped LoRA switching/rescaling, and added explicit Diffusers/Accelerate/pipeline teardown.
+- `ui/runner_bridge.py` — integrated persistent production leases around whole jobs, prevented double-loading through a borrowed-backend view, rejected submissions during shutdown, exposed cache state, and added singleton cleanup.
+- `ui/server.py` — drains and shuts down the process runner from the FastAPI lifespan hook.
+- `ui/static/js/app.js`, `ui/templates/index.html` — display the live resident model/device/LoRA state on the System page.
+- `tests/test_resources.py` — covers reuse keys, generation/LoRA-compatible reuse, per-device replacement, lease exclusion, failed-load recovery, shutdown, and device alias normalization.
+- `ui/tests/test_backend.py` — updated the system/runtime lifecycle contract and explicitly closes test-owned bridges.
+- `README.md`, `ui/README.md`, `PROJECT.md` — documented persistent cache behavior, shutdown semantics, telemetry, and the expanded milestone roadmap.
+- `CONTEXT.md` — recorded the expanded project scope, Phase 9.1 implementation/evidence, remaining phases, and exact continuation point.
+
 ## Tests Performed
+
+Phase 9.1 validation:
+
+- `.venv/bin/python -m pytest -q tests` — 38 passed plus 8 parameterized subtests in 2.56 seconds.
+- Final host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 417 passed in 19.84 seconds; only the existing Starlette/AnyIO deprecation warnings remain.
+- `node ui/tests/test_challenger_m2_node.js` and `node ui/tests/test_tier5_node_stress.js` — 33/33 and 15/15 passed.
+- `.venv/bin/python -m compileall -q qwen_runner ui tests`, `.venv/bin/python -m pip check`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
+- Real persistent-cache run on `cuda:0` — two one-step, 256×256 production jobs with 512 reference preprocessing completed through one `RunnerBridge`; the second record reported reuse with one total load. Records: `/tmp/qwen-pipeline-cache-validation/20260924T135059_e0c31a51d1_run_000.json` and `/tmp/qwen-pipeline-cache-validation/20260924T135117_a651a500ce_run_000.json`.
+- Real shutdown follow-up on `cuda:0` — one bounded job followed by explicit `RunnerBridge.shutdown()` emptied the manager slot after hook removal/reference cleanup. The still-running validator retained only about 9.6 MB allocated/20 MB reserved versus an 18.8 GB inference peak; exiting the process released its CUDA context.
 
 - `.venv/bin/python -m compileall -q qwen_runner ui` — passed.
 - `node --check ui/static/js/app.js` — passed.
@@ -517,6 +559,11 @@ Phase 8 additions to the cumulative files above:
 
 ## Known Issues
 
+- The model catalog still exposes paths/repository fields rather than a stable authoritative model ID. The advanced model fields can still override the dropdown, and catalog entries do not yet carry explicit Qwen compatibility reasons. This is Phase 9.2.
+- Hugging Face download progress is currently coarse (start/25%/complete) and does not yet report trustworthy file/byte totals, current file, speed, ETA, retry, or cancellation. This is Phase 9.3.
+- Models, LoRAs, generated outputs, and run records do not yet have complete confirmed backend deletion workflows. This is Phase 9.4.
+- Current durable records are technically detailed schema-version-1 documents. They are not yet normalized into the common human-readable metadata schema requested for single and batch views. This is Phase 9.5.
+- The current SPA remains a three-panel workflow with configuration tabs and a history drawer. Dedicated Dashboard, Models, LoRAs, Batch, History, and Outputs pages remain Phase 9.6–9.7 work.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
 - Multi-reference transport and conditioning effects are proven, but adherence was weak in the tested hairstyle-transfer example. Prompt/reference quality remains model- and asset-dependent rather than a transport defect.
 - LoRA application is proven with a real tiny Qwen Image 2.1 transformer, including output effect, strength, hash metadata, unload, replacement, and incompatible-target handling. No compatible user adapter exists in `models/loras/`, so the full 33 GB checkpoint was not run with a production LoRA during Phase 8. A valid SafeTensors header cannot prove model/training compatibility.
@@ -531,12 +578,12 @@ None at this checkpoint.
 
 ## Next Action
 
-The requested repository improvement program is complete. For later maintenance:
+Implement Phase 9.2 as the next independently testable slice:
 
-1. Read `VALIDATION_MATRIX.md` before changing workflow contracts or declaring a regression fixed.
-2. Run the core, full UI/API, and Node commands documented there after meaningful code changes.
-3. Use `scripts/validate_browser_production.js` for hardware-gated browser validation when inference, device, SSE, or result presentation changes.
-4. If a compatible production LoRA is supplied later, add its full-model visual-quality result to the matrix; the loader/application contract itself is already validated.
+1. Introduce stable server-generated model IDs and explicit compatibility inspection for local Diffusers directories, GGUF/single-file models, and manifest-backed Hugging Face downloads.
+2. Add one authoritative selected-model field to the web request; resolve it server-side to `ModelConfig.source` plus required companion data. Preserve legacy direct source fields for CLI/API callers.
+3. Remove model source/base-model authority from the browser's advanced settings. The selected compatible catalog entry must determine production inference; incompatible entries remain visible with a reason and cannot be selected for a run.
+4. Update validation, durable requested/effective model metadata, API/UI tests, and model-selection documentation. Do not begin download-progress or deletion work in the same slice.
 
 ## Resume Instructions
 

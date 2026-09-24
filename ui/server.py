@@ -56,6 +56,7 @@ from ui.runner_bridge import (
     RunnerBridge,
     get_runner_bridge,
     resolve_backend_factory,
+    shutdown_runner_bridge,
 )
 
 
@@ -179,7 +180,10 @@ async def lifespan(app: FastAPI):
     get_outputs_dir().mkdir(parents=True, exist_ok=True)
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
-    yield
+    try:
+        yield
+    finally:
+        shutdown_runner_bridge()
 
 
 app = FastAPI(

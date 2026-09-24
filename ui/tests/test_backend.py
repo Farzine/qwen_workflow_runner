@@ -36,6 +36,7 @@ class TestBackendRunnerBridge(unittest.TestCase):
         self.client = TestClient(app)
 
     def tearDown(self):
+        self.bridge.shutdown()
         app.state.outputs_dir = None
         os.environ.pop("OUTPUTS_DIR", None)
         self.temp_dir.cleanup()
@@ -61,8 +62,9 @@ class TestBackendRunnerBridge(unittest.TestCase):
         self.assertTrue(payload["backend"]["demo_is_synthetic"])
         self.assertIn("cpu", payload["host"])
         self.assertIn("memory", payload["host"])
-        self.assertEqual(payload["execution"]["model_lifecycle"], "per_run")
-        self.assertFalse(payload["execution"]["persistent_backend"])
+        self.assertEqual(payload["execution"]["model_lifecycle"], "persistent_per_device")
+        self.assertTrue(payload["execution"]["persistent_backend"])
+        self.assertEqual(payload["execution"]["cache"]["policy"], "one_pipeline_per_device")
 
     def test_runtime_snapshot_distinguishes_active_request_and_effective_last_run(self):
         config = Config()
@@ -77,7 +79,8 @@ class TestBackendRunnerBridge(unittest.TestCase):
         self.assertEqual(snapshot["active_job"]["requested_device"], "cuda:1")
         self.assertEqual(snapshot["active_job"]["requested_model"], "org/model")
         self.assertEqual(snapshot["active_job"]["requested_lora"], "/tmp/style.safetensors")
-        self.assertFalse(snapshot["persistent_backend"])
+        self.assertTrue(snapshot["persistent_backend"])
+        self.assertEqual(snapshot["cache"]["slots"], [])
 
         active.status = "completed"
         active.records = [{

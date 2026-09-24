@@ -32,6 +32,7 @@ import torch
 
 import qwen_runner.runner
 from qwen_runner.config import Config
+from qwen_runner.resources import PipelineManager
 
 
 logger = logging.getLogger("ui.runner_bridge")
@@ -288,6 +289,25 @@ def resolve_backend_factory(demo_mode: bool = False, force_qwen: bool = False) -
 
     from qwen_runner.backend import QwenBackend
     return QwenBackend
+
+
+class _BorrowedBackend:
+    """Runner-compatible view of a backend already loaded by PipelineManager."""
+
+    def __init__(self, backend: Any):
+        object.__setattr__(self, "_backend", backend)
+
+    def load(self) -> "_BorrowedBackend":
+        return self
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._backend, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "_backend":
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._backend, name, value)
 
 
 # ============================================================================
@@ -553,15 +573,11 @@ class RunnerBridge:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qwen_worker")
         self.capture_mgr = CaptureManager.get_instance()
         self._lock = threading.RLock()
+        self._accepting_jobs = True
+        self.pipeline_manager = PipelineManager()
 
     def runtime_snapshot(self) -> Dict[str, Any]:
-        """Describe active and last-run model state without claiming residency.
-
-        The runner creates a backend for each job and does not maintain a
-        persistent model service. This snapshot therefore distinguishes a
-        currently requested configuration from the effective metadata recorded
-        by the latest completed run.
-        """
+        """Describe queued work, resident pipelines, and the latest result."""
         with self._lock:
             unique_jobs = {job.job_id: job for job in self.jobs.values()}
         jobs = sorted(unique_jobs.values(), key=lambda item: item.created_dt, reverse=True)
@@ -596,14 +612,16 @@ class RunnerBridge:
                 "finished_at": record.get("finished_at"),
             }
 
+        cache = self.pipeline_manager.snapshot()
         return {
-            "model_lifecycle": "per_run",
-            "persistent_backend": False,
+            "model_lifecycle": "persistent_per_device",
+            "persistent_backend": True,
+            "cache": cache,
             "active_job": active_job,
             "last_run": last_run,
             "message": (
-                "Models and LoRAs are loaded for each run. Configuration changes apply "
-                "to the next submitted run and do not mutate an active job."
+                "One compatible production pipeline is retained per device. Configuration "
+                "changes apply to the next submitted run and never mutate an active job."
             ),
         }
 
@@ -619,6 +637,10 @@ class RunnerBridge:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
                 loop = None
+
+        with self._lock:
+            if not self._accepting_jobs:
+                raise RuntimeError("The runner is shutting down and is not accepting new jobs")
 
         now = datetime.now(timezone.utc)
         target_uuid_hex = uuid.UUID(bytes=os.urandom(16)).hex
@@ -636,6 +658,8 @@ class RunnerBridge:
         )
 
         with self._lock:
+            if not self._accepting_jobs:
+                raise RuntimeError("The runner is shutting down and is not accepting new jobs")
             self.jobs[predicted_run_id] = job
             self.run_id_map[predicted_run_id] = predicted_run_id
             if config.runtime.output_dir:
@@ -648,8 +672,7 @@ class RunnerBridge:
                 ]
                 if any(od.is_relative_to(root) for root in allowed_roots):
                     self.custom_output_dirs.add(od)
-
-        self._executor.submit(self._execute_run, job)
+            self._executor.submit(self._execute_run, job)
         return job
 
     def _execute_run(self, job: RunJob) -> None:
@@ -693,7 +716,14 @@ class RunnerBridge:
             qwen_runner.runner.uuid.uuid4 = lambda: _MockUUID()
             qwen_runner.runner.datetime = _MockDateTime
 
-            records = qwen_runner.runner.run(job.config, backend_factory=backend_factory)
+            if job.demo_mode:
+                records = qwen_runner.runner.run(job.config, backend_factory=backend_factory)
+            else:
+                with self.pipeline_manager.acquire(job.config, backend_factory) as lease:
+                    records = qwen_runner.runner.run(
+                        job.config,
+                        backend_factory=lambda _config: _BorrowedBackend(lease.backend),
+                    )
 
             job.records = records
 
@@ -751,6 +781,15 @@ class RunnerBridge:
             sys.stderr.flush()
             self.capture_mgr.unregister_thread(tid)
             job.push_sentinel()
+
+    def shutdown(self) -> None:
+        """Drain queued work, release cached pipelines, and reject new jobs."""
+        with self._lock:
+            if not self._accepting_jobs:
+                return
+            self._accepting_jobs = False
+        self._executor.shutdown(wait=True, cancel_futures=False)
+        self.pipeline_manager.shutdown()
 
     def _build_complete_payload(
         self, job: RunJob, records: List[Dict[str, Any]]
@@ -1141,3 +1180,13 @@ def get_runner_bridge() -> RunnerBridge:
         if _bridge_instance is None:
             _bridge_instance = RunnerBridge()
         return _bridge_instance
+
+
+def shutdown_runner_bridge() -> None:
+    """Shutdown and clear the process singleton without creating it."""
+    global _bridge_instance
+    with _bridge_lock:
+        bridge = _bridge_instance
+        _bridge_instance = None
+    if bridge is not None:
+        bridge.shutdown()
