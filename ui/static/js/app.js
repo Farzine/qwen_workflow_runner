@@ -421,6 +421,66 @@
     },
   };
 
+  const PageNavigation = {
+    pages: { inference: null, models: "tab-btn-model", loras: "tab-btn-model", system: "tab-btn-system" },
+    currentPage: null,
+    inferenceTab: "tab-btn-prompt",
+    links: [],
+
+    init() {
+      if (!document.body) return;
+      this.links = Array.from(document.querySelectorAll(".page-nav-link"));
+      this.links.forEach((link) => link.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.show(link.dataset.pageTarget, true);
+        if (window.location) window.location.hash = link.dataset.pageTarget;
+      }));
+      if (typeof window.addEventListener === "function") {
+        window.addEventListener("hashchange", () => this.showFromHash());
+      }
+      this.showFromHash();
+    },
+
+    showFromHash() {
+      const fragment = window.location?.hash?.slice(1);
+      const legacyTab = ["prompt", "generation", "runtime"].includes(fragment);
+      if (legacyTab) this.inferenceTab = `tab-btn-${fragment}`;
+      this.show(fragment === "model" ? "models" : Object.keys(this.pages).includes(fragment) ? fragment : "inference");
+      if (legacyTab) document.getElementById(this.inferenceTab)?.click?.();
+    },
+
+    show(page, focus = false) {
+      if (!Object.keys(this.pages).includes(page) || !document.body) return;
+      if (this.currentPage === "inference" && page !== "inference") {
+        this.inferenceTab = document.querySelector(".config-tabs-nav .tab-btn.active")?.id || this.inferenceTab;
+      }
+      const tab = page === "inference"
+        ? (this.currentPage && this.currentPage !== "inference" ? this.inferenceTab : null)
+        : this.pages[page];
+      if (tab) document.getElementById(tab)?.click?.();
+      document.body.dataset.page = page;
+      this.currentPage = page;
+      this.links.forEach((link) => {
+        const active = link.dataset.pageTarget === page;
+        link.classList.toggle("active", active);
+        if (active) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      });
+      const heading = document.getElementById("heading-config");
+      if (heading) heading.textContent = {
+        inference: "Workflow Configuration", models: "Models", loras: "LoRAs", system: "System Configuration",
+      }[page];
+      ResponsiveWorkspace.closeOutput(false);
+      if (focus) {
+        const target = document.getElementById(page === "inference" ? "heading-inputs" : "heading-config");
+        if (target) {
+          target.setAttribute("tabindex", "-1");
+          target.focus?.({ preventScroll: true });
+        }
+      }
+    },
+  };
+
 
   // ==========================================================================
   // 5. IMPLEMENTATION-BACKED PARAMETER HELP
@@ -4159,6 +4219,7 @@
       ParameterHelp.init();
       InputBrowser.init();
       ParamForm.init();
+      PageNavigation.init();
       SystemManager.init();
       ModelManager.init();
       LoRAManager.init();

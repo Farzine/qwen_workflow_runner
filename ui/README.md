@@ -91,6 +91,8 @@ python ui/app.py --demo
 
 Demo mode is an explicit synthetic preview. `DemoBackend` derives a labeled image from the first input and writes valid PNG, comparison, and `{run_id}.json` artifacts, but it does not load or run the Qwen model. Normal startup defaults to production inference. If the selected production runtime is unavailable, the run reports a setup error instead of silently substituting demo output.
 
+The top navigation opens **Inference**, **Models**, **LoRAs**, and **System**. Models and LoRAs use separate focused views of the existing catalogs; the selected model, adapter, and device remain active when you return to Inference. Existing `#model` and configuration-tab links continue to work. Batch progress and outputs remain in Inference → Results, and run history remains available from the header while dedicated views are being added.
+
 ---
 
 ## Parameter Help

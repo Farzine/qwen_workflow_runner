@@ -36,9 +36,9 @@ The active checkout is `/mnt/lab/farzine/qwen_workflow_runner`. The path origina
 | `ui/model_catalog.py` | Stable downloaded-model IDs, local Qwen Image 2.1 compatibility inspection, and selected-ID resolution. |
 | `ui/download_jobs.py` | Thread-safe background download state, measured byte/file progress, cancellation, and terminal status. |
 | `ui/runner_bridge.py` | Background job bridge, stdout/stderr capture, event fan-out, `DemoBackend`, and backend selection. |
-| `ui/templates/index.html` | Single-page UI markup. |
-| `ui/static/js/app.js` | Client state, server-side image browser, ordered selection, forms, run submission, SSE, history, and comparison viewer. |
-| `ui/static/css/style.css` | Three-panel desktop UI and responsive styling. |
+| `ui/templates/index.html` | Single-page UI markup with primary Inference, Models, LoRAs, and System destinations. |
+| `ui/static/js/app.js` | Client state, hash-based task navigation, server-side image browser, ordered selection, forms, run submission, SSE, history, and comparison viewer. |
+| `ui/static/css/style.css` | Three-panel inference workspace, focused management views, and responsive styling. |
 | `tests/` | Core configuration, sampling, image, GGUF, cache, and small runtime tests. |
 | `ui/tests/` | API, security, concurrency, workflow, DOM, and JavaScript state-machine tests. |
 | `workflow/original.json` | Original ComfyUI workflow graph. |
@@ -150,7 +150,7 @@ Extend the validated Qwen workflow into a production-quality management applicat
 
 ## Active Task
 
-Phase 9.6 is complete: the core runner reports each durable operation's stages to the web bridge; SSE and the Results panel show queued/per-item stages, aggregate counts, measured elapsed time, ETA after the first completed attempt, and individual record details. A successful warmup cannot make a failed requested batch appear partially successful. Phase 9.7 task-oriented pages are next. Phase 9.6 source changes remain uncommitted; preserve them.
+Phase 9.7a is complete in the working tree: the existing Inference workspace, model manager, LoRA manager, and System controls now have primary task navigation with responsive focused views. Existing controls and state are reused. Phase 9.7b should add dedicated Batch, History, and Outputs destinations (then Dashboard) without duplicating backend state. Phase 9.6 was committed as `ad1a33d`; Phase 9.7a changes are uncommitted.
 
 ## Completed Tasks
 
@@ -223,6 +223,8 @@ Phase 9.6 is complete: the core runner reports each durable operation's stages t
 - [x] Added readable Run Details cards and history input/model context while retaining the original JSON as an optional technical view.
 - [x] Added truthful batch operation callbacks, SSE snapshots/replay, queued and active per-item stages, elapsed/ETA/counts, and browser details links for finished attempts.
 - [x] Corrected explicit-batch completion classification so warmup success cannot hide failure of all requested outputs.
+- [x] Added primary Inference, Models, LoRAs, and System destinations, retaining existing manager DOM/state and hash-compatible configuration tabs.
+- [x] Kept the Inference three-panel workflow intact while giving management pages focused layouts on desktop and phone; scoped inference validation and launch controls to that workflow.
 
 ## Remaining Tasks
 
@@ -244,7 +246,8 @@ Phase 9.6 is complete: the core runner reports each durable operation's stages t
 - [x] Phase 9.4c: add output/run deletion with record-artifact consistency, active-job protection, and confirmed UI actions.
 - [x] Phase 9.5: introduce a versioned common run metadata model and human-readable history/output details while preserving legacy record reads.
 - [x] Phase 9.6: add aggregate batch operations, per-item stages, counts, timing, ETA, failures, and result inspection based on the reference workflow concepts.
-- [ ] Phase 9.7: reorganize the SPA into Dashboard, Models, LoRAs, Inference, Batch, History, Outputs, and System views with responsive task navigation.
+- [x] Phase 9.7a: add responsive Inference, Models, LoRAs, and System task navigation using existing functional controls.
+- [ ] Phase 9.7b: add dedicated Batch, History, Outputs, and Dashboard destinations and complete task-oriented navigation.
 - [ ] Phase 9.8: run the expanded regression/hardware/browser matrix and reconcile all documentation.
 
 ## Current Problems
@@ -354,7 +357,7 @@ Phase 9.6 is complete: the core runner reports each durable operation's stages t
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Phase 9.4a, 9.4b, 9.4c, and 9.5 were committed as `56b4517`, `cf1a010`, `d6d5682`, and `ca02524` on `main`. Phase 9.6 changes are currently uncommitted. Preserve them when resuming.
+- Phase 9.4a, 9.4b, 9.4c, 9.5, and 9.6 were committed as `56b4517`, `cf1a010`, `d6d5682`, `ca02524`, and `ad1a33d` on `main`. Phase 9.7a changes are currently uncommitted; preserve them when resuming.
 - Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -379,6 +382,8 @@ Phase 9.6 is complete: the core runner reports each durable operation's stages t
 - Phase 9.6 found that the core runner already saved one record per attempt, but returned only after the entire batch; the bridge had no authoritative per-item lifecycle. The browser therefore showed the current image's step percentage repeatedly as if it were total batch progress. A fabricated initial step 1 also displayed progress before model loading. The new optional core callback fires at preparing, generating, saving, and after durable terminal record persistence. The bridge emits `batch` SSE events with planned queued items, changed per-item state, counts, measured elapsed time, and ETA from completed-attempt wall durations; it preserves a truthful legacy `progress` event starting at step 0. The browser advances elapsed time locally between SSE events so silent model loading does not leave a frozen clock.
 - The reference script estimates remaining work from observed successful operation times and tracks failures/comparison files. The web runner now applies the measured-time concept to both successful and failed finished attempts, while retaining its existing comparisons, records, and no-automatic-retry inference semantics. Shared model setup is included in elapsed time but excluded from per-attempt ETA; ETA remains null until one attempt finishes. Warmups are explicitly labeled and count toward total operations.
 - A successful warmup previously made an explicit batch with all requested outputs failed report `partial_success` and select the warmup as primary. Completion and the in-memory job/history alias now choose a non-warmup requested record and report `error` when no requested output succeeded. Legacy combined-image response behavior remains unchanged.
+- Phase 9.7a found that model and LoRA management already share one config tab and System already has a working tab. A primary hash navigator activates those existing tabs and CSS gives their controls separate focused views, preserving all manager listeners and selected state. Legacy `#model`, `#prompt`, `#generation`, and `#runtime` hashes still resolve; returning to Inference restores its prior configuration tab. The tablet Results drawer offset now accounts for the additional navigation row.
+- The initial live browser pass showed inference's empty-input validation banner on management pages. Scoping that banner to Inference removed the distraction without discarding its validation state. A cache-bypassed browser rerun confirmed no horizontal overflow at desktop or 390 px phone width.
 
 ## Reference Implementations
 
@@ -569,7 +574,23 @@ Phase 9.6 additions to the cumulative files above:
 - `tests/test_runtime.py`, `ui/tests/test_backend.py`, `ui/tests/test_challenger_m2_node.js` — callback ordering, SSE stage/count/replay/partial-failure/warmup behavior, and browser state/details tests.
 - `README.md`, `ui/README.md`, `PROJECT.md`, `CONTEXT.md` — document batch progress semantics, limits, validation, and Phase 9.7 handoff.
 
+Phase 9.7a additions to the cumulative files above (uncommitted):
+
+- `ui/templates/index.html` — primary task links and a dedicated LoRA view heading.
+- `ui/static/js/app.js` — page routing, active/focus state, legacy hashes, and inference-tab restoration while reusing existing controls.
+- `ui/static/css/style.css` — responsive focused manager layouts, inference-only controls, and adjusted tablet Results drawer offset.
+- `ui/tests/test_challenger_m2_node.js` — routing, manager-tab reuse, legacy hashes, active link state, and inference-tab restoration.
+- `ui/README.md`, `CONTEXT.md` — explain the current destinations, validation, remaining work, and exact continuation point.
+
 ## Tests Performed
+
+Phase 9.7a validation:
+
+- `node ui/tests/test_challenger_m2_node.js` — 42/42 passed, including the new primary navigation check; `node ui/tests/test_tier5_node_stress.js` — 15/15 passed.
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 438 passed, with two existing Starlette/AnyIO deprecation warnings.
+- Host-access `timeout 180 .venv/bin/python -m pytest -q ui/tests/test_frontend.py` — 30 passed after the final markup/style adjustment; a sandbox-only attempt was interrupted because this suite's HTTPX streaming test needs host IPC.
+- Live local demo server plus cache-bypassed headless Chrome — Models at desktop width, LoRAs and System at 390×844, and return to Inference passed visibility, active-route, and no-horizontal-overflow assertions. Desktop Models and phone LoRAs screenshots were visually inspected; the inference validation banner was fixed after the first screenshot and confirmed absent in the final pass.
+- `node --check ui/static/js/app.js` and `git diff --check` — passed. No production model or GPU inference was repeated because this slice only changes client navigation/layout.
 
 Phase 9.6 validation:
 
@@ -741,7 +762,7 @@ Phase 9.1 validation:
 - Run/output cleanup is best-effort across multiple files: a filesystem error after record removal may leave an orphaned image, though history will not point to a missing image. Phase 9.7's dedicated Outputs view can expose orphan cleanup if this becomes a practical need.
 - Legacy durable records remain schema-version-1 documents. The new `summary_version: 1` projection is added on API reads without migration; deleted/missing referenced files yield unavailable metadata. Parameter counts are never inferred from a model label, and directory-backed model size requires a matching completed manifest. The current run-detail view shows the first generated output preview and the count of all outputs; dedicated multi-output browsing belongs to Phase 9.7.
 - Aggregate batch events and ETA live in the server process, with replay for an existing job. After restart, durable per-attempt history remains, but the aggregate event stream is not reconstructed from disk. The batch panel is part of Results until Phase 9.7 adds a dedicated Batch view. The current monitor-stop button disconnects SSE; it does not cancel a running model operation.
-- The current SPA remains a three-panel workflow with configuration tabs and a history drawer. Dedicated Dashboard, Models, LoRAs, Batch, History, and Outputs pages remain Phase 9.6–9.7 work.
+- The SPA now has focused Inference, Models, LoRAs, and System destinations, but still uses the existing three-panel Inference workspace and shared management-tab DOM. Dedicated Batch, History, Outputs, and Dashboard destinations remain Phase 9.7b work; the current batch panel remains in Results and history in its drawer.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
 - Multi-reference transport and conditioning effects are proven, but adherence was weak in the tested hairstyle-transfer example. Prompt/reference quality remains model- and asset-dependent rather than a transport defect.
 - LoRA application is proven with a real tiny Qwen Image 2.1 transformer, including output effect, strength, hash metadata, unload, replacement, and incompatible-target handling. No compatible user adapter exists in `models/loras/`, so the full 33 GB checkpoint was not run with a production LoRA during Phase 8. A valid SafeTensors header cannot prove model/training compatibility.
@@ -756,11 +777,7 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 9.7 as the next independently testable slice, starting with task navigation rather than an all-at-once UI rewrite:
-
-1. Map existing sections and controls to Dashboard, Models, LoRAs, Inference, Batch, History, Outputs, and System destinations without duplicating backend state or changing API contracts.
-2. Implement the smallest coherent navigation/view slice, retaining working generation, downloads, history, batch progress, and responsive controls. Add a dedicated Batch destination by moving the Phase 9.6 panel when the navigation structure supports it.
-3. Verify desktop/narrow layouts, loading/error/empty states, keyboard access, and the full UI suite. Document remaining destinations and continue incrementally.
+Implement Phase 9.7b as the next independently testable slice. Start with a dedicated Batch destination using the existing Phase 9.6 batch panel and state, preserving the Results view and live SSE updates. Map the remaining History, Outputs, and Dashboard destinations to the current controls for later focused slices. Verify that navigating during an active batch retains progress, results, and errors; check desktop/phone layouts and the full UI suite. Do not duplicate batch listeners or backend state.
 
 ## Resume Instructions
 

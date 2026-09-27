@@ -315,7 +315,7 @@ const wrappedCode = appJsCode.replace(
   /\}\)\(\);?\s*$/,
   `  globalThis.__APP_MODULES__ = {
        Utils, Toast, Store, ApiClient, Lightbox, InputBrowser,
-       ParamForm, ModelManager, LoRAManager, SystemManager, RunController,
+       ParamForm, PageNavigation, ModelManager, LoRAManager, SystemManager, RunController,
        TerminalViewer, OutputViewer, ComparisonSlider, JsonInspector, RunHistory, App
      };
    })();`
@@ -327,7 +327,7 @@ vm.runInContext(wrappedCode, sandbox);
 const modules = sandbox.__APP_MODULES__;
 assert(modules, "Failed to load app.js modules in test sandbox");
 
-const { Store, InputBrowser, ParamForm, ModelManager, LoRAManager, SystemManager, RunController, ComparisonSlider, OutputViewer, JsonInspector, RunHistory, Toast, Utils, ApiClient, App } = modules;
+const { Store, InputBrowser, ParamForm, PageNavigation, ModelManager, LoRAManager, SystemManager, RunController, ComparisonSlider, OutputViewer, JsonInspector, RunHistory, Toast, Utils, ApiClient, App } = modules;
 const RunHub = RunController;
 
 // Intercept Toast messages for verification
@@ -1265,6 +1265,66 @@ runTest("Model download controls send cancellation and retry requests", async ()
   ApiClient.retryDownload = originalRetry;
   ModelManager.trackHfDownload = originalTrack;
   ModelManager.activeDownloadTaskId = originalTask;
+});
+
+runTest("Primary navigation keeps manager state and restores inference tabs", () => {
+  mockDocument.body = createMockElement("body", "body");
+  const links = ["inference", "models", "loras", "system"].map((page) => {
+    const link = createMockElement(null, "a");
+    link.dataset.pageTarget = page;
+    return link;
+  });
+  const originalQueryAll = mockDocument.querySelectorAll;
+  const originalQuery = mockDocument.querySelector;
+  mockDocument.querySelectorAll = function (selector) {
+    return selector === ".page-nav-link" ? links : originalQueryAll.call(this, selector);
+  };
+  mockDocument.querySelector = function (selector) {
+    if (selector === ".config-tabs-nav .tab-btn.active") {
+      return ["prompt", "generation", "runtime", "system", "model"]
+        .map((name) => getOrCreateElement(`tab-btn-${name}`))
+        .find((button) => button.classList.contains("active"));
+    }
+    return originalQuery.call(this, selector);
+  };
+  for (const name of ["prompt", "generation", "runtime", "system", "model"]) {
+    const button = getOrCreateElement(`tab-btn-${name}`);
+    button.click = () => button.dispatchEvent("click");
+  }
+  const hashListeners = [];
+  mockWindow.location = { hash: "#models" };
+  mockWindow.addEventListener = (event, handler) => {
+    if (event === "hashchange") hashListeners.push(handler);
+  };
+  PageNavigation.init();
+  assert.strictEqual(mockDocument.body.dataset.page, "models");
+  assert(getOrCreateElement("tab-pane-model").classList.contains("active"));
+  assert.strictEqual(links[1].getAttribute("aria-current"), "page");
+
+  PageNavigation.show("inference");
+  getOrCreateElement("tab-btn-generation").click();
+  PageNavigation.show("loras");
+  assert.strictEqual(mockDocument.body.dataset.page, "loras");
+  assert.strictEqual(getOrCreateElement("heading-config").textContent, "LoRAs");
+  PageNavigation.show("system");
+  assert(getOrCreateElement("tab-pane-system").classList.contains("active"));
+  PageNavigation.show("inference");
+  assert(getOrCreateElement("tab-pane-generation").classList.contains("active"));
+  assert.strictEqual(links[0].getAttribute("aria-current"), "page");
+  assert.strictEqual(links[2].getAttribute("aria-current"), null);
+
+  mockWindow.location.hash = "#runtime";
+  hashListeners.forEach((handler) => handler());
+  assert.strictEqual(mockDocument.body.dataset.page, "inference");
+  assert(getOrCreateElement("tab-pane-runtime").classList.contains("active"));
+  mockWindow.location.hash = "#model";
+  hashListeners.forEach((handler) => handler());
+  assert.strictEqual(mockDocument.body.dataset.page, "models");
+  mockWindow.location.hash = "#toString";
+  hashListeners.forEach((handler) => handler());
+  assert.strictEqual(mockDocument.body.dataset.page, "inference");
+  mockDocument.querySelectorAll = originalQueryAll;
+  mockDocument.querySelector = originalQuery;
 });
 
 (async function runAll() {

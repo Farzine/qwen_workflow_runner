@@ -7,7 +7,7 @@
   <!-- Zero external CDN dependencies - 100% offline self-contained -->
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
-<body class="app-body">
+<body class="app-body" data-page="inference">
   <!-- Top Application Navigation Header -->
   <header class="app-header">
     <div class="header-left">
@@ -49,6 +49,13 @@
       </button>
     </div>
   </header>
+
+  <nav class="page-nav" aria-label="Primary navigation">
+    <a href="#inference" class="page-nav-link active" data-page-target="inference" aria-current="page">Inference</a>
+    <a href="#models" class="page-nav-link" data-page-target="models">Models</a>
+    <a href="#loras" class="page-nav-link" data-page-target="loras">LoRAs</a>
+    <a href="#system" class="page-nav-link" data-page-target="system">System</a>
+  </nav>
 
   <!-- Compact section navigation for tablet and phone layouts -->
   <nav class="workflow-mobile-nav" aria-label="Workflow sections">
@@ -766,7 +773,7 @@
           <div class="form-card mb-md lora-manager-card">
             <div class="card-title-row">
               <div>
-                <h3 class="card-title">4. LoRA Adapter</h3>
+                <h3 class="card-title">LoRA Adapter</h3>
                 <p class="field-hint">Select one validated transformer adapter. The selected adapter is loaded for production inference.</p>
               </div>
               <button type="button" id="btn-refresh-loras" class="btn btn-secondary btn-sm">Refresh</button>
