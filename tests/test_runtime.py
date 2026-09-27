@@ -265,6 +265,11 @@ class RuntimeTests(unittest.TestCase):
 
             self.assertEqual(Backend.loads, 1)
             self.assertEqual(len(records), 4)
+            self.assertEqual(records[1]['summary']['input']['filename'], 'input-a.png')
+            self.assertEqual([item['filename'] for item in records[1]['summary']['references']],
+                             ['ref-2.png', 'ref-1.png'])
+            self.assertEqual(records[1]['summary']['model']['name'], 'synthetic/batch')
+            self.assertEqual(json.loads((root / 'out' / f"{records[1]['run_id']}.json").read_text())['summary']['summary_version'], 1)
             self.assertEqual([r['input_index'] for r in records], [0, 1, 0, 1])
             self.assertEqual([r['parameters']['generation']['seed'] for r in records], [7, 7, 8, 8])
             self.assertTrue(all(r['parameters']['generation']['images'] == [] for r in records))

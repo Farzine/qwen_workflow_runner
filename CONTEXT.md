@@ -30,6 +30,7 @@ The active checkout is `/mnt/lab/farzine/qwen_workflow_runner`. The path origina
 | `qwen_runner/resources.py` | Exclusive per-device pipeline leases, compatibility keys, reuse/replacement telemetry, and shutdown cleanup. |
 | `qwen_runner/metrics.py` | Inference timing and memory metrics. |
 | `qwen_runner/runner.py` | End-to-end orchestration, durable JSON records, output PNG saving, comparisons, and error records. |
+| `qwen_runner/record_metadata.py` | Versioned readable projection of durable records and actual image/adapter file facts. |
 | `ui/app.py` | Uvicorn launcher, CLI flags, directory setup, and port selection. |
 | `ui/server.py` | FastAPI routes for health, inputs, thumbnails, models, validation, runs, SSE, history, and outputs. |
 | `ui/model_catalog.py` | Stable downloaded-model IDs, local Qwen Image 2.1 compatibility inspection, and selected-ID resolution. |
@@ -78,6 +79,10 @@ flowchart LR
     Backend --> Sampling
     Pipeline --> Cache[qwen_runner.kv_cache]
     Runner --> Outputs[(PNG + JSON outputs)]
+    Runner --> Summary[qwen_runner.record_metadata<br/>summary v1]
+    Summary --> Outputs
+    Outputs --> Summary
+    Summary --> Server
     Outputs --> Server
 ```
 
@@ -86,7 +91,7 @@ The AST-derived internal import edges are:
 ```text
 qwen_runner.backend -> qwen_runner.gguf_loader, models, pipeline, sampling
 qwen_runner.pipeline -> qwen_runner.kv_cache
-qwen_runner.runner -> qwen_runner.backend, images, metrics, sampling
+qwen_runner.runner -> qwen_runner.backend, images, metrics, record_metadata, sampling
 ui.app -> ui.server
 ui.server -> qwen_runner.config, qwen_runner.models, ui.model_catalog, ui.download_jobs, ui.runner_bridge
 ui.runner_bridge -> qwen_runner.backend, qwen_runner.config, qwen_runner.resources, qwen_runner.runner, ui.server
@@ -145,7 +150,7 @@ Extend the validated Qwen workflow into a production-quality management applicat
 
 ## Active Task
 
-Phase 9.4c is complete: the History drawer now deletes a finished run's JSON record and exclusively owned output/comparison files after confirmation. Shared artifacts are preserved, active inference blocks deletion, and finished in-memory job aliases are evicted so deleted records do not reappear. Phase 9.5 common metadata and human-readable history is next.
+Phase 9.5 is complete: new records persist a versioned readable summary, older records receive the same projection through history/detail APIs without disk mutation, and the Run Details tab shows actual file/model/LoRA/generation/result facts with optional Technical JSON. Phase 9.6 aggregate batch progress is next. Phase 9.5 source changes remain uncommitted; preserve them.
 
 ## Completed Tasks
 
@@ -214,6 +219,8 @@ Phase 9.4c is complete: the History drawer now deletes a finished run's JSON rec
 - [x] Added confirmed LoRA deletion with actual filesystem removal, invalid-file visibility, selected-state refresh, traversal/symlink rejection, active-job conflict, and idle-pipeline unload.
 - [x] Added confirmed catalog-model deletion with direct-storage removal, reference-aware Hub cleanup, active download/job/lease protection, idle-pipeline unload, and selected-state reset.
 - [x] Added confirmed finished-run deletion with shared-artifact preservation, active-job protection, custom-output-directory support, and history/result refresh.
+- [x] Added `summary_version: 1` to new success/error/setup records, with legacy history/detail projection and explicit unavailable values for unknown facts.
+- [x] Added readable Run Details cards and history input/model context while retaining the original JSON as an optional technical view.
 
 ## Remaining Tasks
 
@@ -233,7 +240,7 @@ Phase 9.4c is complete: the History drawer now deletes a finished run's JSON rec
 - [x] Phase 9.4a: add safe LoRA deletion API and confirmed UI action with active-resource protection.
 - [x] Phase 9.4b: add safe model deletion with manifest/blob sharing and active/download-resource protection.
 - [x] Phase 9.4c: add output/run deletion with record-artifact consistency, active-job protection, and confirmed UI actions.
-- [ ] Phase 9.5: introduce a versioned common run metadata model and human-readable history/output details while preserving legacy record reads.
+- [x] Phase 9.5: introduce a versioned common run metadata model and human-readable history/output details while preserving legacy record reads.
 - [ ] Phase 9.6: add aggregate batch operations, per-item stages, counts, timing, ETA, failures, and result inspection based on the reference workflow concepts.
 - [ ] Phase 9.7: reorganize the SPA into Dashboard, Models, LoRAs, Inference, Batch, History, Outputs, and System views with responsive task navigation.
 - [ ] Phase 9.8: run the expanded regression/hardware/browser matrix and reconcile all documentation.
@@ -345,7 +352,7 @@ Phase 9.4c is complete: the History drawer now deletes a finished run's JSON rec
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Phase 9.4a was committed as `56b4517` and Phase 9.4b as `cf1a010` on `main`. Phase 9.4c started from a clean working tree; its files are currently uncommitted. Preserve them when resuming.
+- Phase 9.4a, 9.4b, and 9.4c were committed as `56b4517`, `cf1a010`, and `d6d5682` on `main`. Phase 9.5 changes are currently uncommitted. Preserve them when resuming.
 - Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -364,6 +371,9 @@ Phase 9.4c is complete: the History drawer now deletes a finished run's JSON rec
 - Phase 9.4c found that `qwen_runner.runner.run` writes one durable `{run_id}.json` per attempt, with absolute output/comparison paths in the same output directory. `RunnerBridge.list_runs` overlays disk records with finished in-memory jobs, so deleting only the JSON would leave a visible stale run. The delete path evicts aliases for the affected finished job; any sibling batch records remain available from disk.
 - Phase 9.4c deletes only exact JSON records in registered output directories and direct, non-symlink artifacts in that record's directory. It scans other registered JSON records before removing artifacts, preserving shared paths. Duplicate run IDs across directories, unsafe references, malformed records, and active inference return conflicts. Missing artifacts do not block record removal. The browser refreshes history and clears a displayed deleted result.
 - The active-job guard is intentionally global to keep file cleanup safe with the current single-worker executor. A failure during filesystem unlink can still leave orphaned files because the filesystem does not provide a multi-file transaction; the JSON record is removed first so history never points at deleted files. No production output was deleted during validation.
+- Phase 9.5 found that existing schema-version-1 records already contain the requested generation/device/output facts, but no uniform readable shape; actual image type/byte size must be inspected from stored files. `summarize_record` projects current and legacy success, failure, and setup records into `summary_version: 1` while retaining the original record and explicit `null` for unavailable facts. Image header inspection never needs to load full pixels, and inaccessible or oversized-image metadata is treated as unavailable.
+- A catalog-selected full local Diffusers snapshot reached `ModelStore.fetch` as a local directory, losing its Hub repository identity and downloaded-selection size despite a complete manifest. The local fetch path now matches a complete manifest by load path and retains that provenance for new records; model parameter count is still unknown unless explicitly supplied. A selected-file byte sum is labeled stored model size, not an invented parameter count.
+- History overlays durable records with in-memory job state. For batch jobs, the in-memory summary now selects the job's primary run ID rather than blindly using its first record. Existing disk records are projected at read time by `/api/runs` and `/api/runs/{id}` without rewriting them. The browser's Run Details tab shows the same facts, output preview, and optional Technical JSON; history rows include input and model context.
 
 ## Reference Implementations
 
@@ -536,7 +546,25 @@ Phase 9.4c additions to the cumulative files above:
 - `README.md`, `ui/README.md`, `PROJECT.md` — document run/output deletion behavior and the API.
 - `CONTEXT.md` — records this completed slice and the Phase 9.5 handoff.
 
+Phase 9.5 additions to the cumulative files above:
+
+- `qwen_runner/record_metadata.py` — derives versioned readable facts from existing records and referenced files, leaving unknown values unavailable.
+- `qwen_runner/runner.py` — persists the summary with new terminal run and setup-error records.
+- `qwen_runner/models.py` — retains completed-manifest repository and selected-byte provenance when loading a catalog-selected local snapshot.
+- `ui/runner_bridge.py`, `ui/server.py` — project legacy disk records through history/detail APIs and match the primary in-memory batch record by run ID.
+- `ui/templates/index.html`, `ui/static/js/app.js`, `ui/static/css/style.css` — show readable Run Details cards and input/model history context, with Technical JSON available on demand.
+- `tests/test_core.py`, `tests/test_runtime.py`, `tests/test_record_metadata.py`, `ui/tests/test_record_metadata_api.py`, `ui/tests/test_challenger_m2_node.js` — verify manifest provenance, durable/legacy summary facts, API projection, and browser rendering.
+- `README.md`, `ui/README.md`, `PROJECT.md`, `CONTEXT.md` — document the common summary, readable view, validation, and Phase 9.6 handoff.
+
 ## Tests Performed
+
+Phase 9.5 validation:
+
+- `.venv/bin/python -m pytest -q tests` — 41 passed plus 8 subtests.
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 437 passed, two known Starlette/AnyIO deprecation warnings.
+- `node ui/tests/test_challenger_m2_node.js` — 40/40 passed; `node ui/tests/test_tier5_node_stress.js` — 15/15 passed.
+- `node --check ui/static/js/app.js` and `git diff --check` — passed.
+- These checks use temporary records/images and demo fixtures; Phase 9.5 did not repeat a live full-model run or browser screenshot. The full UI suite was rerun after the final provenance and documentation edits.
 
 Phase 9.4c validation:
 
@@ -690,7 +718,7 @@ Phase 9.1 validation:
 - The progress adapter was exercised with a fake per-file Hub downloader and the actual offline 33.13 GB cached manifest. A fresh live Hub transfer was not run in this slice, so HTTP/Xet progress integration still merits a bounded online smoke test when network access is available.
 - LoRA, catalog-model, and finished-run deletion are available through confirmed web actions. Run deletion removes an entire record and its unshared artifacts; there is not yet an individual output-file management UI. The global active-job guard pauses deletion while any inference job is in progress. Independent CLI processes remain outside the web server's deletion locks. Deletion tests used only temporary assets.
 - Run/output cleanup is best-effort across multiple files: a filesystem error after record removal may leave an orphaned image, though history will not point to a missing image. Phase 9.7's dedicated Outputs view can expose orphan cleanup if this becomes a practical need.
-- Current durable records are technically detailed schema-version-1 documents. They are not yet normalized into the common human-readable metadata schema requested for single and batch views. This is Phase 9.5.
+- Legacy durable records remain schema-version-1 documents. The new `summary_version: 1` projection is added on API reads without migration; deleted/missing referenced files yield unavailable metadata. Parameter counts are never inferred from a model label, and directory-backed model size requires a matching completed manifest. The current run-detail view shows the first generated output preview and the count of all outputs; dedicated multi-output browsing belongs to Phase 9.7.
 - The current SPA remains a three-panel workflow with configuration tabs and a history drawer. Dedicated Dashboard, Models, LoRAs, Batch, History, and Outputs pages remain Phase 9.6–9.7 work.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
 - Multi-reference transport and conditioning effects are proven, but adherence was weak in the tested hairstyle-transfer example. Prompt/reference quality remains model- and asset-dependent rather than a transport defect.
@@ -706,12 +734,11 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 9.5 as the next independently testable slice:
+Implement Phase 9.6 as the next independently testable slice:
 
-1. Inspect schema-version-1 JSON records from successful, failed, setup-error, single-input, and multi-input runs. Keep old record reads working.
-2. Define the smallest common, versioned metadata projection for human-readable history: input/reference file facts, selected model and LoRA facts, generation timing/settings, GPU peak, output facts, and explicit unavailable values. Derive facts from actual files/records; never invent parameter count or size.
-3. Add a readable record detail view to the existing history UI using that projection, with raw JSON kept as an optional technical view. Avoid a broad page redesign in this slice.
-4. Test representative records and browser empty/error states, then update this file. Phase 9.6 batch progress and Phase 9.7 page reorganization follow.
+1. Trace the existing explicit multi-input runner, `RunnerBridge` events, SSE payloads, and browser progress/results flow. Compare with the reference script's operation counts, per-item timing, ETA, and failure summary.
+2. Add truthful aggregate batch operation status/counts/current stage/elapsed/ETA and per-item success/failure timing to existing job events and the browser. Preserve the current single-input and legacy API flows.
+3. Validate partial failures, ordered results, reconnect/history behavior, and browser loading/error states. Avoid the Phase 9.7 page redesign in this slice.
 
 ## Resume Instructions
 

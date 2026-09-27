@@ -10,7 +10,7 @@ Browser (Vanilla SPA HTML/CSS/JS)
   ├── 2. Parameter Form: ModelConfig, GenerationConfig, RuntimeConfig with live validation and accessible implementation-backed help
   ├── 3. Model & LoRA Selector: HF repo, local model upload, cached model dropdown, validated LoRA upload/selection
   ├── 4. System Configuration: live CPU/RAM/GPU inventory and dynamic production-device selection
-  ├── 5. Run & Output Hub: Launch button, live SSE log/progress stream, output gallery, side-by-side comparison, JSON viewer/download, run history
+  ├── 5. Run & Output Hub: Launch button, live SSE log/progress stream, output gallery, comparison, readable run details, optional JSON, run history
   │
   ▼ [HTTP REST & SSE]
 Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
@@ -57,8 +57,8 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | 26 | Live Log & Progress Stream | Server-Sent Events stream of runner logs, status, and step progress | M1, M2 | R4, survey |
 | 27 | Output Image Viewer | Displays output images with filename, dimensions, and SHA-256 hash badge | M1, M2 | R4, survey |
 | 28 | Side-by-Side Comparison | Side-by-side comparison view between canvas image and generated output | M1, M2 | R4, survey |
-| 29 | JSON Run Record Viewer | Expandable viewer and download button for `{run_id}.json` | M1, M2 | R4, survey |
-| 30 | Run History Viewer | Current session history list with clickable past runs and status badges | M1, M2 | R4, survey |
+| 29 | Run Details Viewer | Versioned readable facts plus expandable JSON and download for `{run_id}.json` | M1, M2 | R4, survey |
+| 30 | Run History Viewer | Durable history with input/model context, clickable records, and status badges | M1, M2 | R4, survey |
 | 31 | Demo Integrity Backend | Synthetic fast execution backend producing real images and records for demo mode | M1, M3 | ORIGINAL_REQUEST |
 | 32 | Single-Command Startup | Single command `python app.py` starts server with auto-port fallback and docs | M3 | App Startup |
 

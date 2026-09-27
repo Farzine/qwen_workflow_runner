@@ -1127,6 +1127,32 @@ runTest("Run deletion confirms, clears the displayed result, and refreshes histo
   JsonInspector.render = originalInspector;
 });
 
+runTest("Run details render readable facts and keep raw JSON optional", () => {
+  JsonInspector.summaryElem = domRegistry.get("run-summary");
+  JsonInspector.codeElem = domRegistry.get("json-record-code");
+  const record = { run_id: "run_1", summary: { summary_version: 1, run_id: "run_1", status: "success",
+    timestamp: "2026-09-27T12:00:00Z", input: { filename: "portrait.png", file_type: "PNG",
+      width: 120, height: 80, aspect_ratio: "3:2", size_bytes: 1024 },
+    references: [], model: { name: "owner/model", source: "owner/model", size_bytes: null,
+      parameters_billion: null }, lora: null,
+    generation: { steps: 12, guidance_scale: 1.5, seed: 9, width: 64, height: 64,
+      duration_seconds: 2.5, device: "cuda:1", pipeline: "QwenImage21Pipeline",
+      peak_gpu_allocated_bytes: 2 ** 30 },
+    outputs: [{ filename: "output.png", width: 64, height: 64, size_bytes: 2048 }], error: null } };
+  JsonInspector.render(record);
+  assert.strictEqual(JsonInspector.summaryElem.children.length, 7);
+  assert(JsonInspector.summaryElem.textContent.includes("portrait.png"));
+  assert(JsonInspector.summaryElem.textContent.includes("owner/model"));
+  assert(JsonInspector.summaryElem.textContent.includes("Unavailable"));
+  assert(JsonInspector.codeElem.textContent.includes('"summary_version": 1'));
+  JsonInspector.render({ ...record, summary: { ...record.summary, status: "error",
+    outputs: [], error: { type: "RuntimeError", message: "LoRA could not be loaded" } } });
+  assert.strictEqual(JsonInspector.summaryElem.children.length, 8);
+  assert(JsonInspector.summaryElem.textContent.includes("LoRA could not be loaded"));
+  JsonInspector.render(null);
+  assert.strictEqual(JsonInspector.summaryElem.textContent, "No run record loaded.");
+});
+
 runTest("Model download renders measured progress and truthful unknown totals", () => {
   ModelManager.hfProgressWrap = domRegistry.get("hf-download-progress-container");
   ModelManager.hfProgressTrack = domRegistry.get("hf-download-progress-track");

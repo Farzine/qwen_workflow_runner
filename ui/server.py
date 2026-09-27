@@ -50,6 +50,7 @@ if str(UI_DIR) not in sys.path:
 
 from qwen_runner.config import Config, GenerationConfig, ModelConfig, RuntimeConfig
 from qwen_runner.models import DownloadCancelled, ModelStore, parse_model_ref, safe_relative
+from qwen_runner.record_metadata import summarize_record
 from ui.model_catalog import discover_models, resolve_selected_model
 from ui.download_jobs import DownloadJob, TERMINAL_STATES
 from qwen_runner.system import probe_runtime_capabilities
@@ -1296,7 +1297,7 @@ async def get_run_record(run_id: str):
     record = bridge.get_run_record(run_id, wait_timeout=5.0)
     if not record:
         raise HTTPException(status_code=404, detail=f"Run record '{run_id}' not found")
-    return record
+    return {**record, "summary": record.get("summary") or summarize_record(record)}
 
 
 @app.delete("/api/runs/{run_id}")

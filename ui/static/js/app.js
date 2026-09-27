@@ -3644,6 +3644,7 @@
   // ==========================================================================
 
   const JsonInspector = {
+    summaryElem: null,
     runIdLabel: null,
     codeElem: null,
     copyBtn: null,
@@ -3651,6 +3652,7 @@
     currentData: null,
 
     init() {
+      this.summaryElem = document.getElementById("run-summary");
       this.runIdLabel = document.getElementById("json-run-id-label");
       this.codeElem = document.getElementById("json-record-code");
       this.copyBtn = document.getElementById("btn-copy-json");
@@ -3683,6 +3685,7 @@
 
     render(record) {
       this.currentData = record;
+      this.renderSummary(record && record.summary);
       if (!this.codeElem) return;
 
       if (!record) {
@@ -3695,6 +3698,60 @@
         this.runIdLabel.textContent = `Run: ${record.run_id || "active"}`;
       }
       this.codeElem.textContent = JSON.stringify(record, null, 2);
+    },
+
+    renderSummary(summary) {
+      if (!this.summaryElem) return;
+      this.summaryElem.innerHTML = "";
+      if (!summary) {
+        this.summaryElem.textContent = "No run record loaded.";
+        return;
+      }
+      const show = (value) => value === null || value === undefined || value === "" ? "Unavailable" : String(value);
+      const size = (value) => Number.isFinite(value) ? Utils.formatBytes(value) : "Unavailable";
+      const dims = (file) => file?.width && file?.height ? `${file.width} × ${file.height}` : "Unavailable";
+      const file = (item) => item ? `${item.filename} · ${dims(item)} · ${show(item.aspect_ratio)} · ${size(item.size_bytes)}` : "Unavailable";
+      const card = (title, rows, extra = null) => Utils.el("section", { class: "record-summary-card" },
+        Utils.el("h3", {}, title), extra,
+        rows.map(([label, value]) => Utils.el("div", { class: "record-summary-row" },
+          Utils.el("span", {}, label), Utils.el("strong", {}, show(value)))));
+      const input = summary.input;
+      const model = summary.model || {};
+      const lora = summary.lora;
+      const gen = summary.generation || {};
+      const outputs = summary.outputs || [];
+      const output = outputs[0];
+      const date = summary.timestamp && !Number.isNaN(Date.parse(summary.timestamp))
+        ? new Date(summary.timestamp).toLocaleString() : summary.timestamp;
+      const preview = output?.filename && Number.isFinite(output.size_bytes)
+        ? Utils.el("img", { class: "record-summary-preview", src: ApiClient.getOutputUrl(output.filename),
+          alt: `Generated output ${output.filename}`, loading: "lazy" }) : null;
+      const sections = [
+        card("Run", [["ID", summary.run_id], ["Status", summary.status], ["Date", date]]),
+        card("Input", [["File", input?.filename], ["Type", input?.file_type],
+          ["Dimensions", dims(input)], ["Aspect ratio", input?.aspect_ratio], ["Size", size(input?.size_bytes)]]),
+        card("Model", [["Name", model.name], ["Source", model.source],
+          ["Size", size(model.size_bytes)], ["Parameters", model.parameters_billion == null
+            ? "Unavailable" : `${model.parameters_billion}B`]]),
+        card("LoRA", lora ? [["Name", lora.name], ["Size", size(lora.size_bytes)],
+          ["Applied", lora.applied === true ? "Yes" : lora.applied === false ? "No" : "Unavailable"],
+          ["Scale", lora.scale]] : [["Adapter", "None"]]),
+        card("References", (summary.references || []).length
+          ? summary.references.map((item, index) => [`Reference ${index + 1}`, file(item)])
+          : [["Images", "None"]]),
+        card("Generation", [["Inference", gen.duration_seconds == null ? null : `${Number(gen.duration_seconds).toFixed(2)} s`],
+          ["Steps", gen.steps], ["Guidance", gen.guidance_scale], ["Seed", gen.seed],
+          ["Requested size", gen.requested_width && gen.requested_height
+            ? `${gen.requested_width} × ${gen.requested_height}` : null],
+          ["Actual canvas", gen.width && gen.height ? `${gen.width} × ${gen.height}` : null],
+          ["Device", gen.device], ["Peak GPU allocated", size(gen.peak_gpu_allocated_bytes)],
+          ["Pipeline", gen.pipeline]]),
+        card("Result", [["Output", output?.filename], ["Dimensions", dims(output)],
+          ["Size", size(output?.size_bytes)], ["Files", outputs.length]], preview),
+      ];
+      for (const section of sections) this.summaryElem.appendChild(section);
+      if (summary.error) this.summaryElem.appendChild(card("Error", [["Type", summary.error.type],
+        ["Reason", summary.error.message]]));
     },
   };
 
@@ -3815,7 +3872,9 @@
               disabled: r.status === "queued" || r.status === "running",
               "aria-label": `Delete run ${r.run_id} and its outputs`,
               onclick: (event) => { event.stopPropagation(); this.deleteRun(r); } }, "Delete")
-          )
+          ),
+          Utils.el("div", { class: "history-context" },
+            `${r.summary?.input?.filename || "Input unavailable"} · ${r.summary?.model?.name || "Model unavailable"}`)
         );
 
         frag.appendChild(item);

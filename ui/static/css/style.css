@@ -2058,6 +2058,45 @@ code, pre, .font-mono {
   font-size: 11px;
   color: var(--text-secondary);
 }
+.history-context {
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.record-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.record-summary-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  overflow-wrap: anywhere;
+}
+.record-summary-card h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.record-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 5px;
+  font-size: 12px;
+}
+.record-summary-row span { color: var(--text-secondary); }
+.record-summary-row strong { text-align: right; font-weight: 500; }
+.record-summary-preview {
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  margin-bottom: 8px;
+}
+.technical-record summary { cursor: pointer; margin-bottom: 10px; }
 .history-prompt-snip {
   font-size: 12px;
   color: var(--text-main);

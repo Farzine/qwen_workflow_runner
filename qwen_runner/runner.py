@@ -12,6 +12,7 @@ import uuid
 from .images import load_references, save_comparison
 from .metrics import InferenceMetrics
 from .sampling import sigma_schedule
+from .record_metadata import summarize_record
 
 
 def timestamp():
@@ -77,11 +78,13 @@ def run(config, backend_factory=None):
         setup_seconds = time.perf_counter() - setup_start
     except Exception as error:
         path = root / f'{session_id}_setup_error.json'
-        atomic_json(path, {"schema_version": 1, "status": "setup_error", "timestamp": timestamp(),
-                           "parameters": config.as_dict(), "model": config.model.source,
-                           "inference_time_seconds": None, "peak_memory_usage": None,
-                           "setup_seconds": time.perf_counter() - setup_start,
-                           "environment": environment(), "error": {"type": type(error).__name__, "message": str(error), "traceback": traceback.format_exc()}})
+        setup_record = {"schema_version": 1, "run_id": path.stem, "status": "setup_error", "timestamp": timestamp(),
+                        "parameters": config.as_dict(), "model": config.model.source,
+                        "inference_time_seconds": None, "peak_memory_usage": None,
+                        "setup_seconds": time.perf_counter() - setup_start,
+                        "environment": environment(), "error": {"type": type(error).__name__, "message": str(error), "traceback": traceback.format_exc()}}
+        setup_record["summary"] = summarize_record(setup_record)
+        atomic_json(path, setup_record)
         print(f'Setup failed; details: {path}')
         raise
     runtime_environment = environment(backend.torch, config.runtime.device)
@@ -174,6 +177,7 @@ def run(config, backend_factory=None):
                     if meter and meter.result:
                         record['inference_time_seconds'] = meter.result['inference_seconds']
                         record['peak_memory_usage'] = {k: v for k, v in meter.result.items() if k != 'inference_seconds'}
+                    record['summary'] = summarize_record(record)
                     atomic_json(log_path, record)
                     records.append(record)
                     print(f"{run_id}: {record['status']}; inference={record['inference_time_seconds']} s; log={log_path}")

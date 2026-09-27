@@ -123,7 +123,19 @@ class ModelStore:
             p = Path(ref.local)
             if ref.filename: p = p / ref.filename
             if not p.exists(): raise FileNotFoundError(p)
-            return p, {"source": ref.source, "local_path": str(p), "cache_hit": True, "revision": None}
+            provenance = {}
+            for manifest in (self.root / "manifests").glob("*.json"):
+                try:
+                    data = json.loads(manifest.read_text(encoding="utf-8"))
+                    if Path(data["load_path"]).resolve() == p.resolve() and data["files"] and all(
+                        Path(item["path"]).is_file() and Path(item["path"]).stat().st_size == item["size"] > 0
+                        for item in data["files"]
+                    ) and data["metadata"].get("downloaded_selection_bytes", 0) > provenance.get("downloaded_selection_bytes", 0):
+                        provenance = data["metadata"]
+                except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                    continue  # Optional provenance must not prevent a valid local load.
+            return p, {**provenance, "source": ref.source, "local_path": str(p), "cache_hit": True,
+                       "revision": provenance.get("resolved_revision")}
         key = hashlib.sha256(json.dumps([ref.repo_id, ref.revision, ref.filename, purpose, quantization]).encode()).hexdigest()[:20]
         manifest = self.root / "manifests" / f"{key}.json"
         if manifest.exists():

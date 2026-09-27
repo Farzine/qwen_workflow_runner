@@ -33,6 +33,7 @@ import torch
 import qwen_runner.runner
 from qwen_runner.config import Config
 from qwen_runner.resources import PipelineManager
+from qwen_runner.record_metadata import summarize_record
 from ui.model_catalog import resolve_selected_model
 from ui.model_deletion import delete_model_entry
 
@@ -1191,6 +1192,7 @@ class RunnerBridge:
                             "timestamp": data.get("timestamp"),
                             "is_warmup": data.get("is_warmup", False),
                             "inference_time_seconds": data.get("inference_time_seconds"),
+                            "summary": data.get("summary") or summarize_record(data),
                             "outputs": [
                                 {
                                     "filename": Path(o["path"]).name,
@@ -1218,7 +1220,8 @@ class RunnerBridge:
 
         for job in active_jobs:
             rid = job.primary_run_id or job.job_id
-            primary = job.records[0] if job.records else {}
+            primary = next((record for record in job.records if record.get("run_id") == rid),
+                           job.records[0] if job.records else {})
             runs_dict[rid] = {
                 "run_id": rid,
                 "job_id": job.job_id,
@@ -1226,6 +1229,7 @@ class RunnerBridge:
                 "timestamp": job.created_at,
                 "is_warmup": primary.get("is_warmup", False),
                 "inference_time_seconds": primary.get("inference_time_seconds"),
+                "summary": primary.get("summary") or summarize_record(primary) if primary else None,
                 "outputs": [
                     {
                         "filename": Path(o["path"]).name,

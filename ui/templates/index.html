@@ -926,7 +926,7 @@
           Live Logs
         </button>
         <button class="output-tab-btn" id="tab-btn-json" role="tab" aria-selected="false" aria-controls="pane-json">
-          Run Record
+          Run Details
         </button>
       </nav>
 
@@ -1079,20 +1079,23 @@
         </div>
 
         <!-- ------------------------------------------------------------------ -->
-        <!-- VIEW 4: JSON RUN RECORD INSPECTOR                                  -->
+        <!-- VIEW 4: READABLE RUN DETAILS AND OPTIONAL TECHNICAL JSON            -->
         <!-- ------------------------------------------------------------------ -->
         <div class="output-pane" id="pane-json" role="tabpanel" aria-labelledby="tab-btn-json">
-          <div class="json-toolbar">
-            <span id="json-run-id-label" class="font-mono text-xs">Run: None</span>
-            <div class="json-actions">
-              <button id="btn-copy-json" class="btn btn-ghost btn-xs" title="Copy JSON payload">Copy JSON</button>
-              <button id="btn-download-json" class="btn btn-outline btn-xs" title="Download record JSON">Download .json</button>
+          <div id="run-summary" class="record-summary" role="region" aria-label="Run details">No run record loaded.</div>
+          <details class="technical-record">
+            <summary>Technical JSON</summary>
+            <div class="json-toolbar">
+              <span id="json-run-id-label" class="font-mono text-xs">Run: None</span>
+              <div class="json-actions">
+                <button id="btn-copy-json" class="btn btn-ghost btn-xs" title="Copy JSON payload">Copy JSON</button>
+                <button id="btn-download-json" class="btn btn-outline btn-xs" title="Download record JSON">Download .json</button>
+              </div>
             </div>
-          </div>
-
-          <div class="json-container">
-            <pre class="json-code-block"><code id="json-record-code">{\n  "message": "No run record loaded."\n}</code></pre>
-          </div>
+            <div class="json-container">
+              <pre class="json-code-block"><code id="json-record-code">{\n  "message": "No run record loaded."\n}</code></pre>
+            </div>
+          </details>
         </div>
 
       </div>

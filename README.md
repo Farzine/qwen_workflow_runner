@@ -345,6 +345,11 @@ The logs include:
 - Inference seconds, setup seconds, memory metrics, saved outputs and hashes,
   warmup status, and tracebacks on failures.
 
+Terminal records also include `summary.summary_version: 1`, a compact view of
+input/reference files, model and LoRA, generation, device, output, and error
+facts. The original detailed fields remain available. Missing files or unknown
+model parameter counts and sizes are reported as unavailable, not estimated.
+
 | Metric | Meaning |
 |---|---|
 | `inference_time_seconds` | Synchronized wall time for prompt encoding, reference VAE encoding, noise creation, denoising, decode and conversion to output images |

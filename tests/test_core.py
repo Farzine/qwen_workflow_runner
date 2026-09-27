@@ -162,6 +162,10 @@ class CacheTests(unittest.TestCase):
             second, meta = store.fetch(ref)
             self.assertEqual(first, second); self.assertTrue(meta['cache_hit'])
             api.model_info.assert_not_called(); download.assert_not_called()
+            local, provenance = store.fetch(parse_model_ref(str(first)))
+            self.assertEqual(local, first)
+            self.assertEqual(provenance['repo_id'], 'test/model')
+            self.assertEqual(provenance['downloaded_selection_bytes'], sum(p.stat().st_size for p in first.rglob('*') if p.is_file()))
 
     def test_missing_cached_shard_fails_offline(self):
         with tempfile.TemporaryDirectory() as directory:

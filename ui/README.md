@@ -27,7 +27,7 @@ The Web UI integrates seamlessly with `qwen_runner` to provide an intuitive visu
 - **Comprehensive Parameter Form**: Controls exposing every parameter across `ModelConfig`, `GenerationConfig`, and `RuntimeConfig` with real-time validation, presets, and implementation-backed help for behavior, ranges, interactions, and resource trade-offs.
 - **Model and LoRA Management**: Live asynchronous downloading of Hugging Face repositories, chunked local model uploads, cached model discovery, and a separate validated LoRA catalog with upload, selection, and strength controls.
 - **System Configuration**: Live CPU/RAM and GPU inventory, per-GPU total/free/used memory, PyTorch/CUDA versions, runtime readiness, and dynamic device selection for the next production run.
-- **Execution & Output Hub**: Non-blocking background execution with real-time SSE streaming logs, step progress bar, output gallery with byte-accurate SHA-256 badges, interactive split-view comparison slider, 2-up side-by-side mode, expandable JSON record viewer with export, and session run history.
+- **Execution & Output Hub**: Non-blocking background execution with real-time SSE streaming logs, step progress bar, output gallery with byte-accurate SHA-256 badges, interactive split-view comparison slider, 2-up side-by-side mode, human-readable Run Details with optional technical JSON export, and session run history.
 - **Zero CDN Dependencies**: Self-contained Vanilla JS and CSS3 design; 100% offline-ready in air-gapped laboratory environments.
 
 ```
@@ -333,9 +333,12 @@ and passes that exact device to pipeline placement or Accelerate offload.
 ### 6. Outputs & History
 
 - **`GET /api/runs`**
-  - Returns list of all execution records in the current session.
+  - Returns execution history with a versioned `summary` for each durable record.
 - **`GET /api/runs/{run_id}`**
-  - Returns the complete `{run_id}.json` benchmark and execution record.
+  - Returns the complete `{run_id}.json` record with `summary.summary_version: 1`.
+    Existing records gain this projection on read without changing their files.
+    Run Details presents file/model/LoRA/generation/result facts and an optional
+    Technical JSON view. Unknown facts appear as unavailable.
 - **`DELETE /api/runs/{run_id}`**
   - Removes a finished record and its exclusively owned output/comparison files.
     Shared artifacts remain available to other records. Active inference,
