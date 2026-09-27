@@ -1299,6 +1299,22 @@ async def get_run_record(run_id: str):
     return record
 
 
+@app.delete("/api/runs/{run_id}")
+async def delete_run(run_id: str):
+    """Delete a finished run record and output files it owns exclusively."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", run_id):
+        raise HTTPException(status_code=400, detail="Invalid run ID")
+    try:
+        return get_runner_bridge().delete_run(run_id)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except OSError as error:
+        logger.exception("Run deletion failed for %s", run_id)
+        raise HTTPException(status_code=500, detail=f"Run deletion failed: {error}") from error
+
+
 @app.get("/api/outputs/{filename}")
 async def get_output_file(filename: str):
     """Securely serve output images, comparisons, or records with path traversal protection."""

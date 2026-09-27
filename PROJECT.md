@@ -109,6 +109,8 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
   - Returns list of completed/active run records in current session.
 - `GET /api/runs/{run_id}`:
   - Returns full `{run_id}.json` record.
+- `DELETE /api/runs/{run_id}`:
+  - Deletes a finished record and unshared output/comparison files after active-job and path-safety checks.
 - `GET /api/outputs/{filename}`:
   - Serves output image or comparison image file.
 

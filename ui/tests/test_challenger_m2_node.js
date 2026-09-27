@@ -327,7 +327,7 @@ vm.runInContext(wrappedCode, sandbox);
 const modules = sandbox.__APP_MODULES__;
 assert(modules, "Failed to load app.js modules in test sandbox");
 
-const { Store, InputBrowser, ParamForm, ModelManager, LoRAManager, SystemManager, RunController, ComparisonSlider, Toast, Utils, ApiClient, App } = modules;
+const { Store, InputBrowser, ParamForm, ModelManager, LoRAManager, SystemManager, RunController, ComparisonSlider, OutputViewer, JsonInspector, RunHistory, Toast, Utils, ApiClient, App } = modules;
 const RunHub = RunController;
 
 // Intercept Toast messages for verification
@@ -1083,6 +1083,48 @@ runTest("Model deletion confirms, removes the catalog entry, and clears selectio
   ApiClient.deleteModel = originalDelete;
   ApiClient.listModels = originalList;
   mockWindow.confirm = originalConfirm;
+});
+
+runTest("Run deletion confirms, clears the displayed result, and refreshes history", async () => {
+  const run = { run_id: "finished_run", status: "success" };
+  const originalDelete = ApiClient.deleteRun;
+  const originalConfirm = mockWindow.confirm;
+  const originalLoad = RunHistory.loadHistory;
+  const originalOutputs = OutputViewer.renderOutputs;
+  const originalComparison = ComparisonSlider.setup;
+  const originalInspector = JsonInspector.render;
+  let deleted = null;
+  let refreshed = 0;
+  let cleared = 0;
+  ApiClient.deleteRun = async (id) => { deleted = id; return { run_id: id }; };
+  RunHistory.loadHistory = async () => { refreshed += 1; };
+  OutputViewer.renderOutputs = (outputs) => { if (outputs.length === 0) cleared += 1; };
+  ComparisonSlider.setup = () => {};
+  JsonInspector.render = () => {};
+  RunHistory.runsList = domRegistry.get("history-runs-list");
+  RunHistory.render([run]);
+  assert.strictEqual(RunHistory.runsList.children[0].children[1].children[1].textContent, "Delete");
+  Store.state.run.currentRecord = { run_id: run.run_id };
+  mockWindow.confirm = () => false;
+  await RunHistory.deleteRun(run);
+  assert.strictEqual(deleted, null);
+  mockWindow.confirm = () => true;
+  await RunHistory.deleteRun(run);
+  assert.strictEqual(deleted, run.run_id);
+  assert.strictEqual(Store.state.run.currentRecord, null);
+  assert.strictEqual(cleared, 1);
+  assert.strictEqual(refreshed, 1);
+  ApiClient.deleteRun = async () => { throw new Error("Active inference"); };
+  await RunHistory.deleteRun(run);
+  assert.strictEqual(refreshed, 1);
+  assert(toastLog.at(-1).msg.includes("Active inference"));
+  assert.strictEqual(toastLog.at(-1).type, "error");
+  ApiClient.deleteRun = originalDelete;
+  mockWindow.confirm = originalConfirm;
+  RunHistory.loadHistory = originalLoad;
+  OutputViewer.renderOutputs = originalOutputs;
+  ComparisonSlider.setup = originalComparison;
+  JsonInspector.render = originalInspector;
 });
 
 runTest("Model download renders measured progress and truthful unknown totals", () => {

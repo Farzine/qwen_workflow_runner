@@ -336,6 +336,11 @@ and passes that exact device to pipeline placement or Accelerate offload.
   - Returns list of all execution records in the current session.
 - **`GET /api/runs/{run_id}`**
   - Returns the complete `{run_id}.json` benchmark and execution record.
+- **`DELETE /api/runs/{run_id}`**
+  - Removes a finished record and its exclusively owned output/comparison files.
+    Shared artifacts remain available to other records. Active inference,
+    unsafe paths, linked records, and duplicate run IDs block deletion. The
+    History drawer confirms the action and refreshes its list and displayed result.
 - **`GET /api/outputs/{filename}`**
   - Serves generated image files and side-by-side comparison images with cache control.
 

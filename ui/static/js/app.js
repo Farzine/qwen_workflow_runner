@@ -968,6 +968,15 @@
       return await res.json();
     },
 
+    async deleteRun(runId) {
+      const res = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Run deletion failed" }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    },
+
     getOutputUrl(filename) {
       return `/api/outputs/${encodeURIComponent(filename)}`;
     },
@@ -3801,7 +3810,11 @@
             Utils.el("span", {}, r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : ""),
             r.inference_time_seconds
               ? Utils.el("span", {}, `${r.inference_time_seconds.toFixed(2)}s`)
-              : null
+              : null,
+            Utils.el("button", { class: "btn btn-ghost btn-xs", type: "button",
+              disabled: r.status === "queued" || r.status === "running",
+              "aria-label": `Delete run ${r.run_id} and its outputs`,
+              onclick: (event) => { event.stopPropagation(); this.deleteRun(r); } }, "Delete")
           )
         );
 
@@ -3809,6 +3822,23 @@
       }
 
       this.runsList.appendChild(frag);
+    },
+
+    async deleteRun(run) {
+      if (!window.confirm(`Delete run "${run.run_id}" and its unshared outputs? This cannot be undone.`)) return;
+      try {
+        await ApiClient.deleteRun(run.run_id);
+        if (Store.state.run.currentRecord?.run_id === run.run_id) {
+          Store.state.run.currentRecord = null;
+          OutputViewer.renderOutputs([]);
+          ComparisonSlider.setup([]);
+          JsonInspector.render(null);
+        }
+        await this.loadHistory();
+        Toast.show(`Deleted run: ${run.run_id}`, "success");
+      } catch (error) {
+        Toast.show(`Run deletion failed: ${error.message}`, "error");
+      }
     },
 
     async selectRun(runId) {

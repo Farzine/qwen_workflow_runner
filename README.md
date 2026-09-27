@@ -261,6 +261,10 @@ before its file is removed. A SafeTensors header check cannot
 prove architecture compatibility; an incompatible adapter fails during model
 loading with the adapter filename and Diffusers error in the diagnostic.
 
+The History drawer can also delete a finished run after confirmation. Its
+record and output/comparison files are removed together; files referenced by
+another run are kept. Deletion waits for active inference to finish.
+
 For the supplied GGUF repository, changing only `source` selects its single
 Q4_K_M file. Set `filename` to choose another variant. If multiple files match,
 the runner asks for an explicit filename instead of choosing an arbitrary one.

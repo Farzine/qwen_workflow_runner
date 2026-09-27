@@ -1098,6 +1098,79 @@ class RunnerBridge:
 
         return dirs
 
+    def delete_run(self, run_id: str) -> dict[str, Any]:
+        """Remove one finished record and its unshared files from registered output storage."""
+        with self._lock:
+            unique_jobs = {id(job): job for job in self.jobs.values()}.values()
+            # ponytail: global active-job guard; narrow it if concurrent history cleanup becomes important.
+            if any(job.status in {"queued", "running"} or not getattr(job, "is_done", True)
+                   for job in unique_jobs):
+                raise RuntimeError("Wait for active inference jobs to finish before deleting a run")
+
+            dirs = list(dict.fromkeys(directory.resolve() for directory in self._get_search_output_dirs()))
+            matches = [directory / f"{run_id}.json" for directory in dirs
+                       if (directory / f"{run_id}.json").is_file()]
+            if not matches:
+                raise FileNotFoundError("Run record not found")
+            if len(matches) != 1 or matches[0].is_symlink():
+                raise RuntimeError("Run record is ambiguous or is a symlink")
+            record_path = matches[0]
+            try:
+                record = json.loads(record_path.read_text(encoding="utf-8"))
+                if not isinstance(record, dict) or record.get("run_id", run_id) != run_id:
+                    raise ValueError("Run ID does not match its record")
+                artifacts = [item["path"] for item in record.get("outputs", [])]
+                if record.get("comparison"):
+                    artifacts.append(record["comparison"])
+                if any(not isinstance(value, str) or not Path(value).is_absolute()
+                       for value in artifacts):
+                    raise ValueError("Invalid artifact path")
+                paths = {Path(value) for value in artifacts}
+                if any(path.parent.resolve() != record_path.parent or path.is_symlink() for path in paths):
+                    raise ValueError("Artifact path is outside the run output directory or is a symlink")
+            except (OSError, ValueError, TypeError, KeyError) as error:
+                raise RuntimeError(f"Cannot safely delete run record: {error}") from error
+
+            shared = set()
+            for directory in dirs:
+                for other in directory.glob("*.json"):
+                    if other == record_path:
+                        continue
+                    if other.is_symlink():
+                        raise RuntimeError("Cannot safely inspect a linked run record")
+                    try:
+                        data = json.loads(other.read_text(encoding="utf-8"))
+                        if not isinstance(data, dict):
+                            raise ValueError("Expected a record object")
+                        refs = [item["path"] for item in data.get("outputs", [])]
+                        if data.get("comparison"):
+                            refs.append(data["comparison"])
+                        shared.update(Path(value).absolute() for value in refs)
+                    except (OSError, ValueError, TypeError, KeyError) as error:
+                        raise RuntimeError(f"Cannot safely inspect {other.name}: {error}") from error
+
+            record_path.unlink()
+            removed = 0
+            for path in paths - shared:
+                if path.exists():
+                    path.unlink()
+                    removed += 1
+
+            # Finished batch jobs can hold several records. Evict their memory
+            # aliases; remaining records are still discoverable from disk.
+            affected = {id(job) for job in unique_jobs if
+                        job.job_id == run_id or getattr(job, "primary_run_id", None) == run_id
+                        or any(item.get("run_id") == run_id for item in getattr(job, "records", []))
+                        or (getattr(job, "error", None) or {}).get("setup_error_json") == record_path.name}
+            for key, job in list(self.jobs.items()):
+                if id(job) in affected:
+                    del self.jobs[key]
+            for key, job_id in list(self.run_id_map.items()):
+                if key == run_id or any(job.job_id == job_id for job in unique_jobs if id(job) in affected):
+                    del self.run_id_map[key]
+            return {"run_id": run_id, "deleted_artifacts": removed,
+                    "preserved_shared_artifacts": len(paths & shared)}
+
     def list_runs(self) -> List[Dict[str, Any]]:
         """Return list of all runs in current session and on-disk records."""
         runs_dict: Dict[str, Dict[str, Any]] = {}
