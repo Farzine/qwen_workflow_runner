@@ -110,6 +110,12 @@ for the expanded batch. A repeat uses the same seed for every input; enabling
 nine shared references are accepted, keeping each model call within its ten-image
 conditioning limit.
 
+The web runner reports batch-wide completed, failed, and remaining attempts,
+current stage, elapsed time, and ETA. ETA becomes available after the first
+attempt finishes; it uses the observed mean attempt time and excludes shared
+model loading. Warmup attempts count toward total operations and are labeled.
+Each finished item links to its Run Details record.
+
 The legacy `generation.images` field remains supported. Its first image is the
 editing canvas/input and later images are references. Reference order corresponds
 to `<image1>`, `<image2>`, and so on.

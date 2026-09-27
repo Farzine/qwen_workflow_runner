@@ -2097,6 +2097,18 @@ code, pre, .font-mono {
   margin-bottom: 8px;
 }
 .technical-record summary { cursor: pointer; margin-bottom: 10px; }
+.batch-progress {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  font-size: 12px;
+}
+.batch-progress p { margin: 8px 0; overflow-wrap: anywhere; }
+.batch-progress-items { margin: 0; padding-left: 20px; max-height: 220px; overflow-y: auto; }
+.batch-progress-items li { padding: 4px 0; overflow-wrap: anywhere; }
+.batch-progress-items button { margin-left: 8px; }
 .history-prompt-snip {
   font-size: 12px;
   color: var(--text-main);

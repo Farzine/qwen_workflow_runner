@@ -47,7 +47,7 @@ def environment(torch=None, device=None):
     return result
 
 
-def run(config, backend_factory=None):
+def run(config, backend_factory=None, on_operation=None):
     """Load once, then write one durable JSON record per input attempt.
 
     CPU image I/O and weight download/loading are outside inference_seconds.
@@ -92,6 +92,15 @@ def run(config, backend_factory=None):
     workflow_hash = hashlib.sha256(workflow.read_bytes()).hexdigest() if workflow.exists() else None
     records = []
     input_count = len(input_paths)
+    total_operations = input_count * (config.runtime.warmup_runs + config.runtime.repeats)
+
+    def report(stage, record, index):
+        if on_operation:
+            try:
+                on_operation(stage, record, index, total_operations)
+            except Exception as error:
+                print(f'Operation progress reporting failed: {error}')
+
     phases = ((True, config.runtime.warmup_runs), (False, config.runtime.repeats))
     for is_warmup, phase_repeats in phases:
         for repeat_index in range(phase_repeats):
@@ -100,6 +109,7 @@ def run(config, backend_factory=None):
                 seed = (seed + repeat_index) % 2**64
             for input_index, input_path in enumerate(input_paths):
                 attempt_index = repeat_index * input_count + input_index
+                operation_index = (0 if is_warmup else config.runtime.warmup_runs * input_count) + attempt_index
                 run_id = f'{session_id}_{"warmup" if is_warmup else "run"}_{attempt_index:03d}'
                 log_path = root / f'{run_id}.json'
                 parameters = deepcopy(config.as_dict())
@@ -134,6 +144,7 @@ def run(config, backend_factory=None):
                     "outputs": [],
                 }
                 atomic_json(log_path, record)
+                report('preparing', record, operation_index)
                 meter = None
                 start = time.perf_counter()
                 pending_error = None
@@ -155,8 +166,10 @@ def run(config, backend_factory=None):
                     })
                     backend.config = task_config
                     meter = InferenceMetrics(backend.torch, config.runtime.device, config.runtime.memory_poll_seconds)
+                    report('generating', record, operation_index)
                     with meter:
                         generated = backend.generate(images, canvas, seed)
+                    report('saving', record, operation_index)
                     for n, image in enumerate(generated):
                         out = root / f'{config.runtime.filename_prefix}_{run_id}_{n:02d}.png'
                         image.save(out, format='PNG')
@@ -180,6 +193,7 @@ def run(config, backend_factory=None):
                     record['summary'] = summarize_record(record)
                     atomic_json(log_path, record)
                     records.append(record)
+                    report('completed' if record['status'] == 'success' else 'failed', record, operation_index)
                     print(f"{run_id}: {record['status']}; inference={record['inference_time_seconds']} s; log={log_path}")
                 if pending_error is not None:
                     if not isinstance(pending_error, Exception) or not explicit_batch or input_count == 1:

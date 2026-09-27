@@ -27,7 +27,7 @@ The Web UI integrates seamlessly with `qwen_runner` to provide an intuitive visu
 - **Comprehensive Parameter Form**: Controls exposing every parameter across `ModelConfig`, `GenerationConfig`, and `RuntimeConfig` with real-time validation, presets, and implementation-backed help for behavior, ranges, interactions, and resource trade-offs.
 - **Model and LoRA Management**: Live asynchronous downloading of Hugging Face repositories, chunked local model uploads, cached model discovery, and a separate validated LoRA catalog with upload, selection, and strength controls.
 - **System Configuration**: Live CPU/RAM and GPU inventory, per-GPU total/free/used memory, PyTorch/CUDA versions, runtime readiness, and dynamic device selection for the next production run.
-- **Execution & Output Hub**: Non-blocking background execution with real-time SSE streaming logs, step progress bar, output gallery with byte-accurate SHA-256 badges, interactive split-view comparison slider, 2-up side-by-side mode, human-readable Run Details with optional technical JSON export, and session run history.
+- **Execution & Output Hub**: Non-blocking background execution with real-time SSE logs, batch counts/stages/timing/ETA and per-item details, output gallery with SHA-256 badges, comparison slider, human-readable Run Details with optional technical JSON, and run history.
 - **Zero CDN Dependencies**: Self-contained Vanilla JS and CSS3 design; 100% offline-ready in air-gapped laboratory environments.
 
 ```
@@ -327,8 +327,13 @@ and passes that exact device to pipeline placement or Accelerate offload.
     - `event: status`: `{"status": "RUNNING"}`
     - `event: log`: `{"text": "[INFO] Starting step 1/20..."}`
     - `event: progress`: `{"step": 1, "total": 20, "percent": 5}`
-    - `event: complete`: `{"status": "success|partial_success|error", "outputs": [...], "comparisons": [...], "records": [...], "errors": [...]}`
+    - `event: batch`: aggregate `total`, `completed`, `failed`, `remaining`, `current_operation`, `current_stage`, `elapsed_seconds`, `eta_seconds`, `percent`, and changed `item`; the initial and terminal events include all `items`. ETA is `null` before one attempt finishes. Warmups count as operations and are labeled.
+    - `event: complete`: `{"status": "success|partial_success|error", "outputs": [...], "comparisons": [...], "records": [...], "errors": [...], "batch": {...}}`
     - `event: error`: `{"status": "FAILED", "error": "CUDA out of memory"}`
+
+Batch events replay when a client reconnects to a job in the current server
+process. After restart, individual durable records remain in history, but the
+in-memory aggregate event stream is unavailable.
 
 ### 6. Outputs & History
 

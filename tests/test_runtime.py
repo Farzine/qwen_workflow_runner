@@ -201,12 +201,21 @@ class RuntimeTests(unittest.TestCase):
             c=Config(); c.generation.images=[str(source)]; c.runtime.output_dir=str(root/'out')
             c.runtime.device='cpu'; c.runtime.dtype='float32'; c.runtime.offload='none'
             c.runtime.warmup_runs=1; c.runtime.repeats=2
-            records=run(c, Backend)
+            events=[]
+            records=run(c, Backend, on_operation=lambda stage, record, index, total:
+                        events.append((stage, index, total, record['run_id'])))
             self.assertEqual(len(records),3)
+            self.assertEqual([(stage, index, total) for stage, index, total, _ in events if stage == 'completed'],
+                             [('completed', 0, 3), ('completed', 1, 3), ('completed', 2, 3)])
+            self.assertEqual([stage for stage, _, _, _ in events[:4]],
+                             ['preparing', 'generating', 'saving', 'completed'])
             self.assertTrue(records[0]['is_warmup'])
             self.assertTrue(all(r['inference_time_seconds'] >= 0 for r in records))
             self.assertIsNone(records[1]['peak_memory_usage']['gpu_peak_allocated_bytes'])
             self.assertGreater(records[1]['peak_memory_usage']['process_rss_peak_bytes'], 0)
+            def broken_progress(*_):
+                raise RuntimeError('progress display failed')
+            self.assertEqual(len(run(c, Backend, on_operation=broken_progress)), 3)
             class Broken(Backend):
                 def generate(self, *a): raise RuntimeError('synthetic failure')
             with self.assertRaisesRegex(RuntimeError, 'synthetic failure'): run(c, Broken)

@@ -384,6 +384,21 @@ class TestBackendRunnerBridge(unittest.TestCase):
         self.assertEqual(payload["outputs"][0]["input_index"], 1)
         self.assertEqual(payload["errors"][0]["input_index"], 0)
 
+    def test_successful_warmup_does_not_hide_failed_requested_batch(self):
+        cfg = Config(generation=GenerationConfig(input_images=["source.png"], reference_images=[]),
+                     runtime=RuntimeConfig(output_dir=str(self.outputs_dir), warmup_runs=1))
+        job = RunJob("batch_job", cfg, demo_mode=True)
+        records = [
+            {"run_id": "warmup", "status": "success", "is_warmup": True,
+             "outputs": [{"path": str(self.outputs_dir / "warmup.png")}]},
+            {"run_id": "requested", "status": "error", "is_warmup": False,
+             "outputs": [], "error": {"message": "bad source"}},
+        ]
+        payload = self.bridge._build_complete_payload(job, records)
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["run_id"], "requested")
+        self.assertEqual(payload["outputs"], [])
+
     def test_explicit_multi_input_run_returns_every_result(self):
         from PIL import Image
         inputs = [self.root / "input-2.png", self.root / "input-1.png"]
@@ -412,6 +427,20 @@ class TestBackendRunnerBridge(unittest.TestCase):
         self.assertEqual(complete["status"], "success")
         self.assertEqual([record["input_index"] for record in complete["records"]], [0, 1])
         self.assertEqual([output["input_index"] for output in complete["outputs"]], [0, 1])
+        self.assertEqual(complete["batch"]["total"], 2)
+        self.assertEqual(complete["batch"]["completed"], 2)
+        self.assertEqual(complete["batch"]["percent"], 100)
+        self.assertEqual([item["status"] for item in complete["batch"]["items"]], ["completed", "completed"])
+        batch_events = [json.loads(line[6:]) for chunk in stream.text.split("\n\n")
+                        if "event: batch" in chunk for line in chunk.splitlines() if line.startswith("data: ")]
+        self.assertEqual(batch_events[0]["eta_seconds"], None)
+        self.assertEqual([item["status"] for item in batch_events[0]["items"]], ["queued", "queued"])
+        self.assertEqual([event["item"]["status"] for event in batch_events if event.get("item")][:3],
+                         ["preparing", "generating", "saving"])
+        self.assertEqual([event["completed"] for event in batch_events if event.get("item", {}).get("status") == "completed"],
+                         [1, 2])
+        replay = self.client.get(f"/api/run/{response.json()['run_id']}/stream")
+        self.assertIn("event: batch", replay.text)
         self.assertEqual(
             [Path(path).name for path in complete["records"][0]["effective_parameters"]["conditioning_image_paths"]],
             ["input-2.png", "shared-reference.png"],
@@ -440,6 +469,11 @@ class TestBackendRunnerBridge(unittest.TestCase):
         self.assertEqual([record["status"] for record in complete["records"]], ["error", "success"])
         self.assertEqual(complete["errors"][0]["input_index"], 0)
         self.assertEqual(complete["outputs"][0]["input_index"], 1)
+        self.assertEqual((complete["batch"]["completed"], complete["batch"]["failed"],
+                          complete["batch"]["remaining"]), (1, 1, 0))
+        self.assertEqual([item["status"] for item in complete["batch"]["items"]], ["failed", "completed"])
+        self.assertIn("batch-corrupt.png", complete["batch"]["items"][0]["input_filename"])
+        self.assertTrue(complete["batch"]["items"][0]["error"])
 
     def test_run_job_reentrant_lock_safe(self):
         cfg = Config(

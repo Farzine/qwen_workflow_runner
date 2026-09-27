@@ -2961,6 +2961,13 @@
     progressBar: null,
     stepCounter: null,
     percentLabel: null,
+    batchPanel: null,
+    batchSummary: null,
+    batchList: null,
+    batchItems: new Map(),
+    batchState: null,
+    batchReceivedAt: 0,
+    batchTimer: null,
     eventSource: null,
 
     init() {
@@ -2972,6 +2979,9 @@
       this.progressBar = document.getElementById("run-step-progress-bar");
       this.stepCounter = document.getElementById("run-step-counter");
       this.percentLabel = document.getElementById("run-percent-label");
+      this.batchPanel = document.getElementById("batch-progress");
+      this.batchSummary = document.getElementById("batch-progress-summary");
+      this.batchList = document.getElementById("batch-progress-items");
 
       if (this.runBtn) {
         this.runBtn.addEventListener("click", () => this.startRun());
@@ -3076,8 +3086,13 @@
       this.eventSource.addEventListener("progress", (e) => {
         try {
           const data = JSON.parse(e.data);
-          this.updateProgress(data.step, data.total, data.percent);
+          if (!this.batchState) this.updateProgress(data.step, data.total, data.percent);
         } catch (err) {}
+      });
+
+      this.eventSource.addEventListener("batch", (e) => {
+        try { this.renderBatch(JSON.parse(e.data)); }
+        catch (err) { TerminalViewer.appendLogLine(`Batch status error: ${err.message}`, "stderr"); }
       });
 
       // Complete event
@@ -3121,7 +3136,71 @@
       }
     },
 
+    renderBatch(data) {
+      if (!data || !Number.isFinite(data.total)) return;
+      this.batchState = data;
+      this.batchReceivedAt = Date.now();
+      if (Array.isArray(data.items)) {
+        this.batchItems = new Map(data.items.map((item) => [item.operation_index, item]));
+      } else if (data.item) {
+        this.batchItems.set(data.item.operation_index, data.item);
+      }
+      if (this.batchPanel) this.batchPanel.classList.toggle("hidden", data.total <= 1);
+      this.renderBatchSummary();
+      if (Store.state.run.status === "running" && !this.batchTimer) {
+        this.batchTimer = setInterval(() => this.renderBatchSummary(), 1000);
+      }
+      const pct = Math.min(100, Math.max(0, Number(data.percent) || 0));
+      if (this.progressBar) this.progressBar.style.width = `${pct}%`;
+      if (this.percentLabel) this.percentLabel.textContent = `${Math.round(pct)}%`;
+      if (this.stepCounter) this.stepCounter.textContent = `Operation ${data.completed + data.failed} / ${data.total}`
+        + (data.current_operation ? ` · Current ${data.current_operation}` : "")
+        + (data.current_stage === "generating" && data.step ? ` · Step ${data.step}/${data.steps}` : "");
+      if (this.batchList && (data.item || Array.isArray(data.items))) {
+        this.batchList.innerHTML = "";
+        for (const item of [...this.batchItems.values()].sort((a, b) => a.operation_index - b.operation_index)) {
+          const label = `#${item.operation_index} ${item.input_filename || "Input"}`
+            + (item.is_warmup ? " (warmup)" : "") + ` · ${item.status}`
+            + (Number.isFinite(item.duration_seconds) ? ` · ${this.formatBatchSeconds(item.duration_seconds)}` : "")
+            + (item.error ? ` · ${item.error}` : "");
+          const inspect = item.run_id && ["completed", "failed"].includes(item.status)
+            ? Utils.el("button", { class: "btn btn-ghost btn-xs", type: "button",
+              onclick: () => this.inspectBatchItem(item.run_id) }, "Details") : null;
+          this.batchList.appendChild(Utils.el("li", {}, label, inspect));
+        }
+      }
+    },
+
+    formatBatchSeconds(value) {
+      if (!Number.isFinite(value)) return "Unavailable";
+      const rounded = Math.round(value);
+      return `${Math.floor(rounded / 60)}m ${rounded % 60}s`;
+    },
+
+    renderBatchSummary() {
+      const data = this.batchState;
+      if (!data || !this.batchSummary) return;
+      const current = this.batchItems.get(data.current_operation);
+      const elapsed = data.elapsed_seconds + (Store.state.run.status === "running"
+        ? (Date.now() - this.batchReceivedAt) / 1000 : 0);
+      this.batchSummary.textContent = `Completed ${data.completed}/${data.total} · Failed ${data.failed}`
+        + ` · Remaining ${data.remaining} · Stage ${data.current_stage}`
+        + (current ? ` · Current ${current.input_filename}` : "")
+        + ` · Elapsed ${this.formatBatchSeconds(elapsed)} · ETA ${this.formatBatchSeconds(data.eta_seconds)}`;
+    },
+
+    async inspectBatchItem(runId) {
+      try {
+        const record = await ApiClient.getRunRecord(runId);
+        JsonInspector.render(record);
+        this.switchOutputTab("tab-btn-json", "pane-json");
+      } catch (err) {
+        Toast.show(`Could not load run details: ${err.message}`, "error");
+      }
+    },
+
     handleComplete(payload) {
+      if (payload.batch) this.renderBatch(payload.batch);
       this.setRunningState(false);
 
       if (payload.status === "success" || payload.status === "partial_success") {
@@ -3204,6 +3283,16 @@
 
     setRunningState(isRunning) {
       Store.state.run.status = isRunning ? "running" : "idle";
+      if (this.batchTimer) clearInterval(this.batchTimer);
+      this.batchTimer = null;
+      if (isRunning) {
+        this.batchItems = new Map();
+        this.batchState = null;
+        if (this.batchPanel) this.batchPanel.classList.add("hidden");
+        if (this.batchList) this.batchList.innerHTML = "";
+      } else {
+        this.renderBatchSummary();
+      }
 
       if (this.runBtn) {
         this.runBtn.disabled = isRunning;

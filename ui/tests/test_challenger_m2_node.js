@@ -1153,6 +1153,57 @@ runTest("Run details render readable facts and keep raw JSON optional", () => {
   assert.strictEqual(JsonInspector.summaryElem.textContent, "No run record loaded.");
 });
 
+runTest("Batch progress shows measured counts, failures, ETA, and per-item details", async () => {
+  RunController.batchPanel = domRegistry.get("batch-progress");
+  RunController.batchSummary = domRegistry.get("batch-progress-summary");
+  RunController.batchList = domRegistry.get("batch-progress-items");
+  RunController.batchItems = new Map();
+  RunController.progressBar = domRegistry.get("run-step-progress-bar");
+  RunController.stepCounter = domRegistry.get("run-step-counter");
+  RunController.percentLabel = domRegistry.get("run-percent-label");
+  RunController.renderBatch({ total: 2, completed: 0, failed: 0, remaining: 2,
+    current_operation: null, current_stage: "loading", elapsed_seconds: 0, eta_seconds: null,
+    percent: 0, step: 0, steps: 2,
+    items: [{ operation_index: 1, input_filename: "bad.png", status: "queued" },
+      { operation_index: 2, input_filename: "good.png", status: "queued" }] });
+  assert(RunController.batchList.textContent.includes("good.png · queued"));
+  RunController.renderBatch({ total: 2, completed: 0, failed: 0, remaining: 2,
+    current_operation: 1, current_stage: "generating", elapsed_seconds: 3, eta_seconds: null,
+    percent: 25, step: 1, steps: 2,
+    item: { operation_index: 1, input_filename: "bad.png", status: "generating" } });
+  assert(RunController.batchSummary.textContent.includes("ETA Unavailable"));
+  assert(RunController.stepCounter.textContent.includes("Current 1"));
+  const originalStatus = Store.state.run.status;
+  Store.state.run.status = "running";
+  RunController.batchReceivedAt -= 61000;
+  RunController.renderBatchSummary();
+  assert(RunController.batchSummary.textContent.includes("Elapsed 1m"));
+  Store.state.run.status = originalStatus;
+  RunController.renderBatch({ total: 2, completed: 0, failed: 1, remaining: 1,
+    current_operation: null, current_stage: "failed", elapsed_seconds: 5, eta_seconds: 5,
+    percent: 50, step: 0, steps: 2,
+    item: { operation_index: 1, input_filename: "bad.png", status: "failed",
+      run_id: "run_bad", error: "Invalid image", duration_seconds: 5 } });
+  assert(RunController.batchSummary.textContent.includes("Failed 1"));
+  assert(RunController.batchSummary.textContent.includes("ETA 0m 5s"));
+  assert(RunController.batchList.textContent.includes("Invalid image"));
+  const originalFetch = ApiClient.getRunRecord;
+  const originalRender = JsonInspector.render;
+  const originalSwitch = RunController.switchOutputTab;
+  let inspected = null;
+  ApiClient.getRunRecord = async (runId) => ({ run_id: runId });
+  JsonInspector.render = (record) => { inspected = record.run_id; };
+  RunController.switchOutputTab = () => {};
+  try {
+    await RunController.inspectBatchItem("run_bad");
+    assert.strictEqual(inspected, "run_bad");
+  } finally {
+    ApiClient.getRunRecord = originalFetch;
+    JsonInspector.render = originalRender;
+    RunController.switchOutputTab = originalSwitch;
+  }
+});
+
 runTest("Model download renders measured progress and truthful unknown totals", () => {
   ModelManager.hfProgressWrap = domRegistry.get("hf-download-progress-container");
   ModelManager.hfProgressTrack = domRegistry.get("hf-download-progress-track");

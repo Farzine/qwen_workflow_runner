@@ -104,7 +104,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
   - Body: Complete config JSON payload + `demo_mode: bool`; the web UI sends top-level `selected_model_id`, while legacy direct-source clients may omit it.
   - Returns: `{"run_id": "...", "stream_url": "/api/run/{run_id}/stream"}`
 - `GET /api/run/{run_id}/stream`:
-  - SSE stream: `event: log`, `data: {"text": "..."}`, `event: progress`, `data: {"step": int, "total": int}`, `event: complete`, `data: {...}`
+  - SSE stream: `event: log`, `event: progress` for legacy step clients, `event: batch` for aggregate counts/stages/timing/per-item status, and `event: complete` with outputs, records, errors, and final batch summary.
 - `GET /api/runs`:
   - Returns list of completed/active run records in current session.
 - `GET /api/runs/{run_id}`:

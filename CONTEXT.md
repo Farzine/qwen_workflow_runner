@@ -127,7 +127,7 @@ sequenceDiagram
         E->>E: Start from seeded CPU noise, condition on all images, denoise, decode
     end
     R->>F: Save PNG, optional comparison, and JSON record
-    B-->>API: Status/log/progress events
+    B-->>API: Status/log/step + aggregate batch events
     API-->>JS: SSE complete event and output URLs
     JS-->>U: Display generated image and comparison
 ```
@@ -150,7 +150,7 @@ Extend the validated Qwen workflow into a production-quality management applicat
 
 ## Active Task
 
-Phase 9.5 is complete: new records persist a versioned readable summary, older records receive the same projection through history/detail APIs without disk mutation, and the Run Details tab shows actual file/model/LoRA/generation/result facts with optional Technical JSON. Phase 9.6 aggregate batch progress is next. Phase 9.5 source changes remain uncommitted; preserve them.
+Phase 9.6 is complete: the core runner reports each durable operation's stages to the web bridge; SSE and the Results panel show queued/per-item stages, aggregate counts, measured elapsed time, ETA after the first completed attempt, and individual record details. A successful warmup cannot make a failed requested batch appear partially successful. Phase 9.7 task-oriented pages are next. Phase 9.6 source changes remain uncommitted; preserve them.
 
 ## Completed Tasks
 
@@ -221,6 +221,8 @@ Phase 9.5 is complete: new records persist a versioned readable summary, older r
 - [x] Added confirmed finished-run deletion with shared-artifact preservation, active-job protection, custom-output-directory support, and history/result refresh.
 - [x] Added `summary_version: 1` to new success/error/setup records, with legacy history/detail projection and explicit unavailable values for unknown facts.
 - [x] Added readable Run Details cards and history input/model context while retaining the original JSON as an optional technical view.
+- [x] Added truthful batch operation callbacks, SSE snapshots/replay, queued and active per-item stages, elapsed/ETA/counts, and browser details links for finished attempts.
+- [x] Corrected explicit-batch completion classification so warmup success cannot hide failure of all requested outputs.
 
 ## Remaining Tasks
 
@@ -241,7 +243,7 @@ Phase 9.5 is complete: new records persist a versioned readable summary, older r
 - [x] Phase 9.4b: add safe model deletion with manifest/blob sharing and active/download-resource protection.
 - [x] Phase 9.4c: add output/run deletion with record-artifact consistency, active-job protection, and confirmed UI actions.
 - [x] Phase 9.5: introduce a versioned common run metadata model and human-readable history/output details while preserving legacy record reads.
-- [ ] Phase 9.6: add aggregate batch operations, per-item stages, counts, timing, ETA, failures, and result inspection based on the reference workflow concepts.
+- [x] Phase 9.6: add aggregate batch operations, per-item stages, counts, timing, ETA, failures, and result inspection based on the reference workflow concepts.
 - [ ] Phase 9.7: reorganize the SPA into Dashboard, Models, LoRAs, Inference, Batch, History, Outputs, and System views with responsive task navigation.
 - [ ] Phase 9.8: run the expanded regression/hardware/browser matrix and reconcile all documentation.
 
@@ -352,7 +354,7 @@ Phase 9.5 is complete: new records persist a versioned readable summary, older r
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Phase 9.4a, 9.4b, and 9.4c were committed as `56b4517`, `cf1a010`, and `d6d5682` on `main`. Phase 9.5 changes are currently uncommitted. Preserve them when resuming.
+- Phase 9.4a, 9.4b, 9.4c, and 9.5 were committed as `56b4517`, `cf1a010`, `d6d5682`, and `ca02524` on `main`. Phase 9.6 changes are currently uncommitted. Preserve them when resuming.
 - Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -374,6 +376,9 @@ Phase 9.5 is complete: new records persist a versioned readable summary, older r
 - Phase 9.5 found that existing schema-version-1 records already contain the requested generation/device/output facts, but no uniform readable shape; actual image type/byte size must be inspected from stored files. `summarize_record` projects current and legacy success, failure, and setup records into `summary_version: 1` while retaining the original record and explicit `null` for unavailable facts. Image header inspection never needs to load full pixels, and inaccessible or oversized-image metadata is treated as unavailable.
 - A catalog-selected full local Diffusers snapshot reached `ModelStore.fetch` as a local directory, losing its Hub repository identity and downloaded-selection size despite a complete manifest. The local fetch path now matches a complete manifest by load path and retains that provenance for new records; model parameter count is still unknown unless explicitly supplied. A selected-file byte sum is labeled stored model size, not an invented parameter count.
 - History overlays durable records with in-memory job state. For batch jobs, the in-memory summary now selects the job's primary run ID rather than blindly using its first record. Existing disk records are projected at read time by `/api/runs` and `/api/runs/{id}` without rewriting them. The browser's Run Details tab shows the same facts, output preview, and optional Technical JSON; history rows include input and model context.
+- Phase 9.6 found that the core runner already saved one record per attempt, but returned only after the entire batch; the bridge had no authoritative per-item lifecycle. The browser therefore showed the current image's step percentage repeatedly as if it were total batch progress. A fabricated initial step 1 also displayed progress before model loading. The new optional core callback fires at preparing, generating, saving, and after durable terminal record persistence. The bridge emits `batch` SSE events with planned queued items, changed per-item state, counts, measured elapsed time, and ETA from completed-attempt wall durations; it preserves a truthful legacy `progress` event starting at step 0. The browser advances elapsed time locally between SSE events so silent model loading does not leave a frozen clock.
+- The reference script estimates remaining work from observed successful operation times and tracks failures/comparison files. The web runner now applies the measured-time concept to both successful and failed finished attempts, while retaining its existing comparisons, records, and no-automatic-retry inference semantics. Shared model setup is included in elapsed time but excluded from per-attempt ETA; ETA remains null until one attempt finishes. Warmups are explicitly labeled and count toward total operations.
+- A successful warmup previously made an explicit batch with all requested outputs failed report `partial_success` and select the warmup as primary. Completion and the in-memory job/history alias now choose a non-warmup requested record and report `error` when no requested output succeeded. Legacy combined-image response behavior remains unchanged.
 
 ## Reference Implementations
 
@@ -556,7 +561,23 @@ Phase 9.5 additions to the cumulative files above:
 - `tests/test_core.py`, `tests/test_runtime.py`, `tests/test_record_metadata.py`, `ui/tests/test_record_metadata_api.py`, `ui/tests/test_challenger_m2_node.js` — verify manifest provenance, durable/legacy summary facts, API projection, and browser rendering.
 - `README.md`, `ui/README.md`, `PROJECT.md`, `CONTEXT.md` — document the common summary, readable view, validation, and Phase 9.6 handoff.
 
+Phase 9.6 additions to the cumulative files above:
+
+- `qwen_runner/runner.py` — optional per-operation callback after preparation/generation/saving transitions and durable terminal record writes, with stable operation indices across warmups and repeats; callback errors are logged without sacrificing a model run.
+- `ui/runner_bridge.py` — planned queued items, aggregate batch counts/stages/elapsed/ETA, compact changed-item SSE updates, full initial/final snapshots, replay, precise failure records, and warmup-safe completion status.
+- `ui/templates/index.html`, `ui/static/js/app.js`, `ui/static/css/style.css` — responsive batch status/list in Results, truthful aggregate bar, failure/timing text, and per-item Run Details access.
+- `tests/test_runtime.py`, `ui/tests/test_backend.py`, `ui/tests/test_challenger_m2_node.js` — callback ordering, SSE stage/count/replay/partial-failure/warmup behavior, and browser state/details tests.
+- `README.md`, `ui/README.md`, `PROJECT.md`, `CONTEXT.md` — document batch progress semantics, limits, validation, and Phase 9.7 handoff.
+
 ## Tests Performed
+
+Phase 9.6 validation:
+
+- `.venv/bin/python -m pytest -q tests` — 41 passed plus 8 subtests.
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 438 passed, two existing Starlette/AnyIO deprecation warnings.
+- `node ui/tests/test_challenger_m2_node.js` — 41/41 passed; `node ui/tests/test_tier5_node_stress.js` — 15/15 passed.
+- `.venv/bin/python -m compileall -q qwen_runner ui tests`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
+- API tests cover two-input success, mixed decode failure, full SSE replay, and warmup-success/requested-failure classification using temporary demo assets. No full-model GPU inference or live browser screenshot was repeated in this slice.
 
 Phase 9.5 validation:
 
@@ -719,6 +740,7 @@ Phase 9.1 validation:
 - LoRA, catalog-model, and finished-run deletion are available through confirmed web actions. Run deletion removes an entire record and its unshared artifacts; there is not yet an individual output-file management UI. The global active-job guard pauses deletion while any inference job is in progress. Independent CLI processes remain outside the web server's deletion locks. Deletion tests used only temporary assets.
 - Run/output cleanup is best-effort across multiple files: a filesystem error after record removal may leave an orphaned image, though history will not point to a missing image. Phase 9.7's dedicated Outputs view can expose orphan cleanup if this becomes a practical need.
 - Legacy durable records remain schema-version-1 documents. The new `summary_version: 1` projection is added on API reads without migration; deleted/missing referenced files yield unavailable metadata. Parameter counts are never inferred from a model label, and directory-backed model size requires a matching completed manifest. The current run-detail view shows the first generated output preview and the count of all outputs; dedicated multi-output browsing belongs to Phase 9.7.
+- Aggregate batch events and ETA live in the server process, with replay for an existing job. After restart, durable per-attempt history remains, but the aggregate event stream is not reconstructed from disk. The batch panel is part of Results until Phase 9.7 adds a dedicated Batch view. The current monitor-stop button disconnects SSE; it does not cancel a running model operation.
 - The current SPA remains a three-panel workflow with configuration tabs and a history drawer. Dedicated Dashboard, Models, LoRAs, Batch, History, and Outputs pages remain Phase 9.6–9.7 work.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
 - Multi-reference transport and conditioning effects are proven, but adherence was weak in the tested hairstyle-transfer example. Prompt/reference quality remains model- and asset-dependent rather than a transport defect.
@@ -734,11 +756,11 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 9.6 as the next independently testable slice:
+Implement Phase 9.7 as the next independently testable slice, starting with task navigation rather than an all-at-once UI rewrite:
 
-1. Trace the existing explicit multi-input runner, `RunnerBridge` events, SSE payloads, and browser progress/results flow. Compare with the reference script's operation counts, per-item timing, ETA, and failure summary.
-2. Add truthful aggregate batch operation status/counts/current stage/elapsed/ETA and per-item success/failure timing to existing job events and the browser. Preserve the current single-input and legacy API flows.
-3. Validate partial failures, ordered results, reconnect/history behavior, and browser loading/error states. Avoid the Phase 9.7 page redesign in this slice.
+1. Map existing sections and controls to Dashboard, Models, LoRAs, Inference, Batch, History, Outputs, and System destinations without duplicating backend state or changing API contracts.
+2. Implement the smallest coherent navigation/view slice, retaining working generation, downloads, history, batch progress, and responsive controls. Add a dedicated Batch destination by moving the Phase 9.6 panel when the navigation structure supports it.
+3. Verify desktop/narrow layouts, loading/error/empty states, keyboard access, and the full UI suite. Document remaining destinations and continue incrementally.
 
 ## Resume Instructions
 

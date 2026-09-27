@@ -496,6 +496,50 @@ class RunJob:
         self.done_event = threading.Event()
         self.is_done = False
         self._lock = threading.RLock()
+        inputs = config.generation.input_images or config.generation.images[:1] or [""]
+        self.batch_total = max(1, len(inputs) * (config.runtime.warmup_runs + config.runtime.repeats))
+        self.batch_started: Optional[float] = None
+        self.batch_stage = "queued"
+        self.batch_current: Optional[int] = None
+        self.batch_step = 0
+        self.batch_steps = max(1, config.generation.steps)
+        self.batch_items: Dict[int, Dict[str, Any]] = {}
+        for is_warmup, repeats in ((True, config.runtime.warmup_runs), (False, config.runtime.repeats)):
+            for repeat_index in range(repeats):
+                for input_index, path in enumerate(inputs):
+                    index = len(self.batch_items)
+                    self.batch_items[index] = {
+                        "operation_index": index + 1, "input_index": input_index,
+                        "input_filename": Path(path).name, "repeat_index": repeat_index,
+                        "is_warmup": is_warmup, "run_id": None, "status": "queued",
+                    }
+
+    def batch_snapshot(self, item: Optional[Dict[str, Any]] = None, include_items: bool = False) -> Dict[str, Any]:
+        """Report completed attempts; ETA is unavailable until an attempt finishes."""
+        # ponytail: scan planned attempts for counts; use incremental counters if very large repeat jobs become common.
+        finished = [value for value in self.batch_items.values() if value["status"] in {"completed", "failed"}]
+        completed = sum(value["status"] == "completed" for value in finished)
+        failed = len(finished) - completed
+        remaining = max(0, self.batch_total - len(finished))
+        samples = [value["duration_seconds"] for value in finished
+                   if isinstance(value.get("duration_seconds"), (int, float))]
+        eta = round(sum(samples) / len(samples) * remaining, 1) if samples and remaining else (0.0 if not remaining else None)
+        fraction = (min(self.batch_step / self.batch_steps, 1) * 0.95 if self.batch_stage == "generating"
+                    else 0.99 if self.batch_stage == "saving" else 0)
+        percent = round(100 * (len(finished) + fraction) / self.batch_total, 1)
+        result = {
+            "total": self.batch_total, "completed": completed, "failed": failed, "remaining": remaining,
+            "current_operation": self.batch_current + 1 if self.batch_current is not None else None,
+            "current_stage": self.batch_stage,
+            "elapsed_seconds": round(time.perf_counter() - self.batch_started, 1) if self.batch_started else 0.0,
+            "eta_seconds": eta, "percent": min(100.0, percent),
+            "step": self.batch_step, "steps": self.batch_steps,
+        }
+        if item is not None:
+            result["item"] = item.copy()
+        if include_items:
+            result["items"] = [self.batch_items[index].copy() for index in sorted(self.batch_items)]
+        return result
 
     def push_event(self, event_type: str, data: Dict[str, Any]) -> None:
         """Thread-safe event broadcast to history and all active SSE subscriber queues."""
@@ -738,7 +782,11 @@ class RunnerBridge:
     def _execute_run(self, job: RunJob) -> None:
         tid = threading.get_ident()
         job.status = "running"
+        job.batch_started = time.perf_counter()
+        job.batch_stage = "loading"
         job.push_event("status", {"status": "running", "job_id": job.job_id})
+        job.push_event("progress", {"step": 0, "total": job.batch_steps, "percent": 0.0})
+        job.push_event("batch", job.batch_snapshot(include_items=True))
 
         def on_line_captured(line: str, stream: str) -> None:
             now_iso = datetime.now(timezone.utc).isoformat()
@@ -746,6 +794,36 @@ class RunnerBridge:
             prog = parse_progress(line)
             if prog:
                 job.push_event("progress", prog)
+                if job.batch_stage == "generating":
+                    job.batch_step = prog["step"]
+                    job.batch_steps = prog["total"]
+                    job.push_event("batch", job.batch_snapshot())
+
+        def on_operation(stage: str, record: Dict[str, Any], index: int, total: int) -> None:
+            job.batch_total = total
+            item = job.batch_items.setdefault(index, {
+                "operation_index": index + 1,
+                "input_index": record.get("input_index"),
+                "input_filename": Path(record.get("input_image") or "").name,
+                "repeat_index": record.get("repeat_index"),
+                "is_warmup": bool(record.get("is_warmup")),
+                "run_id": record.get("run_id"),
+            })
+            item["run_id"] = record.get("run_id")
+            item["status"] = stage
+            job.batch_stage = ("queued" if stage in {"completed", "failed"}
+                               and any(value["status"] == "queued" for value in job.batch_items.values())
+                               else stage)
+            job.batch_current = index if stage not in {"completed", "failed"} else None
+            if stage == "preparing":
+                job.batch_step = 0
+                job.batch_steps = max(1, job.config.generation.steps)
+            if stage in {"completed", "failed"}:
+                item["duration_seconds"] = record.get("run_wall_seconds_including_output_save")
+                item["error"] = (record.get("error") or {}).get("message")
+                item["output_count"] = len(record.get("outputs") or [])
+                job.records.append(record)
+            job.push_event("batch", job.batch_snapshot(item))
 
         self.capture_mgr.register_thread(tid, on_line_captured)
 
@@ -768,28 +846,27 @@ class RunnerBridge:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
-            total_steps = max(1, job.config.generation.steps)
-            job.push_event("progress", {"step": 1, "total": total_steps, "percent": round(100.0 / total_steps, 1)})
-
             backend_factory = resolve_backend_factory(demo_mode=job.demo_mode)
 
             qwen_runner.runner.uuid.uuid4 = lambda: _MockUUID()
             qwen_runner.runner.datetime = _MockDateTime
 
             if job.demo_mode:
-                records = qwen_runner.runner.run(job.config, backend_factory=backend_factory)
+                records = qwen_runner.runner.run(job.config, backend_factory=backend_factory,
+                                                 on_operation=on_operation)
             else:
                 with self.pipeline_manager.acquire(job.config, backend_factory) as lease:
                     records = qwen_runner.runner.run(
                         job.config,
                         backend_factory=lambda _config: _BorrowedBackend(lease.backend),
+                        on_operation=on_operation,
                     )
 
             job.records = records
+            complete_payload = self._build_complete_payload(job, records)
 
             if records:
-                primary = next((r for r in records if r.get("status") == "success"), records[0])
-                job.primary_run_id = primary.get("run_id", job.job_id)
+                job.primary_run_id = complete_payload["run_id"]
                 with self._lock:
                     for r in records:
                         rid = r.get("run_id")
@@ -797,18 +874,23 @@ class RunnerBridge:
                             self.run_id_map[rid] = job.job_id
                             self.run_id_map[job.job_id] = job.job_id
 
-            complete_payload = self._build_complete_payload(job, records)
             job.status = {
                 "success": "completed",
                 "partial_success": "partial_success",
                 "error": "error",
             }.get(complete_payload["status"], complete_payload["status"])
+            job.batch_stage = job.status
+            job.push_event("batch", job.batch_snapshot(include_items=True))
+            complete_payload["batch"] = job.batch_snapshot(include_items=True)
             job.push_event("complete", complete_payload)
 
         except BaseException as exc:
             job.status = "error"
-            err_record = self._inspect_or_build_error(job, exc)
+            err_record = ((job.records[-1].get("error") or {}) if job.records else {}) or self._inspect_or_build_error(job, exc)
             job.error = err_record
+            job.batch_stage = "error"
+            job.batch_current = None
+            job.push_event("batch", job.batch_snapshot(include_items=True))
 
             job.push_event("log", {
                 "text": f"Execution failed with {err_record['type']}: {err_record['message']}",
@@ -831,6 +913,7 @@ class RunnerBridge:
                 "outputs": [],
                 "comparison_url": None,
                 "error": err_record,
+                "batch": job.batch_snapshot(include_items=True),
             }
             job.push_event("complete", complete_payload)
 
@@ -856,11 +939,13 @@ class RunnerBridge:
     ) -> Dict[str, Any]:
         successful = [r for r in records if r.get("status") == "success"]
         failed = [r for r in records if r.get("status") in {"error", "interrupted"}]
-        primary = successful[0] if successful else (records[0] if records else {})
         explicit_batch = (
             job.config.generation.input_images is not None
             or job.config.generation.reference_images is not None
         )
+        requested = [record for record in records if not record.get("is_warmup")] if explicit_batch else records
+        primary = next((record for record in requested if record.get("status") == "success"),
+                       requested[0] if requested else (records[0] if records else {}))
         output_records = [r for r in successful if not r.get("is_warmup")]
         if not explicit_batch:
             output_records = [primary] if primary else []
@@ -885,7 +970,8 @@ class RunnerBridge:
             comp_filename = Path(primary["comparison"]).name
             comparison_url = f"/api/outputs/{comp_filename}"
 
-        status = "partial_success" if successful and failed else "success" if successful else "error"
+        visible_success = output_records if explicit_batch else successful
+        status = "partial_success" if visible_success and failed else "success" if visible_success else "error"
         comparisons = [
             {
                 "run_id": record.get("run_id"),
