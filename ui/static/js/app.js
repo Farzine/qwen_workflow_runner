@@ -835,6 +835,15 @@
       return await res.json();
     },
 
+    async deleteModel(modelId) {
+      const res = await fetch(`/api/models/catalog/${encodeURIComponent(modelId)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Model deletion failed" }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    },
+
     async listLoras() {
       const res = await fetch("/api/loras");
       if (!res.ok) throw new Error(`Failed to list LoRA adapters: HTTP ${res.status}`);
@@ -2109,6 +2118,7 @@
       this.infoPath = document.getElementById("info-model-path");
       this.infoType = document.getElementById("info-model-type");
       this.infoSize = document.getElementById("info-model-size");
+      this.filesList = document.getElementById("cached-model-files-list");
 
       this.hfDownloadBtn = document.getElementById("btn-download-hf-model");
       this.hfProgressWrap = document.getElementById("hf-download-progress-container");
@@ -2155,7 +2165,7 @@
       this.loadModels();
     },
 
-    async loadModels() {
+    async loadModels(autoSelect = true) {
       try {
         const data = await ApiClient.listModels();
         const models = data.models || [];
@@ -2167,9 +2177,10 @@
         }
 
         this.renderCachedSelect(models);
+        this.renderModelFiles(models);
         if (!models.some((model) => model.id === Store.state.models.selectedId && model.compatible)) {
-          const preferred = models.find((model) => model.compatible && model.type === "diffusers")
-            || models.find((model) => model.compatible);
+          const preferred = autoSelect ? (models.find((model) => model.compatible && model.type === "diffusers")
+            || models.find((model) => model.compatible)) : null;
           Store.state.models.selectedId = (preferred || {}).id || null;
         }
         if (this.cachedSelect) this.cachedSelect.value = Store.state.models.selectedId || "";
@@ -2207,6 +2218,35 @@
         opt.disabled = m.compatible === false;
         if (m.compatibility_reason) opt.title = m.compatibility_reason;
         this.cachedSelect.appendChild(opt);
+      }
+    },
+
+    renderModelFiles(models) {
+      if (!this.filesList) return;
+      this.filesList.innerHTML = "";
+      if (!models.length) {
+        this.filesList.textContent = "No stored models.";
+        return;
+      }
+      for (const item of models) {
+        this.filesList.appendChild(Utils.el("div", { class: "lora-file-row" },
+          Utils.el("span", { class: "lora-file-name", title: item.path },
+            `${item.name} · ${(item.type || "model").toUpperCase()}${item.size ? ` · ${Utils.formatBytes(item.size)}` : ""}`),
+          Utils.el("button", { class: "btn btn-ghost btn-xs", type: "button",
+            title: `Delete ${item.name}`, onclick: () => this.deleteFile(item) }, "Delete")
+        ));
+      }
+    },
+
+    async deleteFile(item) {
+      if (!window.confirm(`Delete model "${item.name}" from local storage? Any idle pipeline using it will be unloaded. This cannot be undone.`)) return;
+      try {
+        await ApiClient.deleteModel(item.id);
+        if (Store.state.models.selectedId === item.id) Store.state.models.selectedId = null;
+        await this.loadModels(false);
+        Toast.show(`Deleted model: ${item.name}`, "success");
+      } catch (error) {
+        Toast.show(`Model deletion failed: ${error.message}`, "error");
       }
     },
 

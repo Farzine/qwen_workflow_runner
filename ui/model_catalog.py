@@ -79,6 +79,8 @@ def discover_models(root: Path) -> list[dict]:
         for path in sorted(root.iterdir()):
             if path.name.startswith(".") or path.name in {"manifests", "hub", "loras"}:
                 continue
+            if path.is_symlink():
+                continue
             if path.is_file() and path.suffix.lower() in {".gguf", ".safetensors", ".bin"}:
                 kind = "gguf" if path.suffix.lower() == ".gguf" else path.suffix.lower()[1:]
                 candidates[path.resolve()] = {"name": path.name, "repo_id": None, "type": kind,

@@ -142,6 +142,9 @@ class PipelineManager:
                     "source": config.model.source,
                     "revision": config.model.revision,
                     "filename": config.model.filename,
+                    "base_model": config.model.base_model,
+                    "text_encoder_source": config.model.text_encoder_source,
+                    "selected_model_id": config.model.selected_model_id,
                 }
                 slot.state = "in_use"
                 cache_metadata = {

@@ -145,7 +145,7 @@ Extend the validated Qwen workflow into a production-quality management applicat
 
 ## Active Task
 
-Phase 9.4a is complete: stored LoRA adapters can be deleted through a confirmed browser action and a confined API. Queued/running use blocks deletion; an idle resident pipeline holding the adapter is unloaded first. Model and output/run deletion remain separate slices of Phase 9.4.
+Phase 9.4b is complete: direct and manifest-backed catalog models can be deleted through a confirmed browser action. Active downloads, queued/running inference, and active pipeline leases block deletion; idle resident pipelines are unloaded. Hub snapshot files and blobs are removed only when other selections/snapshots do not reference them. Output/run deletion is the next separate slice.
 
 ## Completed Tasks
 
@@ -212,6 +212,7 @@ Phase 9.4a is complete: stored LoRA adapters can be deleted through a confirmed 
 - [x] Added cooperative cancellation at Hub file boundaries, retry using a new task ID and existing cache, and JSON/SSE terminal-state reporting.
 - [x] Wired the browser model card to current-file, completed/remaining-file, byte, speed, ETA, indeterminate-progress, cancel, retry, success, and failure states.
 - [x] Added confirmed LoRA deletion with actual filesystem removal, invalid-file visibility, selected-state refresh, traversal/symlink rejection, active-job conflict, and idle-pipeline unload.
+- [x] Added confirmed catalog-model deletion with direct-storage removal, reference-aware Hub cleanup, active download/job/lease protection, idle-pipeline unload, and selected-state reset.
 
 ## Remaining Tasks
 
@@ -229,7 +230,7 @@ Phase 9.4a is complete: stored LoRA adapters can be deleted through a confirmed 
 - [x] Phase 9.2: make a stable, compatible downloaded-model catalog selection authoritative for inference; remove advanced-field authority and expose incompatibility reasons.
 - [x] Phase 9.3: add truthful byte/file-aware Hugging Face download progress, retry/cancel state, and responsive background behavior.
 - [x] Phase 9.4a: add safe LoRA deletion API and confirmed UI action with active-resource protection.
-- [ ] Phase 9.4b: add safe model deletion with manifest/blob sharing and active/download-resource protection.
+- [x] Phase 9.4b: add safe model deletion with manifest/blob sharing and active/download-resource protection.
 - [ ] Phase 9.4c: add output/run deletion with record-artifact consistency, active-job protection, and confirmed UI actions.
 - [ ] Phase 9.5: introduce a versioned common run metadata model and human-readable history/output details while preserving legacy record reads.
 - [ ] Phase 9.6: add aggregate batch operations, per-item stages, counts, timing, ETA, failures, and result inspection based on the reference workflow concepts.
@@ -343,7 +344,7 @@ Phase 9.4a is complete: stored LoRA adapters can be deleted through a confirmed 
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Phase 9.2 was committed as `2a74330` on `main`. During Phase 9.4a, the repository advanced to commit `28c1fea` (`feat(download): ...`), which contains Phase 9.3 and the initial LoRA deletion backend methods in `ui/server.py`/`ui/runner_bridge.py`. The remaining Phase 9.4a UI, tests, docs, and symlink-discovery fix are uncommitted. Check `git status` and preserve the working tree before continuing.
+- Phase 9.4a was committed as `56b4517` on `main`; Phase 9.4b started from a clean working tree. The current Phase 9.4b files are uncommitted. Check `git status` and preserve them before continuing.
 - Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -356,6 +357,9 @@ Phase 9.4a is complete: stored LoRA adapters can be deleted through a confirmed 
 - Cancellation is cooperative before/after each `hf_hub_download` call and before manifest publication. An active large file may finish first. If cancellation arrives after publication but before terminal-state recording, the job can be cancelled while a valid complete cache remains. Retry gets a new task ID and reuses that cache. Terminal state is resolved atomically by the download job lock.
 - Phase 9.4 storage audit: LoRAs are independent `.safetensors` files under the configured LoRA directory, but a queued/running job may reference one and an idle pipeline may retain a loaded adapter. Model snapshots are manifest-backed and may share Hub blobs across revisions, so model deletion needs reference-aware cleanup. Output images/comparisons are linked from JSON run records and may live in custom registered output directories; in-memory run history overlays disk records, so output/run deletion needs coordinated state removal.
 - Phase 9.4a LoRA deletion takes the `RunnerBridge` submission lock while checking queued/running jobs, unloading idle pipeline slots whose active adapter path matches, and unlinking the file. Catalog listing now skips symlinks and the DELETE endpoint refuses them and traversal paths. No production LoRA asset was deleted; deletion tests used temporary files only.
+- Phase 9.4b model deletion uses stable catalog IDs and distinguishes top-level local files/directories from completed Hub manifests. The latter may point to snapshot symlinks sharing a blob across revisions; deleting one selection removes its manifest and exclusive snapshot paths, then deletes an orphaned blob only after scanning all remaining snapshot symlinks in that repo. Malformed/unsafe manifests stop deletion. Direct catalog symlinks are no longer listed.
+- The model delete route takes the download registry lock, then the bridge submission lock. It rejects a matching active download or queued/running model/companion use, unloads idle resident slots, and removes storage before another web job can submit. Submission revalidates a selected catalog ID inside the bridge lock, closing the resolve-to-submit deletion race. An existing output traversal test revealed that a generic `/api/models/{id}` DELETE route caused a 405 instead of 404; `/api/models/catalog/{id}` avoids that route collision.
+- Phase 9.4b tests only deleted temporary model fixtures; the production 33 GB cache, uploads, and outputs were not touched. Model deletion safety covers this web server's jobs and downloads, not independent CLI processes using the same directory.
 
 ## Reference Implementations
 
@@ -508,7 +512,27 @@ Phase 9.4a additions to the cumulative files above:
 - `README.md`, `ui/README.md`, `PROJECT.md` — documented supported LoRA deletion and partial M6 status.
 - `CONTEXT.md` — recorded the storage audit, Phase 9.4a results, remaining model/output deletion, and exact next step.
 
+Phase 9.4b additions to the cumulative files above:
+
+- `ui/model_deletion.py` — validates catalog-backed storage, removes direct models or completed Hub manifests, prunes exclusive snapshot files, and garbage-collects only unreferenced blobs.
+- `ui/model_catalog.py` — excludes direct symlink entries from the deletable catalog.
+- `ui/runner_bridge.py`, `qwen_runner/resources.py` — protect queued/running model and companion use, unload idle slots, expose selected/companion identities in slot snapshots, and revalidate selected IDs at submission.
+- `ui/server.py` — provides `DELETE /api/models/catalog/{model_id}` with download conflict checks and actionable status responses.
+- `ui/templates/index.html`, `ui/static/js/app.js` — render a stored-model list with confirmed Delete controls, refresh catalog, clear a deleted selection, and display conflict errors.
+- `ui/tests/test_model_deletion.py`, `ui/tests/test_challenger_m2_node.js` — cover temp-file deletion, shared Hub blob preservation, active conflicts, stale/unsafe IDs, companion state, and browser confirmation/reset.
+- `README.md`, `ui/README.md`, `PROJECT.md` — document deletion semantics and the new API.
+- `CONTEXT.md` — records Phase 9.4b validation and Phase 9.4c continuation.
+
 ## Tests Performed
+
+Phase 9.4b validation:
+
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 432 passed, two known Starlette/AnyIO deprecation warnings. The first pass found a route collision; after moving model DELETE under `/api/models/catalog/{id}`, the final full rerun passed.
+- `node ui/tests/test_challenger_m2_node.js` — 38/38 passed, including confirmed model deletion and selected-state reset.
+- `node ui/tests/test_tier5_node_stress.js` — 15/15 passed.
+- `.venv/bin/python -m pytest -q tests` — 38 passed plus 8 subtests.
+- `.venv/bin/python -m compileall -q qwen_runner ui tests`, `node --check ui/static/js/app.js`, and `git diff --check` — passed.
+- Initial sandbox-only TestClient attempts stalled on both new model and existing LoRA deletion tests; the host-access suite completed normally. No real model/cache asset was deleted.
 
 Phase 9.4a validation:
 
@@ -643,7 +667,7 @@ Phase 9.1 validation:
 - The full-model selected-ID path was exercised on hardware; selected-ID GGUF loading and a complete browser-to-output run with an alternate model were not repeated in this slice. The catalog's structural check does not replace the loader's exact tensor/shape validation.
 - Download cancellation is cooperative at file boundaries. An active Hub file operation can finish before the job stops; the UI says so. Progress speed measures materialized file bytes, not exact network transfer bytes, because Xet may deduplicate or compress them. In-memory job history is lost on server restart; completed model manifests remain durable.
 - The progress adapter was exercised with a fake per-file Hub downloader and the actual offline 33.13 GB cached manifest. A fresh live Hub transfer was not run in this slice, so HTTP/Xet progress integration still merits a bounded online smoke test when network access is available.
-- LoRA deletion is complete for direct stored files. Model and generated output/run deletion still require backend cleanup and confirmed UI actions (Phase 9.4b–c). The LoRA deletion action is confined to the running web server's job/pipeline state; independent CLI processes are outside that lock.
+- LoRA and catalog-model deletion are complete for web-managed storage. Generated output/run deletion still requires record/artifact cleanup and confirmed UI actions (Phase 9.4c). Deletion locks cover this web server's jobs, downloads, and pipelines; independent CLI processes are outside those locks. Model deletion was validated with temporary direct and Hub fixtures, not by deleting production cache assets.
 - Current durable records are technically detailed schema-version-1 documents. They are not yet normalized into the common human-readable metadata schema requested for single and batch views. This is Phase 9.5.
 - The current SPA remains a three-panel workflow with configuration tabs and a history drawer. Dedicated Dashboard, Models, LoRAs, Batch, History, and Outputs pages remain Phase 9.6–9.7 work.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
@@ -660,12 +684,12 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 9.4b as the next independently testable slice:
+Implement Phase 9.4c as the next independently testable slice:
 
-1. Map direct uploaded-model files/directories and manifest-backed Hub snapshot/blob references. Determine which storage bytes can be safely removed when other manifests or revisions share blobs.
-2. Add model deletion by stable catalog ID with active/queued pipeline and in-progress download protection. Unload idle resident pipelines that reference the model or its companion; preserve shared Hub blobs.
-3. Add a confirmed browser action, catalog refresh, selected-model reset, and actionable conflict feedback.
-4. Test real temporary filesystem cleanup, shared-cache preservation, traversal/stale-ID rejection, and active-resource conflicts. Then update `CONTEXT.md`; Phase 9.4c output/run deletion remains next.
+1. Map disk run records, output/comparison artifacts, custom registered output directories, and the bridge's in-memory run/history indexes. Identify which artifacts are shared or referenced by more than one record.
+2. Add confined output/run deletion that refuses active jobs, removes a run record and its exclusively owned artifacts consistently, and updates in-memory history. Preserve unrelated files and prevent traversal/symlink deletion.
+3. Add confirmed browser actions in the history/output UI with refreshed lists, selection reset, and actionable errors.
+4. Test deletion against temporary outputs and records, active/queued conflicts, duplicate/shared artifacts, missing files, and browser state. Update this file with the resulting checkpoint; Phase 9.5 metadata/history redesign follows.
 
 ## Resume Instructions
 

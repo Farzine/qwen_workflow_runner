@@ -259,6 +259,14 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
 - **`POST /api/models/upload`**
   - Multipart chunked upload for `.gguf` and `.safetensors` files directly into `models/`.
   - Form fields: `file` (UploadFile), `upload_id` (str), `chunk_index` (int), `total_chunks` (int).
+- **`DELETE /api/models/catalog/{model_id}`**
+  - Deletes a discovered model by its stable catalog ID after browser confirmation.
+    Direct local files/directories are removed; completed Hub selection manifests
+    and their exclusively referenced snapshot files are removed. Shared Hub blobs
+    remain until no snapshot references them. Active downloads, queued/running
+    inference, and active pipeline leases return HTTP 409. An idle pipeline using
+    the model or a companion is unloaded first. The browser refreshes the catalog
+    and clears a deleted selection.
 
 ### 3. LoRA Catalog & Upload
 

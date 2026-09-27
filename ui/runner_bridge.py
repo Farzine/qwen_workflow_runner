@@ -33,6 +33,8 @@ import torch
 import qwen_runner.runner
 from qwen_runner.config import Config
 from qwen_runner.resources import PipelineManager
+from ui.model_catalog import resolve_selected_model
+from ui.model_deletion import delete_model_entry
 
 
 logger = logging.getLogger("ui.runner_bridge")
@@ -648,6 +650,38 @@ class RunnerBridge:
 
             path.unlink()
 
+    def delete_model(self, root: Path, entry: dict) -> dict:
+        """Exclude new web jobs while checking use, unloading, and removing storage."""
+        target = Path(entry["path"]).resolve()
+
+        def uses_model(model: Any) -> bool:
+            if not model:
+                return False
+            if model.get("selected_model_id") == entry["id"]:
+                return True
+            sources = (model.get("source"), model.get("base_model"), model.get("text_encoder_source"))
+            for source in sources:
+                if not source:
+                    continue
+                if entry.get("repo_id") and source == entry["repo_id"]:
+                    return True
+                path = Path(str(source)).expanduser()
+                if path.exists() and (path.resolve() == target or target.is_relative_to(path.resolve())
+                                      or path.resolve().is_relative_to(target)):
+                    return True
+            return False
+
+        with self._lock:
+            for job in self.jobs.values():
+                if job.status in {"queued", "running"} and uses_model(vars(job.config.model)):
+                    raise RuntimeError("Model is used by an active or queued inference job")
+            for slot in self.pipeline_manager.snapshot()["slots"]:
+                if uses_model(slot.get("model")):
+                    if slot["active_leases"]:
+                        raise RuntimeError("Model is used by an active inference pipeline")
+                    self.pipeline_manager.unload_device(slot["device"])
+            return delete_model_entry(root, entry["id"])
+
     def submit_run(
         self,
         config: Config,
@@ -683,6 +717,8 @@ class RunnerBridge:
         with self._lock:
             if not self._accepting_jobs:
                 raise RuntimeError("The runner is shutting down and is not accepting new jobs")
+            if config.model.selected_model_id:
+                resolve_selected_model(Path(config.model.cache_dir), config.model.selected_model_id)
             self.jobs[predicted_run_id] = job
             self.run_id_map[predicted_run_id] = predicted_run_id
             if config.runtime.output_dir:

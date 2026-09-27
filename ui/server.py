@@ -543,6 +543,31 @@ async def list_models():
     return {"models": discover_models(get_models_dir())}
 
 
+@app.delete("/api/models/catalog/{model_id}")
+async def delete_model(model_id: str):
+    """Delete a catalog selection only when no download or inference uses it."""
+    if not re.fullmatch(r"model_[0-9a-f]{20}", model_id):
+        raise HTTPException(status_code=400, detail="Select a model ID from the catalog")
+    root = get_models_dir()
+    with download_tasks_lock:
+        entry = next((item for item in discover_models(root) if item["id"] == model_id), None)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="Model is no longer in the catalog; refresh the list")
+        if entry.get("repo_id") and any(
+            job.data["repo_id"] == entry["repo_id"] and job.snapshot()["status"] not in TERMINAL_STATES
+            for job in download_tasks.values()
+        ):
+            raise HTTPException(status_code=409, detail="Model repository has an active download; wait or cancel it first")
+        try:
+            deleted = get_runner_bridge().delete_model(root, entry)
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except (RuntimeError, OSError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+    logger.info("Deleted model catalog entry %s (%s)", model_id, deleted["path"])
+    return {"deleted": True, "model_id": model_id}
+
+
 def apply_selected_model(config: Config, payload: Dict[str, Any]) -> None:
     """Resolve a web catalog selection after parsing untrusted request fields."""
     model_id = payload.get("selected_model_id")
@@ -1218,7 +1243,10 @@ async def start_run(payload: Dict[str, Any]):
     if not payload.get("runtime", {}).get("output_dir"):
         config.runtime.output_dir = str(get_outputs_dir())
 
-    job = bridge.submit_run(config=config, demo_mode=demo_mode)
+    try:
+        job = bridge.submit_run(config=config, demo_mode=demo_mode)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     # Non-blocking yield for event loop
     try:
         await asyncio.sleep(0.01)

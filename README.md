@@ -216,6 +216,12 @@ transformer also needs exactly one compatible local companion pipeline. The
 CLI and existing direct-source API requests remain supported when no catalog
 ID is supplied.
 
+The Models page can delete a catalog entry after confirmation. Deletion
+removes a direct local model or a completed Hub selection and its exclusive
+snapshot files; Hub blobs still referenced by another snapshot are preserved.
+Active downloads and inference jobs block deletion, while an idle pipeline
+using the model is unloaded before removal.
+
 The web server keeps one compatible production pipeline resident per selected
 device. A later request on the same device reuses it when the model, companion
 components, precision, offload mode, and VAE mode match. Prompt, sampling,

@@ -89,6 +89,8 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 - `POST /api/models/upload`:
   - Form multipart upload: file (`.gguf` or `.safetensors`). Saves directly to `models/`.
   - Returns: `{"success": true, "filename": "...", "path": "..."}`
+- `DELETE /api/models/catalog/{model_id}`:
+  - Removes a catalog model after active download/inference checks; unloads an idle resident pipeline and preserves Hub cache files still referenced by other selections or snapshots.
 - `GET /api/loras`:
   - Returns valid and invalid `.safetensors` adapters discovered in the configured LoRA directory.
 - `POST /api/loras/upload`:

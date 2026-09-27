@@ -1056,6 +1056,35 @@ runTest("Catalog model selection uses stable IDs and excludes incompatible entri
   ApiClient.listModels = originalList;
 });
 
+runTest("Model deletion confirms, removes the catalog entry, and clears selection", async () => {
+  const item = { id: "model_old", name: "Old model", path: "/models/old", type: "gguf", compatible: false };
+  const originalDelete = ApiClient.deleteModel;
+  const originalList = ApiClient.listModels;
+  const originalConfirm = mockWindow.confirm;
+  let deleted = null;
+  ApiClient.deleteModel = async (id) => { deleted = id; return { deleted: true }; };
+  ApiClient.listModels = async () => ({ models: [
+    { id: "model_remaining", name: "Remaining model", path: "/models/remaining", type: "diffusers", compatible: true },
+  ] });
+  ModelManager.filesList = domRegistry.get("cached-model-files-list");
+  Store.state.models.cached = [item];
+  Store.state.models.selectedId = item.id;
+  ModelManager.renderModelFiles([item]);
+  assert.strictEqual(ModelManager.filesList.children[0].children[1].textContent, "Delete");
+  mockWindow.confirm = () => false;
+  await ModelManager.deleteFile(item);
+  assert.strictEqual(deleted, null);
+  mockWindow.confirm = () => true;
+  await ModelManager.deleteFile(item);
+  assert.strictEqual(deleted, item.id);
+  assert.strictEqual(Store.state.models.selectedId, null);
+  assert.strictEqual(ModelManager.filesList.children.length, 1);
+  assert(ModelManager.filesList.children[0].children[0].textContent.includes("Remaining model"));
+  ApiClient.deleteModel = originalDelete;
+  ApiClient.listModels = originalList;
+  mockWindow.confirm = originalConfirm;
+});
+
 runTest("Model download renders measured progress and truthful unknown totals", () => {
   ModelManager.hfProgressWrap = domRegistry.get("hf-download-progress-container");
   ModelManager.hfProgressTrack = domRegistry.get("hf-download-progress-track");
