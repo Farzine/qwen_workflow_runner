@@ -12,6 +12,8 @@
  * Add --navigation-only for a model-free route/layout/status-recovery check.
  * Use --output-dir=/tmp/... to isolate generated records and images.
  * Use --model-id=model_... to validate a specific compatible catalog entry.
+ * Use --lora-path=/absolute/adapter.safetensors and --lora-scale=1 for adapters.
+ * Use --prompt-file=/path/to/prompt.txt for a model-specific prompt.
  */
 
 const fs = require("node:fs");
@@ -24,6 +26,11 @@ const navigationOnly = process.argv.includes("--navigation-only");
 const device = process.argv.find((arg) => arg.startsWith("--device="))?.slice(9) || "cuda:0";
 const outputDir = process.argv.find((arg) => arg.startsWith("--output-dir="))?.slice(13);
 const modelId = process.argv.find((arg) => arg.startsWith("--model-id="))?.slice(11);
+const loraPath = process.argv.find((arg) => arg.startsWith("--lora-path="))?.slice(12) || "";
+const loraScale = Number(process.argv.find((arg) => arg.startsWith("--lora-scale="))?.slice(13) || "1");
+const promptFile = process.argv.find((arg) => arg.startsWith("--prompt-file="))?.slice(14);
+const prompt = promptFile ? fs.readFileSync(promptFile, "utf8").trim()
+  : "Transform <image1> into a detailed watercolor portrait. Use the soft blue and gold color palette from <image2>. Preserve the subject's pose and identity.";
 const prefix = `browser_validation_${Date.now()}`;
 
 function delay(ms) {
@@ -177,6 +184,8 @@ async function collectEvidence(client, filenamePrefix = null) {
       selectedInputs:document.getElementById('selected-count-badge').textContent.trim(),
       selectedReferences:document.getElementById('reference-count-badge').textContent.trim(),
       selectedModelId:document.getElementById('select-cached-model').value,
+      selectedLoraPath:document.getElementById('param-model-lora-path').value,
+      loraScale:Number(document.getElementById('param-model-lora-scale').value),
       device:document.getElementById('param-device').value,
       outputCount:filenames.size,outputImagesLoaded:true,
       primaryOutput:document.getElementById('output-primary-image').src,
@@ -192,6 +201,10 @@ async function collectEvidence(client, filenamePrefix = null) {
     assert.equal(record.backend?.pipeline, "WorkflowQwenImage21Pipeline", "Synthetic output is not production evidence");
     assert.equal(record.parameters.model.selected_model_id, evidence.selectedModelId);
     if (modelId) assert.equal(record.parameters.model.selected_model_id, modelId, "Requested model was not used");
+    assert.equal(record.parameters.model.lora_path || "", evidence.selectedLoraPath);
+    assert.equal(record.backend.lora.applied, Boolean(evidence.selectedLoraPath));
+    if (loraPath) assert.equal(record.backend.lora.path, loraPath, "Requested LoRA was not used");
+    assert.equal(record.backend.lora.scale, evidence.loraScale);
     assert.equal(record.parameters.runtime.device, evidence.device);
     assert.equal(record.backend.device, evidence.device);
     assert(record.outputs?.length > 0, "Record has no outputs");
@@ -307,7 +320,7 @@ async function main() {
         element.dispatchEvent(new Event("change", { bubbles: true }));
       };
 
-      setValue("param-prompt", "Transform <image1> into a detailed watercolor portrait. Use the soft blue and gold color palette from <image2>. Preserve the subject's pose and identity.");
+      setValue("param-prompt", ${JSON.stringify(prompt)});
       document.getElementById("tab-btn-generation").click();
       setValue("param-steps", 4);
       setValue("param-resolution", 512, "change");
@@ -327,7 +340,11 @@ async function main() {
 
       document.getElementById("tab-btn-model").click();
       setChecked("param-model-offline", true);
-      setValue("param-model-lora-path", "", "change");
+      const loraSelect = document.getElementById("param-model-lora-path");
+      if (![...loraSelect.options].some(option => option.value === ${JSON.stringify(loraPath)} && !option.disabled))
+        throw new Error("Requested LoRA is missing or invalid");
+      setValue("param-model-lora-path", ${JSON.stringify(loraPath)}, "change");
+      setValue("param-model-lora-scale", ${JSON.stringify(loraScale)});
       document.getElementById("tab-btn-prompt").click();
       return {
         prompt: document.getElementById("param-prompt").value,

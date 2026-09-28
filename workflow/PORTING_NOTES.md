@@ -69,6 +69,15 @@ cast to model precision during Euler accumulation.
    process inputs and up to nine shared references; each model call contains
    the current process input plus those references, for at most ten conditioning
    images. The legacy combined field supports one to ten ordered images.
+7. **LoRA layout:** AI-Toolkit's Qwen Image 2.1 adapter uses a fused
+   `img_mlp.gate_up` projection with gate rows followed by up rows. Diffusers uses
+   `gate_layer` and `proj`. After upstream key/alpha normalization, this runner
+   shares each LoRA A matrix and splits B on its output rows, preserving both
+   updates. Missing/malformed pairs and simultaneous fused/split targets fail.
+   This follows the [AI-Toolkit transformer layout](https://github.com/ostris/ai-toolkit/blob/main/extensions_built_in/diffusion_models/qwen_image_2/src/transformer.py).
+   Phase 9.8c3 tested this with the user's actual pretrained adapter and a tiny
+   numerical regression. It does not establish compatibility for unrelated
+   architectures, DoRA, or adapters on quantized transformers.
 
 These bounds are recorded or explained so a successful load is not mistaken
 for a demonstrated pixel-for-pixel reproduction. `original.json` remains the

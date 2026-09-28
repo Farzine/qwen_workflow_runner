@@ -413,7 +413,7 @@ node ui/tests/test_challenger_m2_node.js
 node ui/tests/test_tier5_node_stress.js
 ```
 
-The current regression result is 42 core tests plus 8 parameterized subtests,
+The current regression result is 43 core tests plus 13 parameterized subtests,
 438 UI/API/E2E tests, and 49/49 plus 15/15 Node cases. The model-free browser
 checker covers all eight routes at 1440, 900, and 390px, selection preservation,
 and Dashboard failure/retry:
@@ -430,6 +430,13 @@ use `--output-dir=/tmp/qwen-browser-check/outputs` to isolate generated artifact
 missing records or synthetic backends fail validation. Two current full-model
 browser batches verified one model load, compatible reuse, and graceful shutdown.
 Hardware evidence and outstanding hardware/online checks are in `../VALIDATION_MATRIX.md`.
+`--model-id=model_...` applies a specific compatible catalog entry. Optional
+`--lora-path=/absolute/adapter.safetensors`, `--lora-scale=1`, and
+`--prompt-file=/path/to/prompt.txt` select and verify an adapter-specific batch.
+Phase 9.8c3 validated the full pretrained model with an existing and browser-uploaded
+user adapter, confirmed its output effect, and restored the control hashes after
+removal through the same resident pipeline. AI-Toolkit fused Qwen 2.1 MLP adapters
+are converted to the installed Diffusers projection layout during real loading.
 
 ---
 

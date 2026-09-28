@@ -151,8 +151,7 @@ Extend the validated Qwen workflow into a production-quality management applicat
 
 ## Active Task
 
-Phase 9.8c2 is complete: two real offline browser batches selected cached GGUF ID `model_5f31ccf7dbc4c402207d`, passed exact tensor loading, produced four transformed outputs, and verified companion/device metadata, saved/served hashes, pipeline replacement/reuse, Dashboard/System state, and explicit shutdown. The existing browser validator now accepts `--model-id`, clicks the existing Use button, and rejects mismatched records. No production loader/UI change was needed. All nine prior uncommitted paths remain at HEAD `dc43f4d`. Evidence: `/tmp/qwen-gguf-validation-9znq346l`; validation server/Chrome were stopped. Phase 9.8c1 HTTP/Xet evidence remains valid. Next is Phase 9.8c3: full pretrained user-LoRA validation; `models/loras/` is empty, so a compatible adapter path and expected effect were requested. Stop at this clean asset-dependent checkpoint; the overall project remains unfinished.
-
+Phase 9.8c3 is complete. The user supplied `models/loras/`, containing `bfs_head_v1.1_qwen_2.1.safetensors` (260,096,144 bytes; SHA-256 `d1d748d5601077f3b6d05766f6823510e901970d916afa404a97e85dc92fa88e`). Fixed a real AI-Toolkit fused-MLP LoRA format gap in the shared pipeline; numerical, alpha-scaling, malformed-pair, old-adapter, and full regression checks passed. Four real browser batches (eight outputs) validated fixed-seed controls, existing adapter, native browser-uploaded copy, and removal: uploaded/selected copies produced identical hashes, removal restored exact control hashes, and all four jobs reused one full-model load on `cuda:0`. Header-derived head-swap prompt supplied the intended effect without further user input. Original file untouched; evidence/storage isolated under `/tmp/qwen-lora-validation-hyd258je`. Server/Chrome stopped and shutdown/context release verified. HEAD remains `fae667e`; nine current modified paths include the preserved context reconciliation and this slice. Next: Phase 9.8d final stabilization/documentation review; no asset blocker remains for the supplied adapter. Overall improvement work is not yet declared finished.
 ## Completed Tasks
 
 - [x] Inspected Git state, tracked source, documentation, workflow artifacts, entry points, tests, runtime directories, and recent history.
@@ -232,6 +231,7 @@ Phase 9.8c2 is complete: two real offline browser batches selected cached GGUF I
 - [x] Added the responsive Dashboard using shared runtime/catalog/monitor/history state; verified loading/empty/error/recovery, native recent-run access, live success/failure batches, unknown download totals, and three viewport widths without adding polling.
 - [x] Completed Phase 9.8c1 live HTTP/Xet transfer, source hashes, cancel/retry, manifest reuse, SSE/catalog, and actual desktop/phone Models-page verification.
 - [x] Completed Phase 9.8c2 selected-ID cached GGUF browser inference, strict tensors, four outputs, full-to-GGUF replacement, compatible reuse, artifacts, resources, and shutdown.
+- [x] Completed Phase 9.8c3 fused Qwen 2.1 LoRA loading fix and eight full-model browser outputs, native upload, exact hashes/effect/removal, one-load reuse, regressions, and shutdown.
 - [x] Completed Phase 9.8b real UI selected-model inference, four saved/served outputs, compatible cache reuse, resident-resource pages, explicit shutdown, and interrupted-offload recovery regression.
 - [x] Completed Phase 9.8a integrated eight-route/three-width checks, active synthetic batch navigation, Dashboard retry, production-checker missing/demo evidence guards, and current documentation reconciliation.
 - [x] Made output-strip selection keyboard accessible, cleared deleted artifacts by owning run, invalidated pending selection after deletion, and corrected an asynchronous durable-record regression test.
@@ -268,7 +268,8 @@ Phase 9.8c2 is complete: two real offline browser batches selected cached GGUF I
 - [x] Phase 9.8b: repeat selected full-model production UI, compatible cache reuse, resident-resource display, saved artifacts, and shutdown cleanup after final navigation changes.
 - [x] Phase 9.8c1: bounded fresh online Hub download/progress/cache-discovery smoke test using isolated storage.
 - [x] Phase 9.8c2: selected-ID GGUF/alternate compatible model hardware validation where assets/resources permit.
-- [ ] Phase 9.8c3: full pretrained LoRA validation when a compatible adapter is available; document unavailable assets explicitly.
+- [x] Phase 9.8c3: full pretrained LoRA validation using the supplied compatible adapter; former asset blocker resolved.
+- [ ] Phase 9.8d: final stabilization/diff/documentation review, reconcile completion state and explicit supported-scope limitations.
 
 ## Current Problems
 
@@ -301,7 +302,7 @@ Phase 9.8c2 is complete: two real offline browser batches selected cached GGUF I
 
 - One local Qwen Image adapter is now supported. The UI discovers `.safetensors` files from `models/loras/` (or `LORAS_DIR`/`--loras-dir`), preserves invalid discoveries with diagnostics, validates uploads, and submits the selected absolute path plus a 0–2 strength.
 - `QwenBackend` loads the adapter locally under the fixed name `qwen_workflow_lora`, calls `set_adapters` with the requested strength, verifies it is active, keeps it unfused, and records its path, filename, hash, scale, active/available adapter state, and application status. Demo mode explicitly records that a selected adapter was not applied.
-- PEFT 0.21.0 is now an explicit runtime dependency. A real tiny Qwen transformer test proves that enabling the saved adapter changes transformer-layer output and that clearing the selection unloads it. Full pretrained inference with a user-supplied production LoRA remains part of the final validation matrix because no compatible LoRA asset is bundled.
+- PEFT 0.21.0 is now an explicit runtime dependency. A real tiny Qwen transformer test proves that enabling the saved adapter changes transformer-layer output and that clearing the selection unloads it. Phase 9.8c3 now proves full pretrained inference with the user-supplied AI-Toolkit adapter, including existing/uploaded copies, measured effect, and exact control restoration after removal.
 - The static device list has been replaced. Only devices reported by the runtime are offered, while a configured unavailable device remains visible with a blocked diagnostic. The page shows both A6000s independently and the selected choice is used by `QwenBackend` through `torch.cuda.set_device` and exact pipeline/offload placement.
 - The web runner now retains one compatible production backend per normalized device (`cuda` aliases `cuda:0`). A device lease spans the complete job, so a model or LoRA cannot be replaced during an active batch. The existing executor remains single-worker, while per-device locking keeps the cache safe if scheduling expands later.
 - Pipeline compatibility includes backend type, model source/revision/file/quantization, companion and text-encoder sources, cache directory, device, dtype, offload, and VAE tiling. Generation/image parameters and LoRA selection are deliberately excluded so compatible weights can be reused.
@@ -338,6 +339,7 @@ Phase 9.8c2 is complete: two real offline browser batches selected cached GGUF I
 - The latest source/output diagnostic measured whole-image MAE 27.7122, RMSE 46.6755, and correlation 0.834826. Excluding the demo header/footer regions, source/output correlation rises to 0.991248 with MAE 17.7808. This matches the backend's 85% source-image blend and proves that the apparent non-transformation occurs before production inference.
 - Before Phase 2.1, calling `resolve_backend_factory(False)` returned `DemoBackend` in this environment. It now returns `QwenBackend` and raises the documented CUDA compatibility setup error during `load()`.
 - The production backend's generation path does not directly return an input image. It starts from seeded noise and passes all references only as conditioning, consistent with the original graph.
+- Phase 9.8c3 found a separate real-adapter compatibility gap: AI-Toolkit stores fused `img_mlp.gate_up` updates, while the installed transformer exposes `gate_layer` and `proj`. Shared loading now splits B rows with the same A, preserving alpha scaling. Eight controlled full-model outputs prove adapter effect, equivalent uploaded/selected copies, exact control restoration after removal, and compatible pipeline reuse.
 
 ### Model and workflow findings
 
@@ -378,6 +380,7 @@ Phase 9.8c2 is complete: two real offline browser batches selected cached GGUF I
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
 - Phase 9.4a, 9.4b, 9.4c, 9.5, 9.6, and 9.7a were committed as `56b4517`, `cf1a010`, `d6d5682`, `ca02524`, `ad1a33d`, and `ef231d6` on `main`. Phase 9.7b1–b4 were committed together as `dc43f4d` before Phase 9.8a resumed, with a clean working tree. Earlier file-history sections retain their original checkpoint descriptions.
+- Resume after Phase 9.8c2: commit `fae667e` contains all nine formerly uncommitted Phase 9.8a/b/c1/c2 paths, including the backend cleanup fix and both validation drivers. Source changes match the recorded work. The working tree was clean before that context-only reconciliation; the adapter directory was empty at that earlier checkpoint. Phase 9.8c3 resolved the asset requirement with the user-supplied adapter.
 - Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -437,6 +440,10 @@ All planned Phase 9.7 destinations are wired through existing functional state a
 
 ## Reference Implementations
 
+### AI-Toolkit Qwen Image 2.1 fused adapter layout
+
+The [AI-Toolkit transformer](https://github.com/ostris/ai-toolkit/blob/main/extensions_built_in/diffusion_models/qwen_image_2/src/transformer.py) explicitly uses an output-row-concatenated `[gate; up]` `img_mlp.gate_up` projection. Installed Diffusers' `QwenImage21SwiGLUFeedForward` uses separate `gate_layer` and `proj`. Phase 9.8c3 adapts only the normalized LoRA update: share A, split B rows, preserving rank/alpha normalization and metadata return contract. The original checkpoint and full-model weights are not rewritten. The tiny numerical regression verifies the fused/split forward result, and the user's real pretrained adapter proves loading and output effect.
+
 ### `/mnt/lab/farzine/projects/Nunchaku-Generic-Form/klein_generic_infer.py`
 
 This 528-line script is a client for a remote Flux.2 Klein inference service; it is not a local Qwen Image 2.1 implementation.
@@ -465,6 +472,21 @@ Useful concepts to adapt are the separation of base input from optional referenc
 | Result | Downloads service output | Saves backend PIL output | Current persistence can remain after backend selection is fixed. |
 
 ## Files Modified
+
+Phase 9.8c3 current changes (nine modified paths at HEAD `fae667e`):
+
+- `qwen_runner/pipeline.py` — shared classmethod retains Diffusers key/alpha normalization and metadata return contract, then splits fused gate/up LoRA B rows with shared A; rejects malformed pairs and colliding fused/split targets. All CLI/web backend loading routes use it.
+- `tests/test_runtime.py` — real tiny split-MLP forward math, down/up alpha scaling, metadata return contract, and five malformed/collision cases; existing adapter lifecycle remains covered.
+- `scripts/validate_browser_production.js` — optional adapter path/scale and prompt-file controls plus requested/selected/effective LoRA identity/strength assertions; standard no-adapter workflow retained.
+- `README.md`, `ui/README.md` — supported adapter layout, current counts, live user-adapter scope, and diagnostic flags.
+- `VALIDATION_MATRIX.md` — actual asset/root cause, eight outputs, control/upload/removal hashes/effect, resources, responsive upload, full regression, and shutdown; replaces obsolete missing-asset limitation.
+- `workflow/PORTING_NOTES.md` — fused layout adaptation, upstream primary-source reference, and explicit support bounds.
+- `PROJECT.md` — supported M6 hardware/online verification complete; M8 still awaits final stabilization review.
+- `CONTEXT.md` — preserves earlier Git reconciliation and records this completed task, findings, tests, exact next action, and no pending user input.
+
+Earlier asset-wait resume checkpoint (2026-09-28; superseded by Phase 9.8c3):
+
+- `CONTEXT.md` only — reconciles committed HEAD `fae667e`, the clean initial working tree, empty configured adapter directory, and the unchanged Phase 9.8c3 asset requirement. The historical uncommitted-file entries below describe their original checkpoints; those nine paths are now committed. No production code, tests, runtime assets, or outputs changed.
 
 Phase 9.8c2 additions (same nine uncommitted paths; all prior work preserved):
 
@@ -700,6 +722,25 @@ Phase 9.7b4 additions to the cumulative files above (uncommitted alongside 9.7b1
 - `ui/README.md`, `CONTEXT.md` — Dashboard usage, snapshot/monitor scope, verification, remaining limitations, and Phase 9.8 handoff.
 
 ## Tests Performed
+
+Phase 9.8c3 validation (2026-09-28):
+
+- User supplied the configured directory after the empty-directory checkpoint; discovered one real adapter, inspected its SafeTensors header (352 tensors, AI-Toolkit 0.13.21, base `qwen_image_2`, trained step 5000/epoch 8) and SHA-256. Header `ss_tag_frequency` contains the head-swap prompt used for all controlled runs. No additional effect clarification needed.
+- Pre-fix upstream `WorkflowQwenImage21Pipeline.lora_state_dict` produced an absent `img_mlp.gate_up` target; empty full-model inspection raised `AttributeError: QwenImage21SwiGLUFeedForward has no attribute gate_up`. Primary AI-Toolkit source confirms gate-then-up output-row order. Shared conversion fixed 16 fused pairs; 352 raw tensors became 384 tensors, every target/input/output shape matching the cached full transformer.
+- Core `.venv/bin/python -m pytest -q tests` — 43 passed plus 13 subtests. Host `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 438 passed in 25.49 seconds, two known Starlette/AnyIO warnings. Node harnesses 49/49 and 15/15; compile, pip dependency, JS syntax, and diff checks passed. After adding final down/up-alpha math assertions to the same numerical test, focused test passed again (1 test, five subtests).
+- Live preflight: GPU 0 34,488 MiB free, GPU 1 31,237 MiB free; host RAM about 100 GiB available. Explicit GPU 0 chosen, other processes preserved. Offline server 7895/debugger 9238 with temporary bridge/output/LoRA directories under `/tmp/qwen-lora-validation-hyd258je`; original adapter copied to temporary catalog, actual upload stored there too. Server and Chrome had 900-second external limits; each browser batch had a 240-second command limit.
+- Full selected ID `model_4ff66ef0ec9f18e2d3e2`, revision `790c92633540aa0cb11d9abf19eb46d861714758`, `cuda:0`, BF16/model offload, ordered `img_1.jpeg` and `img_10.jpg`, shared `img_11.jpg`, four steps, CFG/strength 1, resolution 512, 256×256 output, seed `1070478148268574`, same header-derived prompt.
+- Baseline `20260928T095655_a10f4ae333_run_000/_001`: 27.9771/27.1660 seconds, load 1/reuse 0. Existing adapter scale 1 `20260928T100137_a67e9b1f27_run_000/_001`: 30.4818/26.3328 seconds, load 1/reuse 1. Uploaded adapter scale 1 `20260928T100446_6b0b1d5af5_run_000/_001`: 28.2907/28.1168 seconds, load 1/reuse 2. Cleared adapter `20260928T100632_85f21a2bc4_run_000/_001`: 26.5248/27.1177 seconds, load 1/reuse 3. Same resident loaded timestamp across all jobs.
+- All eight disk JSON records equal API detail; saved PNG hashes and served output/comparison bytes match, model/device/conditioning/parameters match. Existing/uploaded runs record active `qwen_workflow_lora`, scale 1, source SHA-256, and `fused: false` (adapter updates remain unfused, distinct from projection format). Uploaded outputs exactly match existing-adapter hashes; removal exactly restores both baseline hashes. LoRA/control MAE 42.1049/40.7762, RMSE 59.5120/66.8530, changed pixels above 10 at 94.5847%/83.6044%. Browser Completed/100%, loaded results/comparisons/history; Batch screenshot visibly confirms head change. Small four-step/256px quality bounds documented, not exact identity preservation claimed.
+- Native Chrome file-input upload of the original produced `bfs_head_v1.1_qwen_2.1_9a94a61b5e.safetensors`, matching 260,096,144 bytes and SHA-256, valid header, immediate catalog refresh and selection. Actual request/receipt retained in `upload.json`. Desktop 1440px and phone 390px passed no-horizontal-overflow checks; phone upload screenshot visually inspected. Dashboard/System snapshots verify each actual resident adapter transition, one base load, counters, and zero idle leases.
+- Peak GPU PyTorch allocation 18,819,107,328 bytes; sampled process RSS 35,158,933,504 bytes. SIGINT server PID 1975034 completed FastAPI shutdown and emptied slot with accepting_jobs false/no leases/errors; still-alive wrapper had 9,568,256 allocated / 29,360,128 reserved bytes, then exited. Chrome PID 1975299 exited; both absent from host GPU/process listing. Original source adapter hash rechecked unchanged. No model download or user asset deletion/modification.
+- Evidence root contains `preflight.json`, `prompt.txt`, `baseline/existing/uploaded/cleared-browser.json`, corresponding resource JSON/screenshots, `upload.json`, `upload-1440/390.png`, `artifacts.json`, and `shutdown.json`. Temporary helpers `/tmp/qwen_lora_server.py`, `/tmp/qwen_lora_inspect.js`, `/tmp/qwen_lora_upload.js`, `/tmp/qwen_lora_artifacts.py` reused earlier drivers; no validation process remains running.
+
+Earlier asset-wait resume checkpoint (2026-09-28; superseded by Phase 9.8c3):
+
+- Read `CONTEXT.md` completely; checked Git status/recent commits and inspected the latest backend/test commit delta. `fae667e` commits the recorded nine paths; initial Git status was clean. No `AGENTS.md` was discovered in the checkout.
+- Checked `models/loras/` and the current `LORAS_DIR` resolution without changing storage: configured directory exists and has zero entries. No adapter path/effect has been supplied. Phase 9.8c3 cannot run yet; no model/GPU work or previous validation was repeated.
+- Browser validator JavaScript syntax and `git diff --check` passed. This session changes persistent context only; no inference/test-suite execution is claimed.
 
 Phase 9.8c2 validation (2026-09-28):
 
@@ -978,7 +1019,7 @@ Phase 9.1 validation:
 - Outputs uses the full existing history payload without pagination; native lazy loading bounds image requests, but very large record libraries can still slow API/DOM rendering. A `ponytail:` comment records the pagination upgrade point. It lists recorded generated images; comparison artifacts are inspected in the comparison viewer rather than treated as independent gallery outputs. Deletion remains whole-run only.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
 - Multi-reference transport and conditioning effects are proven, but adherence was weak in the tested hairstyle-transfer example. Prompt/reference quality remains model- and asset-dependent rather than a transport defect.
-- LoRA application is proven with a real tiny Qwen Image 2.1 transformer, including output effect, strength, hash metadata, unload, replacement, and incompatible-target handling. No compatible user adapter exists in `models/loras/`, so the full 33 GB checkpoint was not run with a production LoRA during Phase 8. A valid SafeTensors header cannot prove model/training compatibility.
+- LoRA application is proven on both a tiny transformer and the full pretrained model with the supplied AI-Toolkit adapter. Its fused gate/up format is now supported and eight browser outputs prove application/effect/upload/removal/reuse. This covers that file and the tested prompt/settings; quantized-transformer adapters, unrelated architectures, exact head identity/background preservation, and broad production portrait-quality benchmarking remain unproven. Header validation still cannot replace real target/load validation.
 - The System page reports memory at probe time; values can change immediately when other processes allocate VRAM. Applying configuration affects the next submitted job because the single-worker runner does not mutate an active pipeline.
 - `resolution=0` intentionally preserves native reference sizes. Very large references can consume nearly all GPU memory, take several minutes, and produce unusable output when the output canvas is much smaller. Phase 7 now warns inline and in accessible help, but the default remains native size for workflow compatibility.
 - Starlette 1.6 warns that its HTTPX fallback is deprecated. Installing `httpx2` 2.13.1 made TestClient unusable in this environment, so it was removed; current tests pass with HTTPX 0.28.1 when host IPC/loopback is available.
@@ -986,12 +1027,10 @@ Phase 9.1 validation:
 
 ## User Decisions / Required Input
 
-Phase 9.8c3 requires an asset: `models/loras/` is empty. Asked the user for a local Qwen Image 2.1-compatible SafeTensors LoRA path and its expected prompt/visual effect. No answer received at this checkpoint. Tiny-model adapter tests already prove generic application/scale/unload; a fabricated adapter or unrelated model's LoRA would not establish pretrained compatibility/quality. Do not download an arbitrary/full model or claim this validation complete without the asset.
-
+None. The user supplied `/mnt/lab/farzine/qwen_workflow_runner/models/loras`; its single adapter was found and tested. Expected head-swap behavior and prompt were inferred directly from the adapter's own metadata. The previous empty-directory/asset request is resolved.
 ## Next Action
 
-Resume Phase 9.8c3 when a compatible adapter path and expected effect are supplied. Preserve all nine uncommitted paths at HEAD `dc43f4d`; Phase 9.8c2 changed only the browser validator and README/matrix/context. Do not repeat the audit, full-model/download/browser matrix, or successful GGUF validation. First recheck whether the user-provided adapter exists (or `models/loras/` changed); if none, this is an explicit asset checkpoint, not another GPU task. With the asset, inspect header/targets/provenance, then validate actual upload/selection and bounded production inference using full-model ID `model_4ff66ef0ec9f18e2d3e2`, isolated bridge and submitted output directory, offline cached model, current free GPU, and hard runtime limits. Test applied adapter identity/hash/strength and expected output effect with a fixed-seed no-adapter control, compatible pipeline reuse and adapter removal, saved/served artifacts, readable browser state/errors, and cleanup. Do not assume a valid header proves training compatibility or use quantized-LoRA support as an extra requirement. Fix only a demonstrated coherent defect, run appropriate regressions, update matrix/context, and stop at a clean checkpoint. Phase 9.8 remains incomplete until adapter-dependent validation and final documentation reconciliation are handled. All temporary GGUF server/Chrome processes were stopped; retained evidence is `/tmp/qwen-gguf-validation-9znq346l`.
-
+Implement Phase 9.8d only: final stabilization/diff/documentation review. HEAD is `fae667e`; nine current modified paths are listed in Files Modified, including the previous context-only reconciliation. All bounded functional checkpoints through 9.8c3 have passed; do not re-audit or rerun full-model/download/GGUF/LoRA hardware tasks without a new source change/failure that justifies it. Review the current small production loader override, browser diagnostic flags, tests, and documentation for supported-scope consistency and source attribution; preserve original user LoRA and ignored model/input/output assets. Run appropriate final checks only if edits affect behavior, reconcile README/UI/PROJECT/matrix/context completion status and known limitations, then provide a clean final checkpoint. No user input is pending. Standard Diffusers adapter flow and supplied fused AI-Toolkit adapter work; do not broaden model families, quantized-LoRA formats, or quality benchmarking as part of stabilization. Temporary validation server/Chrome processes are stopped; retained evidence `/tmp/qwen-lora-validation-hyd258je`. Do not create commits or discard changes unless requested.
 ## Resume Instructions
 
 When the user says `Continue from CONTEXT.md`:

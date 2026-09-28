@@ -290,6 +290,9 @@ running inference; an idle resident pipeline using the adapter is unloaded
 before its file is removed. A SafeTensors header check cannot
 prove architecture compatibility; an incompatible adapter fails during model
 loading with the adapter filename and Diffusers error in the diagnostic.
+AI-Toolkit Qwen Image 2.1 adapters with fused `img_mlp.gate_up` projections are
+converted to Diffusers' separate gate/projection layers without changing their
+LoRA updates. Standard Diffusers adapters retain the existing loading path.
 
 The History drawer can also delete a finished run after confirmation. Its
 record and output/comparison files are removed together; files referenced by
@@ -487,7 +490,10 @@ results. Phase 9.8b repeated the workflow on `cuda:1` after final navigation,
 verified a second compatible batch through one model load, and measured explicit
 server/GPU cleanup. Phase 9.8c2 verified the cached Q4_0 GGUF selection through
 two browser batches, strict tensor loading, compatible reuse, saved/served
-artifacts, and shutdown. Failed inference also resets interrupted offload placement
+artifacts, and shutdown. Phase 9.8c3 verified a user-supplied pretrained adapter,
+actual browser upload/selection, output effect against a fixed-seed control,
+compatible reuse, and removal restoring the control's exact hashes.
+Failed inference also resets interrupted offload placement
 before later reuse. The model-free browser check covers all eight pages at three widths
 and Dashboard error recovery:
 
@@ -501,6 +507,9 @@ from the `Child` folder. Choose a free GPU with `--device=cuda:N` and
 use `--output-dir=/tmp/qwen-browser-check/outputs` to isolate generated artifacts.
 Use `--model-id=model_...` to apply a specific compatible catalog selection;
 the checker rejects records that used another model.
+Use `--lora-path=/absolute/adapter.safetensors`, `--lora-scale=1`, and
+`--prompt-file=/path/to/prompt.txt` for an adapter-specific check. The adapter
+must appear as a valid entry in the server's configured LoRA catalog.
 `--collect-existing` instead verifies a displayed
 finished batch without rerunning inference. Production evidence requires two
 durable successful production-pipeline records matching the selected model and device;

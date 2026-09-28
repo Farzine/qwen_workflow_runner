@@ -226,6 +226,47 @@ class RuntimeTests(unittest.TestCase):
                 backend._apply_configured_lora()
             self.assertEqual(backend.pipe.get_list_adapters(), {})
 
+    def test_fused_qwen_lora_preserves_gate_up_math_and_rejects_invalid_pairs(self):
+        import torch
+        from torch.nn import functional as F
+        from qwen_runner.pipeline import WorkflowQwenImage21Pipeline
+
+        transformer = self.tiny_transformer()
+        mlp = transformer.transformer_blocks[0].img_mlp
+        gate, proj = mlp.gate_layer.weight.detach().clone(), mlp.proj.weight.detach().clone()
+        a = torch.randn(2, gate.shape[1]) * 0.05
+        b = torch.randn(2 * gate.shape[0], 2) * 0.05
+        stem = 'diffusion_model.transformer_blocks.0.img_mlp.gate_up'
+        state = {stem + '.lora_A.weight': a, stem + '.lora_B.weight': b}
+        converted, metadata = WorkflowQwenImage21Pipeline.lora_state_dict(state, return_lora_metadata=True)
+        self.assertIsNone(metadata)
+        self.assertEqual(len(converted), 4)
+        transformer.load_lora_adapter(converted, adapter_name='fused')
+        sample = torch.randn(2, gate.shape[1])
+        delta_gate, delta_proj = F.linear(F.linear(sample, a), b).chunk(2, dim=-1)
+        expected = mlp.out(F.silu(F.linear(sample, gate) + delta_gate) * (F.linear(sample, proj) + delta_proj))
+        self.assertTrue(torch.allclose(mlp(sample), expected, atol=1e-6, rtol=1e-5))
+
+        scaled = WorkflowQwenImage21Pipeline.lora_state_dict({
+            stem + '.lora_down.weight': a, stem + '.lora_up.weight': b,
+            stem + '.alpha': torch.tensor(4.),
+        })
+        for name, up in zip(('gate_layer', 'proj'), b.chunk(2, dim=0)):
+            target = stem.replace('diffusion_model.', 'transformer.').replace('gate_up', name)
+            self.assertTrue(torch.allclose(scaled[target + '.lora_B.weight'] @ scaled[target + '.lora_A.weight'],
+                                           2 * (up @ a)))
+
+        invalid = [
+            {stem + '.lora_A.weight': a},
+            {stem + '.lora_B.weight': b},
+            {stem + '.lora_A.weight': a, stem + '.lora_B.weight': b[:-1]},
+            {stem + '.lora_A.weight': a, stem + '.lora_B.weight': b[:, :1]},
+            {**state, stem.replace('gate_up', 'proj') + '.lora_A.weight': a},
+        ]
+        for index, candidate in enumerate(invalid):
+            with self.subTest(case=index), self.assertRaisesRegex(ValueError, 'fused'):
+                WorkflowQwenImage21Pipeline.lora_state_dict(candidate)
+
     def test_metrics_and_failure_logs(self):
         import torch
         from qwen_runner.config import Config

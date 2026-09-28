@@ -1,6 +1,6 @@
 # Validation Matrix
 
-This matrix records Phase 9.8c2 GGUF, Phase 9.8c1 download, and Phase 9.8b regression/hardware evidence and preserves the
+This matrix records Phase 9.8c3 pretrained LoRA, Phase 9.8c2 GGUF, Phase 9.8c1 download, and Phase 9.8b evidence and preserves the
 historical Phase 8 production validation. Automated checks use temporary files and synthetic or tiny models
 where loading the 33 GB pretrained checkpoint would add no useful coverage.
 Hardware rows identify the live RTX A6000 checks separately.
@@ -23,6 +23,7 @@ Hardware rows identify the live RTX A6000 checks separately.
 | LoRA | Uploaded adapter | Pass | Streamed atomic upload tests verify valid SafeTensors storage, catalog refresh, and auto-selection. |
 | LoRA | Invalid/incompatible adapter | Pass | Header/key validation rejects invalid files; the tiny-transformer lifecycle test verifies an incompatible target produces an actionable load failure and cleanup. |
 | LoRA | Adapter actually changes inference | Pass | A real tiny Qwen Image 2.1 transformer test loads the adapter through Diffusers/PEFT, verifies activation/scale/hash, observes changed output, and verifies unload/replacement. |
+| LoRA | User adapter on full pretrained model | Pass | Phase 9.8c3 real browser batches verify existing/uploaded adapter application, output effect against controls, hashes/strength/device, cached reuse, and removal restoring exact control hashes. |
 | GPU | Detection and inventory | Pass | `/api/system` reports two RTX A6000 GPUs, live memory, CUDA 12.6, PyTorch `2.11.0+cu126`, and readiness. |
 | GPU | Manual device selection | Pass | Both `cuda:0` and `cuda:1` completed prior BF16 allocation/production checks; the Phase 8 browser selected `cuda:0`, which both output records identify. |
 | GPU | Invalid device/configuration | Pass | System/config tests cover unavailable indices, CPU precision/offload normalization, and unsupported combinations. |
@@ -264,18 +265,72 @@ checkpoint's compatibility, not arbitrary GGUF/model-family or adapter support.
 timeout 360 node scripts/validate_browser_production.js http://127.0.0.1:9237 http://127.0.0.1:7896 --device=cuda:0 --model-id=model_5f31ccf7dbc4c402207d --output-dir=/tmp/qwen-gguf-check/outputs
 ```
 
-## Outstanding bounded validation
+## Phase 9.8c3 pretrained LoRA validation
 
-- Validate a compatible user adapter against the full pretrained model once an
-  asset is available; the tiny-transformer lifecycle test does not prove its
-  model-specific visual quality.
+The user supplied `models/loras/`, now containing
+`bfs_head_v1.1_qwen_2.1.safetensors` (260,096,144 bytes, SHA-256
+`d1d748d5601077f3b6d05766f6823510e901970d916afa404a97e85dc92fa88e`).
+Its AI-Toolkit 0.13.21 metadata provides a head-swap prompt and 352 tensors.
+Preflight identified a real loader gap: fused `img_mlp.gate_up` targets are absent
+from Diffusers' split MLP. The shared pipeline now retains upstream key/alpha
+conversion, then splits B into gate/up output rows with shared A. The 384
+converted tensors match actual full-model targets; the original file is unchanged.
+Numerical tests compare the loaded split MLP with the original fused update,
+check down/up alpha scaling, and reject missing, odd-row, rank-mismatched, and
+colliding fused/split pairs. Existing standard-adapter behavior still passes.
 
-## Asset-dependent limitation
+Four actual browser batches used full model ID `model_4ff66ef0ec9f18e2d3e2`,
+revision `790c926...`, `cuda:0`, BF16/model offload, four steps, CFG/strength 1,
+seed `1070478148268574`, 512 conditioning resolution, and 256×256 output. Each
+processed the two Child inputs with separate `img_11.jpg` reference and the
+header's `head_swap` prompt. Server, LoRA copies/uploads, outputs, and evidence
+were isolated under `/tmp/qwen-lora-validation-hyd258je`; no model was downloaded.
 
-No compatible user LoRA is installed in `models/loras/`, so the 33 GB
-pretrained checkpoint was not run with an adapter during Phase 8. Adapter
-application itself is covered by the real tiny-Qwen transformer test, including
-weight activation, output effect, strength, hash metadata, unload, replacement,
-and incompatible-target diagnostics. A user-supplied production adapter still
-needs model-specific visual quality assessment because a valid SafeTensors
-header cannot establish architecture or training compatibility.
+| Batch | Records | Inference seconds | Base cache |
+| --- | --- | --- | --- |
+| No adapter control | `20260928T095655_a10f4ae333_run_000`, `_run_001` | 27.98 / 27.17 | One load, reuse 0 |
+| Existing adapter, scale 1 | `20260928T100137_a67e9b1f27_run_000`, `_run_001` | 30.48 / 26.33 | Same load, reuse 1 |
+| Browser-uploaded copy, scale 1 | `20260928T100446_6b0b1d5af5_run_000`, `_run_001` | 28.29 / 28.12 | Same load, reuse 2 |
+| Adapter cleared | `20260928T100632_85f21a2bc4_run_000`, `_run_001` | 26.52 / 27.12 | Same load, reuse 3 |
+
+- All eight disk records equal API detail; saved PNG hashes and served
+  output/comparison bytes match. Requested/effective model, GPU, prompt, and
+  ordered conditioning agree. All batches reached Completed/100%, with loaded
+  results/comparisons and refreshed history.
+- Existing/uploaded adapters record the correct SHA-256, active
+  `qwen_workflow_lora`, strength 1, and unfused application. Uploaded-copy outputs
+  match the existing adapter exactly; clearing it restores both control hashes.
+- LoRA/control MAE is 42.1049/40.7762 and RMSE 59.5120/66.8530 (0–255);
+  94.5847%/83.6044% of pixels changed above 10. The Batch screenshot shows a
+  visible head change consistent with the prompt. This small four-step check
+  establishes application and effect, not exact identity/background preservation
+  or broad portrait-quality performance.
+- Real Chrome file-input upload produced collision-safe
+  `bfs_head_v1.1_qwen_2.1_9a94a61b5e.safetensors`, retained the original filename,
+  matched source size/hash, refreshed the catalog, and selected the uploaded path.
+  Desktop 1440px and phone 390px had no horizontal overflow; the phone upload
+  screenshot was visually inspected. Dashboard/System snapshots confirm each
+  adapter transition with no base reload, zero idle leases, and no error.
+- Peak PyTorch GPU allocation was 18,819,107,328 bytes; sampled process RSS
+  peaked at 35,158,933,504 bytes. Shutdown SIGINT emptied the slot and disabled
+  leases, leaving 9,568,256 allocated / 29,360,128 reserved bytes in the wrapper
+  before exit. Server PID 1975034 and Chrome PID 1975299 exited and were absent
+  from host GPU listings. Competing processes were preserved.
+- Core: 43 passed plus 13 subtests; UI/API/E2E: 438 passed with two known
+  deprecation warnings; Node: 49/49 and 15/15. After the final alpha-scaling
+  assertion, its focused test passed again with five subtests. Compilation,
+  `pip check`, JavaScript syntax, and diff checks passed.
+
+The reusable browser checker now accepts `--lora-path`, `--lora-scale`, and
+`--prompt-file`; it verifies requested/selected/applied adapter identity and
+strength along with model/device records. Production UI controls are unchanged.
+Evidence includes `baseline/existing/uploaded/cleared-browser.json`, resource
+snapshots/screenshots, `upload.json`, `artifacts.json`, and `shutdown.json`.
+
+## Remaining scope
+
+The previous missing-adapter limitation is resolved for this supplied asset.
+Arbitrary model families, quantized-transformer LoRA compatibility, production
+portrait-quality benchmarking, large-download throughput, and interrupted-network
+recovery are not established by these bounded checks. Final documentation and
+stabilization review remains Phase 9.8d.

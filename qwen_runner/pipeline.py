@@ -182,6 +182,30 @@ class WorkflowQwenImage21Pipeline(DiffusionPipeline, QwenImageLoraLoaderMixin):
     model_cpu_offload_seq = "text_encoder->transformer->vae"
     _callback_tensor_inputs = ["latents", "prompt_embeds"]
 
+    @classmethod
+    def lora_state_dict(cls, *args, **kwargs):
+        """Keep Diffusers conversion, then split AI-Toolkit's fused [gate; up] LoRA."""
+        result = super().lora_state_dict(*args, **kwargs)
+        state = result[0] if isinstance(result, tuple) else result
+        stems = {key.split('.lora_')[0] for key in state if '.img_mlp.gate_up.lora_' in key}
+        for stem in sorted(stems):
+            a_key, b_key = stem + '.lora_A.weight', stem + '.lora_B.weight'
+            a, b = state.get(a_key), state.get(b_key)
+            if (a is None or b is None or a.ndim != 2 or b.ndim != 2
+                    or a.shape[0] == 0 or b.shape[0] == 0 or b.shape[0] % 2
+                    or a.shape[0] != b.shape[1]):
+                raise ValueError(f'Invalid fused gate_up LoRA pair: {stem}')
+            targets = [stem.removesuffix('gate_up') + name for name in ('gate_layer', 'proj')]
+            if any(target + suffix in state for target in targets
+                   for suffix in ('.lora_A.weight', '.lora_B.weight')):
+                raise ValueError(f'LoRA contains both fused and split projections: {stem}')
+            # B @ A splits on B's output rows; A and rank/alpha scaling are shared.
+            for target, up in zip(targets, b.chunk(2, dim=0)):
+                state[target + '.lora_A.weight'] = a
+                state[target + '.lora_B.weight'] = up
+            del state[a_key], state[b_key]
+        return result
+
     def __init__(
         self,
         scheduler: FlowMatchEulerDiscreteScheduler,

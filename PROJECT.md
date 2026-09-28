@@ -74,9 +74,9 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | M3 | App Startup, CLI & Packaging | Entrypoint script (`ui/app.py`), configurable port fallback, directory overrides, documentation, and dependency profiles | M1, M2 | COMPLETE |
 | M4 | E2E Verification & Adversarial Hardening | Full automated suites plus hardware-gated browser production validation; evidence in `VALIDATION_MATRIX.md` | M1, M2, M3 | COMPLETE |
 | M5 | Persistent Resource Lifecycle | One exclusive cached production pipeline per device, compatible reuse, LoRA switching, runtime telemetry, and explicit shutdown cleanup | M1, M4 | COMPLETE |
-| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | IMPLEMENTED; expanded hardware/online checks remain |
+| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | COMPLETE for supported Qwen 2.1 assets; hardware/HTTP/Xet evidence in VALIDATION_MATRIX.md |
 | M7 | Records, Batch UX & Task Pages | Versioned human-readable metadata, detailed batch state/ETA, and all eight primary destinations | M6 | IMPLEMENTED; regression evidence in VALIDATION_MATRIX.md |
-| M8 | Expanded Validation & Documentation | Integrated navigation/regression, current documentation, and bounded hardware/online follow-up | M6, M7 | IN PROGRESS (Phase 9.8) |
+| M8 | Expanded Validation & Documentation | Integrated navigation/regression, current documentation, and bounded hardware/online follow-up | M6, M7 | IN PROGRESS; Phase 9.8c3 pretrained LoRA validation complete, final stabilization review next |
 
 ## Interface Contracts
 ### Client ↔ Server API Endpoints
