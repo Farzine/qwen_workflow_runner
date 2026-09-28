@@ -51,7 +51,11 @@
   </header>
 
   <nav class="page-nav" aria-label="Primary navigation">
+    <a href="#dashboard" class="page-nav-link" data-page-target="dashboard">Dashboard</a>
     <a href="#inference" class="page-nav-link active" data-page-target="inference" aria-current="page">Inference</a>
+    <a href="#batch" class="page-nav-link" data-page-target="batch">Batch</a>
+    <a href="#history" class="page-nav-link" data-page-target="history">History</a>
+    <a href="#outputs" class="page-nav-link" data-page-target="outputs">Outputs</a>
     <a href="#models" class="page-nav-link" data-page-target="models">Models</a>
     <a href="#loras" class="page-nav-link" data-page-target="loras">LoRAs</a>
     <a href="#system" class="page-nav-link" data-page-target="system">System</a>
@@ -104,6 +108,21 @@
 
   <!-- Main Multi-Column Interactive Workspace -->
   <main class="app-layout" id="main-workspace">
+    <section class="dashboard-page" aria-label="Dashboard">
+      <div class="dashboard-header">
+        <div><h1>Dashboard</h1><p class="field-hint">Server snapshots refresh on request. This tab’s batch and download monitors update as events arrive.</p></div>
+        <button type="button" class="btn btn-outline btn-md dashboard-refresh-btn">Refresh status</button>
+      </div>
+      <p class="dashboard-refresh-status field-hint" role="status"></p>
+      <div class="dashboard-grid">
+        <section class="dashboard-card" aria-label="Server status"><h2>Server</h2><p class="dashboard-server-value">Checking connection…</p><p class="dashboard-next-value"></p><a href="#inference">Open Inference</a></section>
+        <section class="dashboard-card" aria-label="GPU status"><h2>GPUs</h2><p class="dashboard-gpus-value">Loading system inventory…</p><a href="#system">System configuration</a></section>
+        <section class="dashboard-card" aria-label="Loaded resources"><h2>Loaded resources</h2><p class="dashboard-resources-value">Loading pipeline state…</p><a href="#models">Models</a> · <a href="#loras">LoRAs</a></section>
+        <section class="dashboard-card" aria-label="Inference activity"><h2>Inference activity</h2><p class="dashboard-jobs-value">No batch monitored in this tab.</p><a href="#batch">Open Batch</a></section>
+        <section class="dashboard-card" aria-label="Download activity"><h2>Download activity</h2><p class="dashboard-download-value">No download monitored in this tab.</p><a href="#models">Manage downloads</a></section>
+        <section class="dashboard-card" aria-label="Recent runs"><h2>Recent runs</h2><div class="dashboard-recent-list" aria-busy="false"></div><a href="#history">All run records</a> · <a href="#outputs">Browse outputs</a></section>
+      </div>
+    </section>
     
     <!-- ==================================================================== -->
     <!-- COLUMN 1: INPUT IMAGE BROWSER (R1)                                  -->
@@ -893,6 +912,31 @@
     <!-- ==================================================================== -->
     <!-- COLUMN 3: LIVE TERMINAL, OUTPUT & COMPARISON VIEWER (R4)             -->
     <!-- ==================================================================== -->
+    <section class="outputs-library" aria-label="Saved outputs">
+      <div class="drawer-header">
+        <h2 class="drawer-title">Saved Outputs</h2>
+        <button type="button" class="btn btn-outline btn-xs outputs-refresh-btn">Refresh</button>
+      </div>
+      <div class="drawer-body">
+        <p class="history-page-intro">Open an image to preview, compare, or download it. Delete run removes its record and all unshared outputs.</p>
+        <div class="outputs-library-list" aria-busy="false"></div>
+      </div>
+    </section>
+    <aside class="drawer drawer-history" id="drawer-history" aria-label="Run history" aria-hidden="true">
+      <div class="drawer-header">
+        <h2 class="drawer-title">Run History</h2>
+        <div class="actions-row">
+          <button type="button" class="btn btn-outline btn-xs history-refresh-btn">Refresh</button>
+          <button id="btn-close-history" class="btn-close" aria-label="Return to Inference">&times;</button>
+        </div>
+      </div>
+      <div class="drawer-body">
+        <p class="history-page-intro">Open a saved run to inspect its inputs, settings, result, or error. Deleting a run also removes its unshared outputs.</p>
+        <div id="history-runs-list" class="history-list" aria-busy="false">
+          <div class="empty-state-text" id="empty-history-notice" role="status">Loading run history…</div>
+        </div>
+      </div>
+    </aside>
     <section class="panel panel-output" id="panel-output" aria-labelledby="heading-output" aria-busy="false">
       <div class="panel-header">
         <div class="panel-title-group">
@@ -922,7 +966,8 @@
       </div>
       <section id="batch-progress" class="batch-progress hidden" aria-label="Batch progress">
         <strong>Batch progress</strong>
-        <p id="batch-progress-summary" role="status" aria-live="polite"></p>
+        <p class="batch-page-intro">Select multiple inputs and configure your run in <a href="#inference">Inference</a>. Follow each operation here, then inspect its results or errors below.</p>
+        <p id="batch-progress-summary" role="status" aria-live="polite">No batch submitted in this session.</p>
         <ol id="batch-progress-items" class="batch-progress-items"></ol>
       </section>
 
@@ -1115,29 +1160,9 @@
   </main>
 
   <!-- ==================================================================== -->
-  <!-- SLIDE-OVER DRAWER: RUN HISTORY HUB (R4)                             -->
+  <!-- Legacy backdrop ID retained for existing DOM integrations.          -->
   <!-- ==================================================================== -->
   <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
-  <aside class="drawer drawer-history" id="drawer-history" aria-hidden="true">
-    <div class="drawer-header">
-      <div class="drawer-title-group">
-        <svg class="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <polyline points="12 6 12 12 16 14"></polyline>
-        </svg>
-        <h2 class="drawer-title">Run History</h2>
-      </div>
-      <button id="btn-close-history" class="btn-close" aria-label="Close run history">&times;</button>
-    </div>
-
-    <div class="drawer-body">
-      <div id="history-runs-list" class="history-list">
-        <div class="empty-state-text" id="empty-history-notice">
-          No runs in this session yet.
-        </div>
-      </div>
-    </div>
-  </aside>
 
   <!-- ==================================================================== -->
   <!-- MODAL: FULL RESOLUTION IMAGE VIEWER                                 -->

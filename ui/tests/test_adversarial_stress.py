@@ -24,7 +24,7 @@ from PIL import Image
 from starlette.testclient import TestClient
 
 from qwen_runner.config import Config, GenerationConfig, ModelConfig, RuntimeConfig
-from ui.runner_bridge import RunnerBridge, RunJob, get_runner_bridge, resolve_backend_factory, DemoBackend
+from ui.runner_bridge import RunnerBridge, RunJob, get_runner_bridge, resolve_backend_factory, DemoBackend, shutdown_runner_bridge
 from ui.server import app, get_models_dir, get_outputs_dir, get_inputs_dir
 
 
@@ -62,6 +62,7 @@ class TestAdversarialStress(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        shutdown_runner_bridge()
         app.state.inputs_dir = None
         app.state.models_dir = None
         app.state.outputs_dir = None
@@ -583,4 +584,3 @@ class TestAdversarialStress(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

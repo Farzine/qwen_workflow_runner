@@ -50,6 +50,8 @@
           for (const [aKey, aVal] of Object.entries(value)) {
             element.setAttribute(aKey, aVal);
           }
+        } else if (key === "disabled") {
+          element.disabled = Boolean(value);
         } else {
           element.setAttribute(key, value);
         }
@@ -218,6 +220,7 @@
   const Store = {
     state: {
       connected: false,
+      connectionStatus: "checking",
       inputs: {
         currentFolder: "",
         parentFolder: null,
@@ -280,11 +283,14 @@
       },
       system: {
         capabilities: null,
+        error: null,
+        updatedAt: null,
       },
       models: {
         cached: [],
         selectedId: null,
         activeTask: null,
+        downloadError: null,
       },
       loras: {
         available: [],
@@ -422,7 +428,7 @@
   };
 
   const PageNavigation = {
-    pages: { inference: null, models: "tab-btn-model", loras: "tab-btn-model", system: "tab-btn-system" },
+    pages: { dashboard: null, inference: null, batch: null, history: null, outputs: null, models: "tab-btn-model", loras: "tab-btn-model", system: "tab-btn-system" },
     currentPage: null,
     inferenceTab: "tab-btn-prompt",
     links: [],
@@ -432,13 +438,17 @@
       this.links = Array.from(document.querySelectorAll(".page-nav-link"));
       this.links.forEach((link) => link.addEventListener("click", (event) => {
         event.preventDefault();
-        this.show(link.dataset.pageTarget, true);
-        if (window.location) window.location.hash = link.dataset.pageTarget;
+        this.navigate(link.dataset.pageTarget);
       }));
       if (typeof window.addEventListener === "function") {
         window.addEventListener("hashchange", () => this.showFromHash());
       }
       this.showFromHash();
+    },
+
+    navigate(page) {
+      this.show(page, true);
+      if (window.location) window.location.hash = page;
     },
 
     showFromHash() {
@@ -460,6 +470,7 @@
       if (tab) document.getElementById(tab)?.click?.();
       document.body.dataset.page = page;
       this.currentPage = page;
+      if (page === "dashboard") Dashboard.render();
       this.links.forEach((link) => {
         const active = link.dataset.pageTarget === page;
         link.classList.toggle("active", active);
@@ -468,11 +479,18 @@
       });
       const heading = document.getElementById("heading-config");
       if (heading) heading.textContent = {
-        inference: "Workflow Configuration", models: "Models", loras: "LoRAs", system: "System Configuration",
+        dashboard: "Workflow Configuration", inference: "Workflow Configuration", batch: "Workflow Configuration", history: "Workflow Configuration", outputs: "Workflow Configuration", models: "Models", loras: "LoRAs", system: "System Configuration",
       }[page];
+      const outputHeading = document.getElementById("heading-output");
+      if (outputHeading) outputHeading.textContent = page === "batch" ? "Batch Inference" : page === "history" ? "Run Results" : page === "outputs" ? "Output Preview" : "Execution Hub";
+      const history = document.getElementById("drawer-history");
+      if (history) history.setAttribute("aria-hidden", page === "history" ? "false" : "true");
       ResponsiveWorkspace.closeOutput(false);
       if (focus) {
-        const target = document.getElementById(page === "inference" ? "heading-inputs" : "heading-config");
+        const target = page === "history" ? history?.querySelector("h2")
+          : page === "dashboard" ? document.querySelector(".dashboard-page h1")
+          : page === "outputs" ? document.querySelector(".outputs-library h2")
+          : document.getElementById(page === "batch" ? "heading-output" : page === "inference" ? "heading-inputs" : "heading-config");
         if (target) {
           target.setAttribute("tabindex", "-1");
           target.focus?.({ preventScroll: true });
@@ -2265,6 +2283,7 @@
     },
 
     renderActiveModel() {
+      Store.notify("models");
       const status = document.getElementById("model-active-status");
       if (!status) return;
       const active = Store.state.models.cached.find((model) => model.id === Store.state.models.selectedId);
@@ -2371,6 +2390,9 @@
       }
 
       try {
+        Store.state.models.activeTask = { repo_id: repoId, status: "preparing" };
+        Store.state.models.downloadError = null;
+        Store.notify("download");
         if (this.hfProgressWrap) this.hfProgressWrap.classList.remove("hidden");
         if (this.hfProgressError) this.hfProgressError.classList.add("hidden");
         if (this.hfDownloadBtn) this.hfDownloadBtn.disabled = true;
@@ -2380,6 +2402,8 @@
         Toast.show(`Download started: ${repoId}`, "info");
         this.trackHfDownload(data.task_id);
       } catch (err) {
+        Store.state.models.activeTask = { repo_id: repoId, status: "failed", error: err.message };
+        Store.notify("download");
         if (this.hfDownloadBtn) this.hfDownloadBtn.disabled = false;
         if (this.hfProgressError) {
           this.hfProgressError.textContent = `Error: ${err.message}`;
@@ -2392,6 +2416,9 @@
     trackHfDownload(taskId) {
       if (this.downloadPollTimer) clearTimeout(this.downloadPollTimer);
       this.activeDownloadTaskId = taskId;
+      Store.state.models.activeTask = { task_id: taskId, repo_id: Store.state.models.activeTask?.repo_id, status: "preparing" };
+      Store.state.models.downloadError = null;
+      Store.notify("download");
       if (this.hfRetryBtn) this.hfRetryBtn.classList.add("hidden");
       if (this.hfCancelBtn) this.hfCancelBtn.classList.remove("hidden");
       this.pollHfDownload(taskId);
@@ -2416,6 +2443,8 @@
           return;
         }
       } catch (err) {
+        Store.state.models.downloadError = err.message;
+        Store.notify("download");
         if (this.hfProgressError) {
           this.hfProgressError.textContent = `Status temporarily unavailable: ${err.message}. Retrying…`;
           this.hfProgressError.classList.remove("hidden");
@@ -2425,6 +2454,9 @@
     },
 
     renderHfDownloadProgress(progress) {
+      Store.state.models.activeTask = progress;
+      Store.state.models.downloadError = null;
+      Store.notify("download");
       const terminal = ["completed", "failed", "cancelled"].includes(progress.status);
       const percent = Number.isFinite(progress.percent) ? Math.min(100, Math.max(0, progress.percent)) : null;
       if (this.hfProgressWrap) this.hfProgressWrap.classList.remove("hidden");
@@ -2703,6 +2735,7 @@
     },
 
     renderActiveStatus() {
+      Store.notify("lora");
       if (!this.activeStatus) return;
       const path = Store.state.config.model.lora_path;
       const scale = Number(Store.state.config.model.lora_scale);
@@ -3247,6 +3280,7 @@
         + ` · Remaining ${data.remaining} · Stage ${data.current_stage}`
         + (current ? ` · Current ${current.input_filename}` : "")
         + ` · Elapsed ${this.formatBatchSeconds(elapsed)} · ETA ${this.formatBatchSeconds(data.eta_seconds)}`;
+      Store.notify("batch");
     },
 
     async inspectBatchItem(runId) {
@@ -3310,9 +3344,6 @@
         // Render JSON Record
         JsonInspector.render(payload.record || payload);
 
-        // Refresh Run History
-        RunHistory.loadHistory();
-
         // Switch to Outputs view tab
         this.switchOutputTab("tab-btn-outputs", "pane-outputs");
         if (isPartial) {
@@ -3339,6 +3370,9 @@
         }
         this.switchOutputTab("tab-btn-logs", "pane-logs");
       }
+      RunHistory.loadHistory();
+      App.refreshRuntimeCapabilities().catch(error => console.warn("Post-run system refresh failed:", error));
+      Store.notify("run");
     },
 
     setRunningState(isRunning) {
@@ -3349,6 +3383,7 @@
         this.batchItems = new Map();
         this.batchState = null;
         if (this.batchPanel) this.batchPanel.classList.add("hidden");
+        if (this.batchSummary) this.batchSummary.textContent = "Waiting for batch status…";
         if (this.batchList) this.batchList.innerHTML = "";
       } else {
         this.renderBatchSummary();
@@ -3382,6 +3417,7 @@
       const outputPanel = document.getElementById("panel-output");
       if (outputPanel) outputPanel.setAttribute("aria-busy", isRunning ? "true" : "false");
       if (isRunning) ResponsiveWorkspace.revealRunStatus();
+      Store.notify("run");
     },
 
     cancelRun() {
@@ -3497,6 +3533,7 @@
     metaSha256: null,
     downloadBtn: null,
     batchStrip: null,
+    currentOutput: null,
 
     init() {
       this.emptyState = document.getElementById("output-empty-state");
@@ -3560,17 +3597,20 @@
       });
     },
 
-    renderOutputs(outputs) {
+    renderOutputs(outputs, selectedIndex = 0) {
       if (!outputs || outputs.length === 0) {
+        this.currentOutput = null;
         if (this.emptyState) this.emptyState.classList.remove("hidden");
         if (this.activeView) this.activeView.classList.add("hidden");
+        if (this.batchStrip) this.batchStrip.innerHTML = "";
+        RunHistory.markSelected();
         return;
       }
 
       if (this.emptyState) this.emptyState.classList.add("hidden");
       if (this.activeView) this.activeView.classList.remove("hidden");
 
-      const primary = outputs[0];
+      const primary = outputs[selectedIndex] || outputs[0];
       this.setPrimaryOutput(primary);
 
       // Render batch strip if more than 1 output
@@ -3579,18 +3619,23 @@
           this.batchStrip.innerHTML = "";
           this.batchStrip.classList.remove("hidden");
 
-          outputs.forEach((out, idx) => {
-            const thumb = Utils.el("img", {
-              class: `batch-thumb ${idx === 0 ? "active" : ""}`,
-              src: out.url,
-              alt: out.filename,
+          outputs.forEach((out) => {
+            const thumb = Utils.el("button", {
+              class: `batch-thumb ${out === primary ? "active" : ""}`,
+              type: "button",
+              "aria-label": `Preview ${out.filename}`,
+              "aria-pressed": out === primary ? "true" : "false",
               onclick: () => {
                 this.setPrimaryOutput(out);
-                this.batchStrip.querySelectorAll(".batch-thumb").forEach((b) => b.classList.remove("active"));
+                this.batchStrip.querySelectorAll(".batch-thumb").forEach((b) => {
+                  b.classList.remove("active");
+                  b.setAttribute("aria-pressed", "false");
+                });
                 thumb.classList.add("active");
+                thumb.setAttribute("aria-pressed", "true");
                 ComparisonSlider.setup([out], out.comparison_url, out.input_image);
               },
-            });
+            }, Utils.el("img", { src: out.url, alt: "", loading: "lazy" }));
             this.batchStrip.appendChild(thumb);
           });
         } else {
@@ -3600,6 +3645,8 @@
     },
 
     setPrimaryOutput(out) {
+      this.currentOutput = out;
+      RunHistory.markSelected();
       if (this.primaryImage) {
         this.primaryImage.src = out.url;
       }
@@ -3906,21 +3953,23 @@
 
 
   const RunHistory = {
-    drawerBackdrop: null,
     drawerHistory: null,
     toggleBtn: null,
     closeBtn: null,
     historyCounter: null,
     runsList: null,
+    outputsList: null,
     emptyNotice: null,
+    loadRequest: 0,
+    selectionRequest: 0,
 
     init() {
-      this.drawerBackdrop = document.getElementById("drawer-backdrop");
       this.drawerHistory = document.getElementById("drawer-history");
       this.toggleBtn = document.getElementById("btn-toggle-history");
       this.closeBtn = document.getElementById("btn-close-history");
       this.historyCounter = document.getElementById("history-counter");
       this.runsList = document.getElementById("history-runs-list");
+      this.outputsList = document.querySelector(".outputs-library-list");
       this.emptyNotice = document.getElementById("empty-history-notice");
 
       if (this.toggleBtn) {
@@ -3931,32 +3980,30 @@
         this.closeBtn.addEventListener("click", () => this.closeDrawer());
       }
 
-      if (this.drawerBackdrop) {
-        this.drawerBackdrop.addEventListener("click", () => this.closeDrawer());
-      }
+      document.querySelector(".history-refresh-btn")?.addEventListener("click", () => this.loadHistory());
+      document.querySelector(".outputs-refresh-btn")?.addEventListener("click", () => this.loadHistory());
 
       this.loadHistory();
     },
 
     openDrawer() {
-      if (this.drawerBackdrop) this.drawerBackdrop.classList.remove("hidden");
-      if (this.drawerHistory) {
-        this.drawerHistory.classList.add("open");
-        this.drawerHistory.setAttribute("aria-hidden", "false");
-      }
+      PageNavigation.navigate("history");
     },
 
     closeDrawer() {
-      if (this.drawerBackdrop) this.drawerBackdrop.classList.add("hidden");
-      if (this.drawerHistory) {
-        this.drawerHistory.classList.remove("open");
-        this.drawerHistory.setAttribute("aria-hidden", "true");
-      }
+      PageNavigation.navigate("inference");
     },
 
     async loadHistory() {
+      const request = ++this.loadRequest;
+      this.runsList?.setAttribute("aria-busy", "true");
+      this.outputsList?.setAttribute("aria-busy", "true");
+      this.showNotice("Loading run history…");
+      this.showNotice("Loading saved outputs…", this.outputsList);
+      Dashboard.historyNotice("Loading recent runs…", true);
       try {
         const data = await ApiClient.listRuns();
+        if (request !== this.loadRequest) return;
         const runs = data.runs || [];
         Store.state.history = runs;
 
@@ -3970,38 +4017,58 @@
         }
 
         this.render(runs);
+        Dashboard.renderRecent(runs);
+        return true;
       } catch (err) {
         console.error("Failed to load run history:", err);
+        if (request === this.loadRequest) {
+          this.showNotice(`Could not load run history: ${err.message}. Use Refresh to retry.`);
+          this.showNotice(`Could not load saved outputs: ${err.message}. Use Refresh to retry.`, this.outputsList);
+          Dashboard.historyNotice(`Could not load recent runs: ${err.message}. Use Refresh status to retry.`);
+        }
+        return false;
+      } finally {
+        if (request === this.loadRequest) {
+          this.runsList?.setAttribute("aria-busy", "false");
+          this.outputsList?.setAttribute("aria-busy", "false");
+        }
       }
     },
 
+    showNotice(message, list = this.runsList) {
+      if (!list) return;
+      list.innerHTML = "";
+      const notice = (list === this.runsList && this.emptyNotice) || Utils.el("p", { class: "empty-state-text", role: "status" });
+      notice.textContent = message;
+      list.appendChild(notice);
+    },
+
     render(runs) {
+      this.renderLibrary(runs);
       if (!this.runsList) return;
       this.runsList.innerHTML = "";
 
       if (!runs || runs.length === 0) {
-        if (this.emptyNotice) {
-          this.runsList.appendChild(this.emptyNotice);
-        } else {
-          this.runsList.innerHTML = `<div class="empty-state-text">No runs in this session yet.</div>`;
-        }
+        this.showNotice("No saved runs yet. Generate an image in Inference to create a record.");
         return;
       }
 
       const frag = document.createDocumentFragment();
 
       for (const r of runs) {
+        const active = ["queued", "running"].includes(r.status);
         const isSuccess = r.status === "completed" || r.status === "success";
         const isPartial = r.status === "partial_success";
-        const badgeClass = isSuccess ? "badge-success" : isPartial ? "badge-warning" : "badge-danger";
+        const badgeClass = isSuccess ? "badge-success" : isPartial ? "badge-warning"
+          : ["queued", "running"].includes(r.status) ? "badge-primary" : "badge-danger";
 
         const item = Utils.el(
           "div",
           {
             class: "history-item history-card",
+            dataset: { runId: r.run_id },
             onclick: () => {
-              this.selectRun(r.run_id);
-              this.closeDrawer();
+              if (!active) this.selectRun(r.run_id);
             },
           },
           Utils.el(
@@ -4013,8 +4080,8 @@
           Utils.el(
             "div",
             { class: "history-item-meta history-card-meta" },
-            Utils.el("span", {}, r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : ""),
-            r.inference_time_seconds
+            Utils.el("span", {}, r.timestamp ? new Date(r.timestamp).toLocaleString() : "Date unavailable"),
+            Number.isFinite(r.inference_time_seconds)
               ? Utils.el("span", {}, `${r.inference_time_seconds.toFixed(2)}s`)
               : null,
             Utils.el("button", { class: "btn btn-ghost btn-xs", type: "button",
@@ -4023,24 +4090,93 @@
               onclick: (event) => { event.stopPropagation(); this.deleteRun(r); } }, "Delete")
           ),
           Utils.el("div", { class: "history-context" },
-            `${r.summary?.input?.filename || "Input unavailable"} · ${r.summary?.model?.name || "Model unavailable"}`)
+            `${r.summary?.input?.filename || "Input unavailable"} · ${r.summary?.model?.name || "Model unavailable"}`),
+          Utils.el("button", { class: "btn btn-outline btn-xs history-open-btn", type: "button",
+            "aria-label": `Open run ${r.run_id}`,
+            disabled: active,
+            title: active ? "Run details are available after completion. Follow progress in Batch." : "Open saved run details",
+            onclick: (event) => { event.stopPropagation(); this.selectRun(r.run_id); } }, "Open run")
         );
 
         frag.appendChild(item);
       }
 
       this.runsList.appendChild(frag);
+      this.markSelected();
+    },
+
+    renderLibrary(runs) {
+      if (!this.outputsList) return;
+      this.outputsList.innerHTML = "";
+      // ponytail: render the existing history payload; paginate the API if large libraries become slow.
+      for (const run of runs || []) {
+        if (!run.outputs?.length) continue;
+        const active = ["queued", "running"].includes(run.status);
+        const grid = Utils.el("div", { class: "saved-output-grid" });
+        run.outputs.forEach((out, index) => {
+          grid.appendChild(Utils.el("button", {
+            class: "saved-output", type: "button", disabled: active,
+            title: out.filename,
+            dataset: { runId: run.run_id, filename: out.filename },
+            "aria-label": `Open ${out.filename} from run ${run.run_id}`,
+            onclick: () => this.selectRun(run.run_id, index),
+          }, Utils.el("img", { src: out.url || ApiClient.getOutputUrl(out.filename), alt: "", loading: "lazy",
+            onerror: (event) => {
+              event.target.hidden = true;
+              event.target.parentNode.appendChild(Utils.el("span", {}, "Preview unavailable"));
+            } }),
+          Utils.el("span", { class: "saved-output-name" }, out.filename),
+          Utils.el("span", { class: "field-hint" }, out.width && out.height ? `${out.width} × ${out.height}` : "Dimensions unavailable")));
+        });
+        this.outputsList.appendChild(Utils.el("article", { class: "saved-output-run" },
+          Utils.el("div", { class: "saved-output-run-header" },
+            Utils.el("strong", {}, run.summary?.input?.filename || "Input unavailable"),
+            Utils.el("button", { class: "btn btn-ghost btn-xs", type: "button", disabled: active,
+              "aria-label": `Delete run ${run.run_id} and all its outputs`,
+              onclick: () => this.deleteRun(run) }, "Delete run")),
+          Utils.el("p", { class: "history-context" }, `${run.run_id} · ${run.status || "Status unavailable"}`
+            + ` · ${run.timestamp ? new Date(run.timestamp).toLocaleString() : "Date unavailable"}`
+            + (run.is_warmup ? " · Warmup" : "")), grid));
+      }
+      if (!this.outputsList.children.length) this.showNotice("No saved outputs yet. Generate an image in Inference to create one.", this.outputsList);
+      this.markSelected();
+    },
+
+    markSelected() {
+      this.runsList?.querySelectorAll(".history-card").forEach((card) => {
+        const selected = card.dataset.runId === Store.state.run.currentRecord?.run_id;
+        card.classList.toggle("selected", selected);
+        const button = card.querySelector(".history-open-btn");
+        if (selected) button?.setAttribute("aria-current", "true");
+        else button?.removeAttribute("aria-current");
+      });
+      this.outputsList?.querySelectorAll(".saved-output").forEach((button) => {
+        const output = OutputViewer.currentOutput;
+        const selected = button.dataset.runId === output?.run_id && button.dataset.filename === output?.filename;
+        button.classList.toggle("selected", selected);
+        if (selected) button.setAttribute("aria-current", "true");
+        else button.removeAttribute("aria-current");
+      });
     },
 
     async deleteRun(run) {
       if (!window.confirm(`Delete run "${run.run_id}" and its unshared outputs? This cannot be undone.`)) return;
       try {
         await ApiClient.deleteRun(run.run_id);
-        if (Store.state.run.currentRecord?.run_id === run.run_id) {
+        this.selectionRequest++;
+        if (Store.state.run.currentRecord?.run_id === run.run_id || OutputViewer.currentOutput?.run_id === run.run_id) {
           Store.state.run.currentRecord = null;
+          Store.state.run.currentOutputs = [];
           OutputViewer.renderOutputs([]);
           ComparisonSlider.setup([]);
           JsonInspector.render(null);
+        } else {
+          const remaining = Store.state.run.currentOutputs.filter((output) => output.run_id !== run.run_id);
+          if (remaining.length !== Store.state.run.currentOutputs.length) {
+            const selectedIndex = remaining.indexOf(OutputViewer.currentOutput);
+            Store.state.run.currentOutputs = remaining;
+            OutputViewer.renderOutputs(remaining, selectedIndex);
+          }
         }
         await this.loadHistory();
         Toast.show(`Deleted run: ${run.run_id}`, "success");
@@ -4049,36 +4185,49 @@
       }
     },
 
-    async selectRun(runId) {
+    async selectRun(runId, outputIndex = 0) {
+      const request = ++this.selectionRequest;
       try {
         Toast.show(`Loading run ${runId}...`, "info", 1500);
         const record = await ApiClient.getRunRecord(runId);
+        if (request !== this.selectionRequest) return;
 
-        if (record.outputs) {
-          const outputs = record.outputs.map((o) => {
-            const filename = o.filename || (o.path ? o.path.split("/").pop() : "output.png");
-            return {
-              filename,
-              url: o.url || ApiClient.getOutputUrl(filename),
-              width: o.width || 1024,
-              height: o.height || 1024,
-              sha256: o.sha256 || "",
-            };
-          });
-          OutputViewer.renderOutputs(outputs);
-          Store.state.run.currentRecord = record;
-          let compUrl = record.comparison;
-          if (compUrl && typeof compUrl === "string" && !compUrl.startsWith("/api/")) {
-            compUrl = ApiClient.getOutputUrl(compUrl.split("/").pop());
-          }
-          ComparisonSlider.setup(outputs, compUrl);
+        const outputs = (record.outputs || []).map((o) => {
+          const filename = o.filename || (o.path ? o.path.split("/").pop() : "output.png");
+          return {
+            filename,
+            url: o.url || ApiClient.getOutputUrl(filename),
+            width: o.width || null,
+            height: o.height || null,
+            sha256: o.sha256 || "",
+            run_id: record.run_id,
+            input_image: record.input_image || record.summary?.input?.path,
+            comparison_url: record.comparison,
+          };
+        });
+        Store.state.run.currentRecord = record;
+        Store.state.run.currentOutputs = outputs;
+        OutputViewer.renderOutputs(outputs, outputIndex);
+        this.markSelected();
+        let compUrl = record.comparison;
+        if (compUrl && typeof compUrl === "string" && !compUrl.startsWith("/api/")) {
+          compUrl = ApiClient.getOutputUrl(compUrl.split("/").pop());
         }
+        const selectedOutput = outputs[outputIndex] || outputs[0];
+        ComparisonSlider.setup(selectedOutput ? [selectedOutput] : [], compUrl, record.input_image);
 
         JsonInspector.render(record);
-        RunController.switchOutputTab("tab-btn-outputs", "pane-outputs");
+        const details = PageNavigation.currentPage === "history" || !outputs.length;
+        RunController.switchOutputTab(details ? "tab-btn-json" : "tab-btn-outputs", details ? "pane-json" : "pane-outputs");
+        if (["history", "outputs"].includes(PageNavigation.currentPage)) {
+          const heading = document.getElementById("heading-output");
+          heading?.setAttribute("tabindex", "-1");
+          heading?.focus?.({ preventScroll: true });
+          if (ResponsiveWorkspace.viewportWidth() <= 768) heading?.scrollIntoView?.({ block: "start" });
+        }
         TerminalViewer.appendSystemLog(`Inspecting past run: ${runId}`);
       } catch (err) {
-        Toast.show(`Failed to fetch run record: ${err.message}`, "error");
+        if (request === this.selectionRequest) Toast.show(`Failed to fetch run record: ${err.message}`, "error");
       }
     },
   };
@@ -4149,9 +4298,133 @@
   // 14. APPLICATION BOOTSTRAP
   // ==========================================================================
 
+  const Dashboard = {
+    root: null,
+    refreshing: false,
+
+    init() {
+      this.root = document.querySelector(".dashboard-page");
+      this.root?.querySelector(".dashboard-refresh-btn")?.addEventListener("click", () => this.refresh());
+      Store.subscribe(() => this.render());
+      this.render();
+    },
+
+    render() {
+      if (!this.root) return;
+      const set = (key, text) => {
+        const element = this.root.querySelector(`.dashboard-${key}-value`);
+        if (element) element.textContent = text;
+      };
+      const state = Store.state;
+      const capabilities = state.system.capabilities;
+      const snapshot = state.system.updatedAt ? `Snapshot: ${new Date(state.system.updatedAt).toLocaleString()}` : "No system snapshot yet.";
+      const unavailable = state.system.error ? `System status unavailable: ${state.system.error}` : "Loading system inventory…";
+      const stale = !state.connected || state.system.error ? " · Last known data" : "";
+      const production = capabilities?.production_backend;
+      set("server", `${state.connectionStatus === "checking" ? "Checking connection…" : state.connected ? "Connected" : "Disconnected"}`
+        + ` · ${state.config.demo_mode ? "Synthetic demo selected" : "Production selected"}\n`
+        + (production ? `Production runtime: ${production.ready ? "Ready" : "Blocked"} · ${production.message || "Diagnostic unavailable"}\n` : "")
+        + (state.system.error ? `${unavailable}\n` : "") + snapshot + stale);
+      const selected = state.models.cached.find(model => model.id === state.models.selectedId);
+      set("next", `Next run: ${selected?.name || "No catalog model selected"} · ${state.config.runtime.device}`
+        + `\nRequested LoRA: ${state.config.model.lora_path?.split(/[\\/]/).pop() || "None"}`);
+      const gpus = capabilities?.cuda?.devices;
+      set("gpus", Array.isArray(gpus) ? (gpus.length ? gpus.map(gpu =>
+        `${gpu.id} — ${gpu.name}\n${Number.isFinite(gpu.free_memory_bytes) ? Utils.formatBytes(gpu.free_memory_bytes) + " free" : "Free memory unavailable"}`
+        + ` / ${Number.isFinite(gpu.total_memory_bytes) ? Utils.formatBytes(gpu.total_memory_bytes) + " total" : "Total memory unavailable"}`
+      ).join("\n\n") : "No CUDA GPU detected.") + `\n${snapshot}${stale}` : unavailable);
+      const slots = capabilities?.execution?.cache?.slots;
+      set("resources", Array.isArray(slots) ? (slots.length ? slots.map(slot => {
+        const lora = slot.lora || {};
+        return `${slot.device} · ${slot.state}\n${slot.pipeline ? "Loaded" : "Requested"}: ${slot.model?.source || "Model unavailable"}`
+          + `\nPipeline: ${slot.pipeline || "Not loaded"}`
+          + `\nLoRA: ${lora.applied ? lora.filename || lora.path || "Applied adapter" : lora.applied === false ? "None loaded" : "Status unavailable"}`
+          + (slot.last_error ? `\nError: ${slot.last_error}` : "");
+      }).join("\n\n") : "No resident production pipeline.") + `\n${snapshot}${stale}` : unavailable);
+      const local = state.run.status === "running";
+      const batch = RunController.batchState;
+      let job = local ? `Monitoring ${state.run.activeJobId || "submission"}\n${RunController.batchSummary?.textContent || "Waiting for batch status…"}`
+        : batch ? `Last monitored batch\n${RunController.batchSummary?.textContent || batch.current_stage}` : "No batch monitored in this tab.";
+      const active = capabilities?.execution?.active_job;
+      if (active) job += `\n\nServer snapshot: ${active.status} · ${active.job_id}\n${active.requested_device} · ${active.requested_model}`;
+      else if (capabilities?.execution) job += "\n\nNo active server job in the last snapshot.";
+      set("jobs", job);
+      const download = state.models.activeTask;
+      set("download", download ? `${download.repo_id || "Model download"} · ${download.status}`
+        + `\n${Number.isFinite(download.percent) ? Math.round(download.percent) + "%" : "Total size unknown"}`
+        + ` · ${Number.isFinite(download.downloaded_bytes) ? Utils.formatBytes(download.downloaded_bytes) : "Downloaded amount unavailable"}`
+        + ` / ${Number.isFinite(download.total_bytes) ? Utils.formatBytes(download.total_bytes) : "Total unavailable"}`
+        + (download.current_file ? `\n${download.current_file}` : "")
+        + (download.error ? `\n${download.error}` : "")
+        + (state.models.downloadError ? `\nStatus temporarily unavailable: ${state.models.downloadError}. Last known progress shown.` : "")
+        : "No download monitored in this tab.");
+    },
+
+    historyNotice(message, busy = false) {
+      const list = this.root?.querySelector(".dashboard-recent-list");
+      if (!list) return;
+      list.setAttribute("aria-busy", busy ? "true" : "false");
+      RunHistory.showNotice(message, list);
+    },
+
+    renderRecent(runs) {
+      const list = this.root?.querySelector(".dashboard-recent-list");
+      if (!list) return;
+      if (!runs.length) { this.historyNotice("No saved runs yet."); return; }
+      list.innerHTML = "";
+      list.setAttribute("aria-busy", "false");
+      for (const run of [...runs].sort((a, b) => (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0)).slice(0, 5)) {
+        list.appendChild(Utils.el("button", { class: "dashboard-run btn btn-outline btn-md", type: "button",
+          disabled: ["queued", "running"].includes(run.status),
+          "aria-label": `Inspect run ${run.run_id}`,
+          onclick: () => { PageNavigation.navigate("history"); RunHistory.selectRun(run.run_id); } },
+          Utils.el("strong", {}, run.summary?.input?.filename || run.run_id),
+          Utils.el("span", { class: "field-hint" }, `${run.status || "Status unavailable"} · ${run.timestamp ? new Date(run.timestamp).toLocaleString() : "Date unavailable"}`)));
+      }
+    },
+
+    async refresh() {
+      if (this.refreshing) return;
+      this.refreshing = true;
+      const button = this.root?.querySelector(".dashboard-refresh-btn");
+      const status = this.root?.querySelector(".dashboard-refresh-status");
+      if (button) button.disabled = true;
+      if (status) status.textContent = "Refreshing status…";
+      const results = await Promise.allSettled([App.checkConnection(), App.refreshRuntimeCapabilities(), RunHistory.loadHistory()]);
+      if (status) status.textContent = results.some(result => result.status === "rejected" || result.value === false)
+        ? "Some status is unavailable. See the cards for details; use Refresh status to retry." : "Status refreshed.";
+      this.refreshing = false;
+      if (button) button.disabled = false;
+      this.render();
+    },
+  };
+
   const App = {
+    async checkConnection() {
+      try {
+        await ApiClient.checkHealth();
+        Store.state.connected = true;
+        Store.state.connectionStatus = "connected";
+      } catch (error) {
+        Store.state.connected = false;
+        Store.state.connectionStatus = "disconnected";
+        throw error;
+      } finally {
+        this.renderRuntimeStatus();
+      }
+    },
+
     async refreshRuntimeCapabilities(applyServerDefault = false, notifyBlocked = false) {
-      const capabilities = await ApiClient.getSystemCapabilities(Store.state.config.runtime);
+      let capabilities;
+      try {
+        capabilities = await ApiClient.getSystemCapabilities(Store.state.config.runtime);
+        Store.state.system.error = null;
+        Store.state.system.updatedAt = new Date().toISOString();
+      } catch (error) {
+        Store.state.system.error = error.message;
+        this.renderRuntimeStatus(null);
+        throw error;
+      }
       Store.state.system.capabilities = capabilities;
 
       if (applyServerDefault) {
@@ -4172,10 +4445,18 @@
     },
 
     renderRuntimeStatus(capabilities = Store.state.system.capabilities) {
+      Store.notify("runtime");
       const pill = document.getElementById("backend-status-pill");
       const text = document.getElementById("backend-status-text");
       const footerMode = document.getElementById("status-bar-mode");
       const demoMode = Boolean(Store.state.config.demo_mode);
+
+      if (Store.state.connectionStatus === "disconnected") {
+        if (pill) pill.className = "status-pill status-offline";
+        if (text) text.textContent = "Disconnected";
+        if (footerMode) footerMode.textContent = "Server disconnected";
+        return;
+      }
 
       if (demoMode) {
         if (pill) {
@@ -4219,6 +4500,7 @@
       ParameterHelp.init();
       InputBrowser.init();
       ParamForm.init();
+      Dashboard.init();
       PageNavigation.init();
       SystemManager.init();
       ModelManager.init();
@@ -4233,13 +4515,7 @@
 
       // Check backend connectivity first, then inspect production runtime readiness.
       try {
-        await ApiClient.checkHealth();
-        Store.state.connected = true;
-
-        const pill = document.getElementById("backend-status-pill");
-        const text = document.getElementById("backend-status-text");
-        if (pill) pill.className = "status-pill status-online";
-        if (text) text.textContent = "Connected";
+        await this.checkConnection();
       } catch (err) {
         console.warn("Backend health check failed:", err);
         const pill = document.getElementById("backend-status-pill");

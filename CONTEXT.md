@@ -1,6 +1,6 @@
 # Repository Context
 
-Last updated: 2026-09-27 (Asia/Dhaka)
+Last updated: 2026-09-28 (Asia/Dhaka)
 
 ## Project Overview
 
@@ -36,7 +36,7 @@ The active checkout is `/mnt/lab/farzine/qwen_workflow_runner`. The path origina
 | `ui/model_catalog.py` | Stable downloaded-model IDs, local Qwen Image 2.1 compatibility inspection, and selected-ID resolution. |
 | `ui/download_jobs.py` | Thread-safe background download state, measured byte/file progress, cancellation, and terminal status. |
 | `ui/runner_bridge.py` | Background job bridge, stdout/stderr capture, event fan-out, `DemoBackend`, and backend selection. |
-| `ui/templates/index.html` | Single-page UI markup with primary Inference, Models, LoRAs, and System destinations. |
+| `ui/templates/index.html` | Single-page UI markup with primary Dashboard, Inference, Batch, History, Outputs, Models, LoRAs, and System destinations. |
 | `ui/static/js/app.js` | Client state, hash-based task navigation, server-side image browser, ordered selection, forms, run submission, SSE, history, and comparison viewer. |
 | `ui/static/css/style.css` | Three-panel inference workspace, focused management views, and responsive styling. |
 | `tests/` | Core configuration, sampling, image, GGUF, cache, and small runtime tests. |
@@ -150,7 +150,7 @@ Extend the validated Qwen workflow into a production-quality management applicat
 
 ## Active Task
 
-Phase 9.7a is complete in the working tree: the existing Inference workspace, model manager, LoRA manager, and System controls now have primary task navigation with responsive focused views. Existing controls and state are reused. Phase 9.7b should add dedicated Batch, History, and Outputs destinations (then Dashboard) without duplicating backend state. Phase 9.6 was committed as `ad1a33d`; Phase 9.7a changes are uncommitted.
+Phase 9.7b4 is complete in the working tree: Dashboard displays server/runtime readiness, timestamped GPU/resident-model/applied-LoRA snapshots, next-run selection, this tab's live batch/download activity, and five recent saved runs. Refresh reuses health/system/history requests; errors preserve labeled last-known inventory and offer retry. Both successful and failed jobs refresh records and system state. No new poller, endpoint, dependency, or static DOM ID was introduced. Fixed a pre-existing stress-test teardown race by draining the shared runner before removing temporary storage. Phase 9.7a was committed as `ef231d6`; Phase 9.7b1 Batch, 9.7b2 History, 9.7b3 Outputs, and 9.7b4 Dashboard changes are all uncommitted and must be preserved. Next is a bounded Phase 9.8 regression/documentation slice.
 
 ## Completed Tasks
 
@@ -225,6 +225,13 @@ Phase 9.7a is complete in the working tree: the existing Inference workspace, mo
 - [x] Corrected explicit-batch completion classification so warmup success cannot hide failure of all requested outputs.
 - [x] Added primary Inference, Models, LoRAs, and System destinations, retaining existing manager DOM/state and hash-compatible configuration tabs.
 - [x] Kept the Inference three-panel workflow intact while giving management pages focused layouts on desktop and phone; scoped inference validation and launch controls to that workflow.
+- [x] Added the full-width Batch destination using the existing execution DOM, event stream, aggregate state, results, and per-item Details; verified active navigation and partial failure with a live synthetic batch.
+- [x] Added the dedicated History destination with responsive list/result layout, loading/error/retry states, full timestamps, accessible selection, and existing confirmed deletion.
+- [x] Added the responsive Outputs destination using saved-record artifacts and existing preview/comparison/download/details/delete flows; verified exact non-first-image selection, 33 artifacts, missing files, active navigation, and confirmed temporary-file cleanup in Chrome.
+- [x] Added the responsive Dashboard using shared runtime/catalog/monitor/history state; verified loading/empty/error/recovery, native recent-run access, live success/failure batches, unknown download totals, and three viewport widths without adding polling.
+- [x] Made output-strip selection keyboard accessible, cleared deleted artifacts by owning run, invalidated pending selection after deletion, and corrected an asynchronous durable-record regression test.
+- [x] Fixed the shared element helper's native `disabled=false` handling, failed-record stale outputs, and out-of-order history responses; verified real browser cancellation and deletion using temporary assets.
+- [x] Fixed missing toast styles that made notifications consume workspace height, and prevented readable-record labels from shrinking beside long model paths.
 
 ## Remaining Tasks
 
@@ -247,7 +254,10 @@ Phase 9.7a is complete in the working tree: the existing Inference workspace, mo
 - [x] Phase 9.5: introduce a versioned common run metadata model and human-readable history/output details while preserving legacy record reads.
 - [x] Phase 9.6: add aggregate batch operations, per-item stages, counts, timing, ETA, failures, and result inspection based on the reference workflow concepts.
 - [x] Phase 9.7a: add responsive Inference, Models, LoRAs, and System task navigation using existing functional controls.
-- [ ] Phase 9.7b: add dedicated Batch, History, Outputs, and Dashboard destinations and complete task-oriented navigation.
+- [x] Phase 9.7b1: add the dedicated Batch monitor/result destination without duplicating job state.
+- [x] Phase 9.7b2: add the dedicated Run History destination using the existing durable history API and controls.
+- [x] Phase 9.7b3: add an Outputs destination for durable multi-output browsing and supported deletion.
+- [x] Phase 9.7b4: add Dashboard status/activity using the existing runtime, catalog, download, and history state.
 - [ ] Phase 9.8: run the expanded regression/hardware/browser matrix and reconcile all documentation.
 
 ## Current Problems
@@ -292,7 +302,7 @@ Phase 9.7a is complete in the working tree: the existing Inference workspace, mo
 - The completed-job SSE hang was caused by running Starlette `TestClient` inside the restricted command sandbox. The exact test and full UI suite pass with the local IPC/loopback access already required by these tests; no streaming code change was needed.
 - Backend choice is explicit. The new runtime probe validates the selected device/dtype/offload combination before model loading and returns the same actionable message used by `QwenBackend`.
 - Every meaningful configuration field now has a consistent information control backed by verified implementation behavior. Validation remains inline and outside the help cards.
-- The UI suite contains 417 tests after Phase 7 and completes in about 20 seconds when local loopback sockets are permitted.
+- The UI suite contains 438 tests after Phase 9.7b4 and completes in about 24 seconds when local loopback sockets are permitted. The frontend Node harness now has 49 checks plus 15 stress checks.
 
 ### Responsive workflow UI
 
@@ -357,7 +367,7 @@ Phase 9.7a is complete in the working tree: the existing Inference workspace, mo
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Phase 9.4a, 9.4b, 9.4c, 9.5, and 9.6 were committed as `56b4517`, `cf1a010`, `d6d5682`, `ca02524`, and `ad1a33d` on `main`. Phase 9.7a changes are currently uncommitted; preserve them when resuming.
+- Phase 9.4a, 9.4b, 9.4c, 9.5, 9.6, and 9.7a were committed as `56b4517`, `cf1a010`, `d6d5682`, `ca02524`, `ad1a33d`, and `ef231d6` on `main`. Phase 9.7b1–b4 changes are currently uncommitted; preserve all four when resuming.
 - Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -384,6 +394,22 @@ Phase 9.7a is complete in the working tree: the existing Inference workspace, mo
 - A successful warmup previously made an explicit batch with all requested outputs failed report `partial_success` and select the warmup as primary. Completion and the in-memory job/history alias now choose a non-warmup requested record and report `error` when no requested output succeeded. Legacy combined-image response behavior remains unchanged.
 - Phase 9.7a found that model and LoRA management already share one config tab and System already has a working tab. A primary hash navigator activates those existing tabs and CSS gives their controls separate focused views, preserving all manager listeners and selected state. Legacy `#model`, `#prompt`, `#generation`, and `#runtime` hashes still resolve; returning to Inference restores its prior configuration tab. The tablet Results drawer offset now accounts for the additional navigation row.
 - The initial live browser pass showed inference's empty-input validation banner on management pages. Scoping that banner to Inference removed the distraction without discarding its validation state. A cache-bypassed browser rerun confirmed no horizontal overflow at desktop or 390 px phone width.
+- Phase 9.7b1 reuses `#panel-output` for Batch instead of moving/cloning its controls. CSS makes it an in-flow full-width panel at every breakpoint, keeps the idle batch summary visible, and hides configuration/drawer controls. New submissions clear the previous summary while waiting for the first authoritative batch event. Page changes never call run reset, stream reconnection, or result rendering.
+- Live Batch screenshots exposed two existing CSS defects: no `.toast-container`/`.toast` rules left notifications as unstyled body flex items, and long record values shrank flex-row labels to individual letters. Fixed notification placement and non-shrinking labels without changing notification or metadata behavior.
+- Phase 9.7b2 found that `Utils.el` emitted `disabled="false"`, which still disables native HTML buttons. Assigning the boolean DOM property fixes every caller; finished-record Delete and Open buttons now work in the real browser. Active records keep both actions disabled, and backend deletion guards remain authoritative.
+- Historical records without an `outputs` field previously skipped output clearing and current-record assignment, leaving a successful image visible beside a failed record. Selection now always replaces output/record state and shows readable details for failures. List and selection request counters reject late responses from earlier requests; navigation and inspection leave SSE and batch state intact.
+- History now reuses its original IDs/listeners in an in-flow sidebar with the existing output panel. It shows loading, empty, readable error/retry, full dates, selected-record highlighting, and native Open controls; phone selection scrolls/focuses the result heading. Legacy header History and existing selection callers remain wired through the same controller.
+- Phase 9.7b3 found that `/api/runs` already supplies every generated artifact per durable record, including filenames, URLs, dimensions, hashes, and readable input context. `RunHistory.renderLibrary` projects that payload into a grouped gallery; list loading/error/empty/Refresh, successful-job refresh, and deletion all share the existing history fetch. No new endpoint, dependency, or static DOM ID was needed.
+- Saved-image selection now passes an output index into the existing record selector/viewer, retaining all outputs in their original order while showing the chosen image and its corresponding input. Output-strip images are native buttons with pressed state; historical missing dimensions no longer fall back to an invented 1024×1024. Long gallery names are bounded to two lines with full title/accessibility text and preview metadata.
+- Deletion previously cleared only `currentRecord.run_id`, which can differ from the displayed batch output's owner. It now also checks the viewed output's run ID, removes unselected deleted-run artifacts from the current strip, and invalidates pending record selections after successful deletion. Backend active-job/shared-artifact guards are unchanged.
+- Final regression exposed `test_b14_json_record_durable_atomic_write` reading the filesystem immediately after asynchronous POST submission. The focused test reproduced the failure; retrieving the record through the existing waiting API before checking persisted JSON fixes the test's scheduling assumption without changing backend behavior.
+
+- Phase 9.7b4 found that `Store.subscribe/notify` already existed but was unused. Dashboard subscribes once; runtime, catalog/LoRA selection, download progress, and existing batch timer/SSE updates notify the shared store. Rendering updates text without rebuilding controls or changing the active stream. The health/system checks were startup/manual/configuration probes, not polling loops; Dashboard retains that policy and adds a single post-job system refresh.
+- Dashboard separates requested next-run model/LoRA/device from actual resident slots and applied adapters. Inventory is timestamped; disconnected or failed refreshes label retained GPU/resources as last-known data. Local batch/download cards say they monitor this tab, and server active-job information is explicitly a snapshot. No storage totals, complete queue, global download list, model sizes, or parameter counts are invented.
+- Dashboard shares `RunHistory.loadHistory` for loading/empty/error/recent-five states. Finished native buttons open the existing History details; active records are disabled. `handleComplete` now refreshes history for failed jobs as well as successful ones, preventing failed durable records from disappearing from Dashboard/History/Outputs until manual refresh. Health failure is checked before demo mode when rendering the header, so disconnected demo sessions no longer claim to be online.
+- The first full UI regression passed all test bodies but hit a teardown error: the stress suite's final burst submission was still persisting files while its temporary directory was deleted. `shutdown_runner_bridge()` now drains and clears the singleton before test storage cleanup; the final full suite passed. Production runner behavior is unchanged.
+
+All planned Phase 9.7 destinations are wired through existing functional state and APIs. Expanded regression and documentation reconciliation remain in Phase 9.8.
 
 ## Reference Implementations
 
@@ -574,7 +600,7 @@ Phase 9.6 additions to the cumulative files above:
 - `tests/test_runtime.py`, `ui/tests/test_backend.py`, `ui/tests/test_challenger_m2_node.js` — callback ordering, SSE stage/count/replay/partial-failure/warmup behavior, and browser state/details tests.
 - `README.md`, `ui/README.md`, `PROJECT.md`, `CONTEXT.md` — document batch progress semantics, limits, validation, and Phase 9.7 handoff.
 
-Phase 9.7a additions to the cumulative files above (uncommitted):
+Phase 9.7a additions to the cumulative files above (committed as `ef231d6`):
 
 - `ui/templates/index.html` — primary task links and a dedicated LoRA view heading.
 - `ui/static/js/app.js` — page routing, active/focus state, legacy hashes, and inference-tab restoration while reusing existing controls.
@@ -582,7 +608,83 @@ Phase 9.7a additions to the cumulative files above (uncommitted):
 - `ui/tests/test_challenger_m2_node.js` — routing, manager-tab reuse, legacy hashes, active link state, and inference-tab restoration.
 - `ui/README.md`, `CONTEXT.md` — explain the current destinations, validation, remaining work, and exact continuation point.
 
+Phase 9.7b1 additions to the cumulative files above (uncommitted):
+
+- `ui/templates/index.html` — Batch navigation link, configure-in-Inference guidance, and initial batch empty state without new static IDs.
+- `ui/static/js/app.js` — Batch route/title/focus, preserving current inference/output tabs and clearing stale summary on a new submission.
+- `ui/static/css/style.css` — full-width Batch layout at all breakpoints, larger operation list, notification styling, and readable labels beside long values.
+- `ui/tests/test_challenger_m2_node.js` — active navigation preserves stream/clock/items/progress/failures and opens per-item Details in Batch.
+- `ui/README.md`, `CONTEXT.md` — current workflow, destination map, evidence, limitations, and exact handoff.
+
+Phase 9.7b2 additions to the cumulative files above (uncommitted alongside 9.7b1):
+
+- `ui/templates/index.html` — History navigation link and in-flow history sidebar, Refresh, guidance, accessible loading notice, and existing IDs preserved.
+- `ui/static/js/app.js` — History route, list states, latest-response guards, native boolean disabling, accessible selection, stale-output clearing, explicit historical input association, and selected-result deletion cleanup.
+- `ui/static/css/style.css` — responsive History list/result layout, long-ID wrapping, selected-row feedback, and hiding current-job progress on the historical view.
+- `ui/tests/test_challenger_m2_node.js` — two runnable checks for routing/list states/races/native disabling and failed-record clearing/selection races/active-monitor preservation.
+- `ui/README.md`, `CONTEXT.md` — current History workflow, findings, verification, limitations, and Outputs continuation point.
+
+Phase 9.7b3 additions to the cumulative files above (uncommitted alongside 9.7b1–b2):
+
+- `ui/templates/index.html` — Outputs navigation and saved-output gallery beside the shared viewer; preserved all existing static IDs.
+- `ui/static/js/app.js` — gallery projection through the shared history fetch, indexed record selection, lazy/missing previews, selected-image state, native keyboard thumbnails, and deletion cleanup/race guards.
+- `ui/static/css/style.css` — responsive grouped gallery/result layout, bounded long names, wrapping preview metadata, and button thumbnail styling.
+- `ui/tests/test_challenger_m2_node.js` — two runnable checks for shared list states, exact selection/input/download, keyboard controls, 30-output handling, missing previews, active controls, deletion confirmation, and late-selection invalidation.
+- `ui/tests/e2e/test_tier2_boundaries.py` — wait for record persistence before the existing durable atomic JSON assertion.
+- `ui/README.md`, `CONTEXT.md` — current Outputs workflow, test evidence, limitations, and Dashboard continuation point.
+
+Phase 9.7b4 additions to the cumulative files above (uncommitted alongside 9.7b1–b3):
+
+- `ui/templates/index.html` — Dashboard navigation and six accessible status/activity cards with Refresh and links to existing destinations.
+- `ui/static/js/app.js` — shared-state subscription/notifications, snapshot/selection/monitor rendering, shared refresh, recent-five buttons, offline header correction, and success/failure history/system refresh.
+- `ui/static/css/style.css` — three/two/one-column Dashboard layouts, long-value wrapping, native recent-run buttons, and refresh touch target.
+- `ui/tests/test_challenger_m2_node.js` — two runnable checks for real status sources, stale/unavailable states, monitored activity, recent records, coalesced refresh, and stream-preserving recovery.
+- `ui/tests/test_adversarial_stress.py` — drain and clear the singleton runner before temporary-output teardown.
+- `ui/README.md`, `CONTEXT.md` — Dashboard usage, snapshot/monitor scope, verification, remaining limitations, and Phase 9.8 handoff.
+
 ## Tests Performed
+
+Phase 9.7b4 validation:
+
+- `node ui/tests/test_challenger_m2_node.js` — 49/49 passed; `node ui/tests/test_tier5_node_stress.js` — 15/15 passed. Two added Dashboard checks cover GPU zero-free/unavailable states, actual resident resources/applied LoRA vs requested selection, monitored jobs, unknown download totals, recent-five sorting/active disabling, refresh coalescing/API counts, partial failures, offline header, and recovery without changing the stream/batch state.
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — final 438 passed in 23.76 seconds with the two existing Starlette/AnyIO deprecations. The first run reported 438 passing test bodies plus one temporary-output teardown error; draining the singleton runner before cleanup resolved it.
+- Live server `/tmp/qwen_dashboard_server.py` used an isolated bridge, two temporary inputs, and storage under `/tmp/qwen-dashboard-navigation`. Chrome drivers `/tmp/qwen_dashboard_check.js` and `/tmp/qwen_dashboard_finish.js` validated empty/loading/error/recovery, health/system staleness, real two-input synthetic CPU batch success and intentional failure, active navigation/Refresh preserving SSE, automatic refresh of four durable records, and recent-record opening in History. The driver's initial checks were corrected to wait for system startup and match the API's `error` record status rather than the monitor's `Failed` label.
+- Browser-only download API responses exercised the existing poller and Dashboard with downloading/failed states, unknown totals, file/byte information, and an explicit transfer error. No real Hub download was performed. Actual GPU inventory was visible; no production model inference or full-model LoRA run was repeated for this UI slice.
+- Desktop 1440x900, tablet 900x900, and phone 390x900 had visible cards, hidden inference configuration, and no horizontal overflow. Initial screenshots `/tmp/qwen-dashboard-{1440,900,390}.png` were captured; desktop/phone were visually inspected. `/tmp/qwen_dashboard_layout.js` then verified the final 44px refresh target and native Enter activation opening a failed record. Final screenshots `/tmp/qwen-dashboard-final-{1440,900,390}.png` include four recent records; desktop/phone were visually inspected again.
+- `.venv/bin/python -m pytest -q tests` — 41 passed plus 8 parameterized subtests in 2.70 seconds.
+- The isolated demo server completed application shutdown and the diagnostic Chrome instance was closed after validation. Temporary evidence remains under `/tmp`; no production model/input/output asset was modified by the browser checks.
+- `node --check ui/static/js/app.js` and `git diff --check` — passed. All pre-existing uncommitted Batch, History, and Outputs edits remain intact.
+
+Phase 9.7b3 validation:
+
+- `node ui/tests/test_challenger_m2_node.js` — final 47/47 passed; `node ui/tests/test_tier5_node_stress.js` — 15/15 passed. The first new click test needed an event-loop turn to drain the VM's asynchronous selection; the corrected driver tests the actual completion state.
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — final 438 passed with the two existing Starlette/AnyIO deprecations. An earlier full pass succeeded; a later pass exposed the pre-existing POST/persistence race (437 passed, 1 failed). Focused reproduction failed before the test fix and passed after it; the final full run passed.
+- Live temporary server `/tmp/qwen_outputs_server.py` and CDP driver `/tmp/qwen_outputs_check.js` exercised the real UI/API with isolated bridge/storage and synthetic CPU generation. Final artifacts were confined to `/tmp/qwen-outputs-navigation-final`; no production output/model/input asset was deleted.
+- Chrome checked 33 recorded artifacts (two-output run, 30-output run, missing-file record) at 1440×900, 900×900, and 390×900 without horizontal overflow. Final desktop and phone screenshots `/tmp/qwen-outputs-1440.png` and `/tmp/qwen-outputs-390.png` were visually inspected after bounding long filenames.
+- Browser checks proved exact second-image preview dimensions, download filename, selected state, original input/comparison association, keyboard Enter on native thumbnails, missing-preview feedback, and loading/empty/error/Refresh recovery (browser-only fetch stub). Initial keyboard-driver attempts omitted the Enter text event; adding it and bringing the tab forward fixed the diagnostic driver without changing application behavior.
+- An actual three-input synthetic batch continued across Outputs/Batch navigation and refreshed the gallery with all three new results. Deletion during inference returned a visible conflict and preserved files; native confirmation cancellation preserved the fixture; acceptance after completion removed its JSON and both PNGs, refreshed both lists, and cleared the selected viewer/details.
+- `node --check ui/static/js/app.js` and `git diff --check` — passed. No full production model/GPU inference was repeated; backend inference/loading/deletion logic is unchanged.
+- The temporary server and Chrome were stopped after verification; the server completed its application shutdown hook.
+
+Phase 9.7b2 validation:
+
+- `node ui/tests/test_challenger_m2_node.js` — 45/45 passed; `node ui/tests/test_tier5_node_stress.js` — 15/15 passed. Final runs include selected-row/focus changes.
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 438 passed, with the two existing Starlette/AnyIO deprecation warnings.
+- Temporary demo server `/tmp/qwen_history_server.py` and Chrome driver `/tmp/qwen_history_check.js` exercised the real frontend/API with isolated bridge/output directories and synthetic generation. Final fixtures were confined to `/tmp/qwen-history-navigation-final`; no production records or assets were deleted.
+- Live Chrome at 1440×900, 900×900, and 390×900 passed History/result visibility and no-horizontal-overflow checks. Desktop and phone screenshots `/tmp/qwen-history-1440.png` and `/tmp/qwen-history-390.png` were visually inspected after the final focus/selection changes.
+- Browser checks covered full record details and saved image serving, failed-record errors without stale output, selected-row accessibility, delayed loading/empty/error/Refresh (using a browser-only fetch stub), and an actual three-input synthetic batch continuing through History/Batch navigation.
+- Native browser confirmation cancellation preserved a fixture; confirmation acceptance removed its JSON and PNG through the existing backend DELETE API, refreshed the list, and cleared the selected result.
+- `node --check ui/static/js/app.js` and `git diff --check` — passed. No production GPU/model inference was repeated because this slice changes client navigation and history behavior only.
+- Temporary Chrome and demo-server processes were stopped after validation; the server completed its application shutdown hook.
+
+Phase 9.7b1 validation:
+
+- `node ui/tests/test_challenger_m2_node.js` — 43/43 passed; `node ui/tests/test_tier5_node_stress.js` — 15/15 passed.
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — final 438 passed after the layout fixes, with the two existing Starlette/AnyIO deprecation warnings.
+- Temporary local demo server (`/tmp/qwen_batch_server.py`) slowed synthetic generation by 0.75 seconds for observability; `/tmp/qwen_batch_check.js` drove the actual browser controls and SSE. Three temporary inputs produced two saved previews and one deliberate decode error; navigating Batch → Models → Batch during generation retained active status, then showed `Completed 2/3`, `Failed 1`, both outputs, the failure reason, and its Details record.
+- Cache-bypassed Chrome checks at 1440×900, 900×900, and 390×900 passed page/panel visibility and no-horizontal-overflow assertions. Desktop and phone screenshots at `/tmp/qwen-batch-1440.png` and `/tmp/qwen-batch-390.png` were visually inspected before and after the notification/label fixes. The first diagnostic-driver attempt clicked a still-disabled Run button; waiting for debounce validation corrected the driver.
+- `node --check ui/static/js/app.js` and `git diff --check` — passed. No full-model GPU inference was repeated; this slice changes client views only. Diagnostic generation artifacts are confined to `/tmp/qwen-batch-navigation/outputs`.
+- The temporary server and headless Chrome processes were stopped after validation; the server completed its shutdown hook.
 
 Phase 9.7a validation:
 
@@ -759,10 +861,12 @@ Phase 9.1 validation:
 - Download cancellation is cooperative at file boundaries. An active Hub file operation can finish before the job stops; the UI says so. Progress speed measures materialized file bytes, not exact network transfer bytes, because Xet may deduplicate or compress them. In-memory job history is lost on server restart; completed model manifests remain durable.
 - The progress adapter was exercised with a fake per-file Hub downloader and the actual offline 33.13 GB cached manifest. A fresh live Hub transfer was not run in this slice, so HTTP/Xet progress integration still merits a bounded online smoke test when network access is available.
 - LoRA, catalog-model, and finished-run deletion are available through confirmed web actions. Run deletion removes an entire record and its unshared artifacts; there is not yet an individual output-file management UI. The global active-job guard pauses deletion while any inference job is in progress. Independent CLI processes remain outside the web server's deletion locks. Deletion tests used only temporary assets.
-- Run/output cleanup is best-effort across multiple files: a filesystem error after record removal may leave an orphaned image, though history will not point to a missing image. Phase 9.7's dedicated Outputs view can expose orphan cleanup if this becomes a practical need.
-- Legacy durable records remain schema-version-1 documents. The new `summary_version: 1` projection is added on API reads without migration; deleted/missing referenced files yield unavailable metadata. Parameter counts are never inferred from a model label, and directory-backed model size requires a matching completed manifest. The current run-detail view shows the first generated output preview and the count of all outputs; dedicated multi-output browsing belongs to Phase 9.7.
-- Aggregate batch events and ETA live in the server process, with replay for an existing job. After restart, durable per-attempt history remains, but the aggregate event stream is not reconstructed from disk. The batch panel is part of Results until Phase 9.7 adds a dedicated Batch view. The current monitor-stop button disconnects SSE; it does not cancel a running model operation.
-- The SPA now has focused Inference, Models, LoRAs, and System destinations, but still uses the existing three-panel Inference workspace and shared management-tab DOM. Dedicated Batch, History, Outputs, and Dashboard destinations remain Phase 9.7b work; the current batch panel remains in Results and history in its drawer.
+- Run/output cleanup is best-effort across multiple files: a filesystem error after record removal may leave an orphaned image, though history will not point to a missing image. Outputs browses only record-linked artifacts and intentionally does not implement orphan cleanup.
+- Legacy durable records remain schema-version-1 documents. The new `summary_version: 1` projection is added on API reads without migration; deleted/missing referenced files yield unavailable metadata. Parameter counts are never inferred from a model label, and directory-backed model size requires a matching completed manifest. Run Details retains its first-output summary preview; Outputs allows exact selection/download/comparison of every recorded artifact through the shared viewer.
+- Aggregate batch events and ETA live in the server process, with replay for an existing job. After restart, durable per-attempt history remains, but the aggregate event stream is not reconstructed from disk. The Batch destination monitors the current browser submission and displays its results; configuration/launch remains in Inference. The current monitor-stop button disconnects SSE; it does not cancel a running model operation.
+- The SPA now has focused Dashboard, Inference, Batch, History, Outputs, Models, LoRAs, and System destinations using shared DOM/state. History and Outputs share the result/log viewer with live inference; a background job completing can replace the viewed saved result with the newest output. Saved records can be reopened; historical logs are not independently persisted by this UI.
+- Dashboard health/system/resource values are snapshots refreshed on startup, configuration changes, completion, or request. Batch and download cards monitor this tab using existing event/timer sources; a fresh tab does not reconnect to another tab's active stream/download. Server active-job data is a snapshot, not a complete queue. Backend APIs do not expose global download listings or storage totals. Very large history libraries retain the existing unpaginated payload limitation.
+- Outputs uses the full existing history payload without pagination; native lazy loading bounds image requests, but very large record libraries can still slow API/DOM rendering. A `ponytail:` comment records the pagination upgrade point. It lists recorded generated images; comparison artifacts are inspected in the comparison viewer rather than treated as independent gallery outputs. Deletion remains whole-run only.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
 - Multi-reference transport and conditioning effects are proven, but adherence was weak in the tested hairstyle-transfer example. Prompt/reference quality remains model- and asset-dependent rather than a transport defect.
 - LoRA application is proven with a real tiny Qwen Image 2.1 transformer, including output effect, strength, hash metadata, unload, replacement, and incompatible-target handling. No compatible user adapter exists in `models/loras/`, so the full 33 GB checkpoint was not run with a production LoRA during Phase 8. A valid SafeTensors header cannot prove model/training compatibility.
@@ -777,7 +881,7 @@ None at this checkpoint.
 
 ## Next Action
 
-Implement Phase 9.7b as the next independently testable slice. Start with a dedicated Batch destination using the existing Phase 9.6 batch panel and state, preserving the Results view and live SSE updates. Map the remaining History, Outputs, and Dashboard destinations to the current controls for later focused slices. Verify that navigating during an active batch retains progress, results, and errors; check desktop/phone layouts and the full UI suite. Do not duplicate batch listeners or backend state.
+Start Phase 9.8 with a bounded navigation/regression and documentation reconciliation slice. Preserve all uncommitted Phase 9.7b1–b4 changes. Review the existing regression/hardware evidence and `scripts/validate_browser_production.js`; identify stale root `README.md`, `PROJECT.md`, UI documentation, and test assumptions after all eight destinations were wired. Update only the affected documentation/test driver, run an integrated route/state/error/browser pass, and record which hardware/online checks still require a subsequent bounded slice. Reuse existing tests and prior audit rather than repeating completed analysis. Do not declare the overall project complete until the outstanding matrix limitations are explicitly addressed or documented.
 
 ## Resume Instructions
 

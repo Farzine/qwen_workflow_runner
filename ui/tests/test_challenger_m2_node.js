@@ -316,7 +316,7 @@ const wrappedCode = appJsCode.replace(
   `  globalThis.__APP_MODULES__ = {
        Utils, Toast, Store, ApiClient, Lightbox, InputBrowser,
        ParamForm, PageNavigation, ModelManager, LoRAManager, SystemManager, RunController,
-       TerminalViewer, OutputViewer, ComparisonSlider, JsonInspector, RunHistory, App
+       TerminalViewer, OutputViewer, ComparisonSlider, JsonInspector, RunHistory, Dashboard, App
      };
    })();`
 );
@@ -327,7 +327,7 @@ vm.runInContext(wrappedCode, sandbox);
 const modules = sandbox.__APP_MODULES__;
 assert(modules, "Failed to load app.js modules in test sandbox");
 
-const { Store, InputBrowser, ParamForm, PageNavigation, ModelManager, LoRAManager, SystemManager, RunController, ComparisonSlider, OutputViewer, JsonInspector, RunHistory, Toast, Utils, ApiClient, App } = modules;
+const { Store, InputBrowser, ParamForm, PageNavigation, ModelManager, LoRAManager, SystemManager, RunController, ComparisonSlider, OutputViewer, JsonInspector, RunHistory, Dashboard, Toast, Utils, ApiClient, App } = modules;
 const RunHub = RunController;
 
 // Intercept Toast messages for verification
@@ -1269,7 +1269,7 @@ runTest("Model download controls send cancellation and retry requests", async ()
 
 runTest("Primary navigation keeps manager state and restores inference tabs", () => {
   mockDocument.body = createMockElement("body", "body");
-  const links = ["inference", "models", "loras", "system"].map((page) => {
+  const links = ["inference", "models", "loras", "system", "batch", "history", "outputs", "dashboard"].map((page) => {
     const link = createMockElement(null, "a");
     link.dataset.pageTarget = page;
     return link;
@@ -1325,6 +1325,353 @@ runTest("Primary navigation keeps manager state and restores inference tabs", ()
   assert.strictEqual(mockDocument.body.dataset.page, "inference");
   mockDocument.querySelectorAll = originalQueryAll;
   mockDocument.querySelector = originalQuery;
+});
+
+runTest("Batch destination preserves active progress, failures, and result details across pages", async () => {
+  const previousStatus = Store.state.run.status;
+  const originalFetch = ApiClient.getRunRecord;
+  const stream = { close: () => { throw new Error("Navigation closed the active stream"); } };
+  RunController.eventSource = stream;
+  RunController.batchTimer = 1; // An existing clock must survive navigation.
+  Store.state.run.status = "running";
+  try {
+    const snapshot = { total: 2, completed: 0, failed: 0, remaining: 2,
+      current_operation: 1, current_stage: "generating", elapsed_seconds: 3,
+      eta_seconds: null, percent: 25, step: 1, steps: 2,
+      items: [{ operation_index: 1, input_filename: "bad.png", status: "generating" },
+        { operation_index: 2, input_filename: "good.png", status: "queued" }] };
+    RunController.renderBatch(snapshot);
+    PageNavigation.show("batch", true);
+    assert.strictEqual(mockDocument.body.dataset.page, "batch");
+    assert.strictEqual(getOrCreateElement("heading-output").textContent, "Batch Inference");
+    PageNavigation.show("models");
+    RunController.renderBatch({ ...snapshot, items: undefined, failed: 1, remaining: 1,
+      current_operation: 2, percent: 50,
+      item: { operation_index: 1, input_filename: "bad.png", status: "failed",
+        run_id: "run_bad", error: "Invalid image" } });
+    PageNavigation.show("batch");
+    assert.strictEqual(RunController.eventSource, stream);
+    assert.strictEqual(RunController.batchTimer, 1);
+    assert.strictEqual(RunController.batchItems.size, 2);
+    assert(RunController.batchSummary.textContent.includes("Failed 1"));
+    assert(RunController.batchList.textContent.includes("Invalid image"));
+    assert.strictEqual(RunController.progressBar.style.width, "50%");
+    ApiClient.getRunRecord = async () => ({ run_id: "run_bad", status: "error" });
+    await RunController.inspectBatchItem("run_bad");
+    assert(getOrCreateElement("pane-json").classList.contains("active"));
+    assert.strictEqual(mockDocument.body.dataset.page, "batch");
+    PageNavigation.show("inference");
+    assert.strictEqual(getOrCreateElement("heading-output").textContent, "Execution Hub");
+    assert(getOrCreateElement("pane-json").classList.contains("active"));
+    RunController.batchTimer = null;
+    RunController.setRunningState(true);
+    assert.strictEqual(RunController.batchSummary.textContent, "Waiting for batch status…");
+    assert.strictEqual(RunController.batchItems.size, 0);
+    RunController.setRunningState(false);
+  } finally {
+    Store.state.run.status = previousStatus;
+    ApiClient.getRunRecord = originalFetch;
+    RunController.eventSource = null;
+    RunController.batchTimer = null;
+  }
+});
+
+runTest("History page exposes loading, empty, error, and latest-response states", async () => {
+  const originalList = ApiClient.listRuns;
+  try {
+    RunHistory.openDrawer();
+    assert.strictEqual(mockDocument.body.dataset.page, "history");
+    assert.strictEqual(mockWindow.location.hash, "history");
+    assert.strictEqual(getOrCreateElement("drawer-history").getAttribute("aria-hidden"), "false");
+    let resolveFirst;
+    ApiClient.listRuns = () => new Promise(resolve => { resolveFirst = resolve; });
+    const oldRequest = RunHistory.loadHistory();
+    assert.strictEqual(RunHistory.runsList.getAttribute("aria-busy"), "true");
+    assert(RunHistory.runsList.textContent.includes("Loading run history"));
+    ApiClient.listRuns = async () => ({ runs: [] });
+    await RunHistory.loadHistory();
+    assert(RunHistory.runsList.textContent.includes("No saved runs yet"));
+    resolveFirst({ runs: [{ run_id: "stale", status: "success" }] });
+    await oldRequest;
+    assert(RunHistory.runsList.textContent.includes("No saved runs yet"));
+    ApiClient.listRuns = async () => { throw new Error("Server unreachable"); };
+    await RunHistory.loadHistory();
+    assert(RunHistory.runsList.textContent.includes("Server unreachable"));
+    assert(RunHistory.runsList.textContent.includes("Refresh"));
+    assert.strictEqual(RunHistory.runsList.getAttribute("aria-busy"), "false");
+    RunHistory.render([{ run_id: "active", status: "running" }]);
+    const open = RunHistory.runsList.children[0].children[3];
+    assert.strictEqual(open.textContent, "Open run");
+    assert.strictEqual(open.disabled, true);
+    assert.strictEqual(Utils.el("button", { disabled: false }).getAttribute("disabled"), null);
+    RunHistory.render([{ run_id: "finished", status: "success" }]);
+    assert.strictEqual(RunHistory.runsList.children[0].children[3].disabled, false);
+    assert.strictEqual(RunHistory.runsList.children[0].children[1].children[1].disabled, false);
+    RunHistory.closeDrawer();
+    assert.strictEqual(mockDocument.body.dataset.page, "inference");
+    assert.strictEqual(getOrCreateElement("drawer-history").getAttribute("aria-hidden"), "true");
+  } finally { ApiClient.listRuns = originalList; }
+});
+
+runTest("Historical failures clear stale output and selecting a record preserves an active batch", async () => {
+  const originalFetch = ApiClient.getRunRecord;
+  const previousStatus = Store.state.run.status;
+  const stream = { close: () => { throw new Error("History closed the active stream"); } };
+  try {
+    PageNavigation.show("history");
+    RunController.eventSource = stream;
+    Store.state.run.status = "running";
+    const batch = RunController.batchState;
+    ApiClient.getRunRecord = async () => ({ run_id: "success", input_image: "/input.png",
+      outputs: [{ filename: "saved.png", width: 64, height: 64 }] });
+    await RunHistory.selectRun("success");
+    assert.strictEqual(Store.state.run.currentOutputs.length, 1);
+    assert(getOrCreateElement("pane-json").classList.contains("active"));
+    let resolveOld;
+    ApiClient.getRunRecord = () => new Promise(resolve => { resolveOld = resolve; });
+    const oldSelection = RunHistory.selectRun("old");
+    ApiClient.getRunRecord = async () => ({ run_id: "failed", status: "error", error: { message: "Decode failed" } });
+    await RunHistory.selectRun("failed");
+    resolveOld({ run_id: "old", outputs: [{ filename: "old.png" }] });
+    await oldSelection;
+    assert.strictEqual(Store.state.run.currentRecord.run_id, "failed");
+    assert.strictEqual(Store.state.run.currentOutputs.length, 0);
+    assert(OutputViewer.activeView.classList.contains("hidden"));
+    assert(getOrCreateElement("pane-json").classList.contains("active"));
+    assert.strictEqual(RunController.eventSource, stream);
+    assert.strictEqual(RunController.batchState, batch);
+    assert.strictEqual(Store.state.run.status, "running");
+    assert.strictEqual(mockDocument.body.dataset.page, "history");
+  } finally {
+    ApiClient.getRunRecord = originalFetch;
+    Store.state.run.status = previousStatus;
+    RunController.eventSource = null;
+    PageNavigation.show("inference");
+  }
+});
+
+runTest("Outputs library shares list states and opens the exact saved image with its input", async () => {
+  const originalList = ApiClient.listRuns;
+  const originalFetch = ApiClient.getRunRecord;
+  const originalOutputList = RunHistory.outputsList;
+  const previousStatus = Store.state.run.status;
+  try {
+    RunHistory.outputsList = createMockElement(null);
+    PageNavigation.navigate("outputs");
+    assert.strictEqual(mockDocument.body.dataset.page, "outputs");
+    assert.strictEqual(mockWindow.location.hash, "outputs");
+    const record = { run_id: "saved", status: "success", input_image: "/saved-input.png",
+      comparison: "/results/comparison.png", outputs: [
+        { filename: "first.png", url: "/api/outputs/first.png", width: 64, height: 64 },
+        { filename: "second.png", url: "/api/outputs/second.png", width: 96, height: 64 },
+      ] };
+    let resolveList;
+    ApiClient.listRuns = () => new Promise(resolve => { resolveList = resolve; });
+    const loading = RunHistory.loadHistory();
+    assert.strictEqual(RunHistory.outputsList.getAttribute("aria-busy"), "true");
+    assert(RunHistory.outputsList.textContent.includes("Loading saved outputs"));
+    resolveList({ runs: [record, { run_id: "failed", status: "error" }] });
+    await loading;
+    assert.strictEqual(RunHistory.outputsList.querySelectorAll(".saved-output").length, 2);
+    ApiClient.getRunRecord = async id => { assert.strictEqual(id, "saved"); return record; };
+    const stream = { close() { throw new Error("Outputs closed the active stream"); } };
+    RunController.eventSource = stream;
+    Store.state.run.status = "running";
+    const second = RunHistory.outputsList.querySelectorAll(".saved-output")[1];
+    second.dispatchEvent("click");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(OutputViewer.primaryImage.src, record.outputs[1].url);
+    assert.strictEqual(OutputViewer.downloadBtn.download, "second.png");
+    assert.strictEqual(second.getAttribute("aria-current"), "true");
+    assert(getOrCreateElement("comparison-before-img").src.includes("saved-input.png"));
+    assert.strictEqual(getOrCreateElement("comparison-after-img").src, record.outputs[1].url);
+    assert(getOrCreateElement("pane-outputs").classList.contains("active"));
+    const firstThumb = OutputViewer.batchStrip.children[0];
+    assert.strictEqual(firstThumb.tagName, "BUTTON");
+    firstThumb.dispatchEvent("click");
+    assert.strictEqual(OutputViewer.currentOutput.filename, "first.png");
+    assert.strictEqual(firstThumb.getAttribute("aria-pressed"), "true");
+    assert.strictEqual(RunController.eventSource, stream);
+    ApiClient.listRuns = async () => ({ runs: [] });
+    await RunHistory.loadHistory();
+    assert(RunHistory.outputsList.textContent.includes("No saved outputs"));
+    ApiClient.listRuns = async () => { throw new Error("Offline"); };
+    await RunHistory.loadHistory();
+    assert(RunHistory.outputsList.textContent.includes("Offline"));
+    assert(RunHistory.outputsList.textContent.includes("Refresh"));
+    assert.strictEqual(RunHistory.outputsList.getAttribute("aria-busy"), "false");
+  } finally {
+    ApiClient.listRuns = originalList;
+    ApiClient.getRunRecord = originalFetch;
+    RunHistory.outputsList = originalOutputList;
+    Store.state.run.status = previousStatus;
+    RunController.eventSource = null;
+    PageNavigation.show("inference");
+  }
+});
+
+runTest("Outputs library scales, handles missing previews, and deletes by owning run", async () => {
+  const originalList = RunHistory.outputsList;
+  const originalDelete = ApiClient.deleteRun;
+  const originalFetch = ApiClient.getRunRecord;
+  const originalLoad = RunHistory.loadHistory;
+  const originalConfirm = mockWindow.confirm;
+  try {
+    RunHistory.outputsList = createMockElement(null);
+    const outputs = Array.from({length: 30}, (_, i) => ({filename: `long_${"name_".repeat(30)}${i}.png`,
+      url: `/api/outputs/${i}.png`, run_id: "owner"}));
+    const run = {run_id: "owner", status: "success", outputs};
+    RunHistory.renderLibrary([run, {run_id: "active", status: "running", outputs: [outputs[0]]}]);
+    assert.strictEqual(RunHistory.outputsList.querySelectorAll(".saved-output").length, 31);
+    assert.strictEqual(RunHistory.outputsList.querySelectorAll(".saved-output")[30].disabled, true);
+    const image = RunHistory.outputsList.querySelectorAll(".saved-output")[0].children[0];
+    image.dispatchEvent("error");
+    assert.strictEqual(image.hidden, true);
+    assert(image.parentNode.textContent.includes("Preview unavailable"));
+    let deleted = 0, refreshed = 0;
+    ApiClient.deleteRun = async id => { assert.strictEqual(id, "owner"); deleted++; };
+    RunHistory.loadHistory = async () => { refreshed++; };
+    Store.state.run.currentRecord = {run_id: "other"};
+    Store.state.run.currentOutputs = outputs;
+    OutputViewer.renderOutputs(outputs, 29);
+    mockWindow.confirm = () => false;
+    await RunHistory.deleteRun(run);
+    assert.strictEqual(deleted, 0);
+    let resolveSelection;
+    ApiClient.getRunRecord = () => new Promise(resolve => { resolveSelection = resolve; });
+    const pendingSelection = RunHistory.selectRun("owner");
+    mockWindow.confirm = () => true;
+    await RunHistory.deleteRun(run);
+    resolveSelection(run);
+    await pendingSelection;
+    assert.strictEqual(deleted, 1);
+    assert.strictEqual(refreshed, 1);
+    assert.strictEqual(OutputViewer.currentOutput, null);
+    assert.strictEqual(Store.state.run.currentOutputs.length, 0);
+    assert(OutputViewer.activeView.classList.contains("hidden"));
+  } finally {
+    RunHistory.outputsList = originalList;
+    ApiClient.deleteRun = originalDelete;
+    ApiClient.getRunRecord = originalFetch;
+    RunHistory.loadHistory = originalLoad;
+    mockWindow.confirm = originalConfirm;
+  }
+});
+
+runTest("Dashboard renders actual snapshots and live monitors without changing the active stream", () => {
+  const originalRoot = Dashboard.root;
+  const originalSystem = Store.state.system;
+  const originalRun = Store.state.run;
+  const originalTask = Store.state.models.activeTask;
+  const originalBatch = RunController.batchState;
+  const originalSummary = RunController.batchSummary.textContent;
+  try {
+    Dashboard.root = createMockElement(null);
+    for (const key of ["server", "next", "gpus", "resources", "jobs", "download"]) {
+      Dashboard.root.appendChild(Utils.el("p", {class: `dashboard-${key}-value`}));
+    }
+    Dashboard.root.appendChild(Utils.el("div", {class: "dashboard-recent-list"}));
+    Store.state.system = {capabilities: null, error: null, updatedAt: null};
+    Store.state.run = {status: "idle"};
+    Store.state.models.activeTask = null;
+    RunController.batchState = null;
+    Dashboard.render();
+    assert(Dashboard.root.querySelector(".dashboard-gpus-value").textContent.includes("Loading"));
+    assert(Dashboard.root.querySelector(".dashboard-download-value").textContent.includes("No download monitored"));
+    Dashboard.renderRecent([]);
+    assert(Dashboard.root.querySelector(".dashboard-recent-list").textContent.includes("No saved runs"));
+    Store.state.system.capabilities = {cuda: {devices: [{id: "cuda:1", name: "Actual GPU", free_memory_bytes: 0, total_memory_bytes: 1024}]},
+      production_backend: {ready: true, message: "Ready on GPU"},
+      execution: {cache: {slots: [{device: "cuda:1", state: "loaded", model: {source: "Actual loaded model"},
+        pipeline: "ActualPipeline", lora: {applied: true, filename: "actual.safetensors"}}]}}};
+    Store.state.system.updatedAt = "2026-09-28T05:00:00Z";
+    Store.state.run = {status: "running", activeJobId: "live_job"};
+    RunController.batchState = {current_stage: "generating"};
+    RunController.batchSummary.textContent = "Completed 1/3 · Failed 0 · Stage generating";
+    const stream = {close() { throw new Error("Dashboard stopped the stream"); }};
+    RunController.eventSource = stream;
+    ModelManager.renderHfDownloadProgress({repo_id: "Actual/Download", status: "downloading", percent: null, downloaded_bytes: 0, total_bytes: null});
+    PageNavigation.navigate("dashboard");
+    assert.strictEqual(mockDocument.body.dataset.page, "dashboard");
+    const resources = Dashboard.root.querySelector(".dashboard-resources-value").textContent;
+    assert(resources.includes("Actual loaded model") && resources.includes("actual.safetensors"));
+    assert(Dashboard.root.querySelector(".dashboard-gpus-value").textContent.includes("0 B free"));
+    assert(Dashboard.root.querySelector(".dashboard-jobs-value").textContent.includes("live_job"));
+    assert(Dashboard.root.querySelector(".dashboard-download-value").textContent.includes("Total size unknown"));
+    Store.state.system.error = "Probe offline";
+    Dashboard.render();
+    assert(Dashboard.root.querySelector(".dashboard-server-value").textContent.includes("Probe offline"));
+    assert(Dashboard.root.querySelector(".dashboard-resources-value").textContent.includes("Last known data"));
+    Dashboard.renderRecent(Array.from({length: 7}, (_, i) => ({run_id: `recent_${i}`, status: i === 6 ? "running" : "success", timestamp: `2026-09-28T05:0${i}:00Z`})));
+    const recent = Dashboard.root.querySelector(".dashboard-recent-list");
+    assert.strictEqual(recent.children.length, 5);
+    assert.strictEqual(recent.children[0].getAttribute("aria-label"), "Inspect run recent_6");
+    assert.strictEqual(recent.children[0].disabled, true);
+    assert.strictEqual(RunController.eventSource, stream);
+    assert.strictEqual(Store.state.run.status, "running");
+  } finally {
+    Dashboard.root = originalRoot;
+    Store.state.system = originalSystem;
+    Store.state.run = originalRun;
+    Store.state.models.activeTask = originalTask;
+    RunController.batchState = originalBatch;
+    RunController.batchSummary.textContent = originalSummary;
+    RunController.eventSource = null;
+    PageNavigation.show("inference");
+  }
+});
+
+runTest("Dashboard refresh shares existing requests, exposes errors, and recovers without resetting inference", async () => {
+  const originalRoot = Dashboard.root;
+  const originalHealth = ApiClient.checkHealth;
+  const originalSystem = ApiClient.getSystemCapabilities;
+  const originalList = ApiClient.listRuns;
+  const originalState = Store.state.system;
+  try {
+    Dashboard.root = createMockElement(null);
+    for (const key of ["server", "gpus", "resources", "jobs", "next", "download"]) Dashboard.root.appendChild(Utils.el("p", {class: `dashboard-${key}-value`}));
+    const button = Utils.el("button", {class: "dashboard-refresh-btn"});
+    const status = Utils.el("p", {class: "dashboard-refresh-status"});
+    const recent = Utils.el("div", {class: "dashboard-recent-list"});
+    [button, status, recent].forEach(element => Dashboard.root.appendChild(element));
+    let healthCalls = 0, systemCalls = 0, listCalls = 0, resolveHealth;
+    ApiClient.checkHealth = () => {healthCalls++; return new Promise(resolve => {resolveHealth = resolve;});};
+    ApiClient.getSystemCapabilities = async () => {systemCalls++; throw new Error("System offline");};
+    ApiClient.listRuns = async () => {listCalls++; throw new Error("History offline");};
+    const refresh = Dashboard.refresh();
+    assert.strictEqual(button.disabled, true);
+    assert(status.textContent.includes("Refreshing"));
+    assert.strictEqual(recent.getAttribute("aria-busy"), "true");
+    await Dashboard.refresh();
+    assert.strictEqual(healthCalls, 1);
+    resolveHealth(); await refresh;
+    assert.strictEqual(systemCalls, 1);
+    assert.strictEqual(listCalls, 1);
+    assert.strictEqual(button.disabled, false);
+    assert(status.textContent.includes("unavailable"));
+    assert(recent.textContent.includes("History offline"));
+    assert(Dashboard.root.querySelector(".dashboard-server-value").textContent.includes("System offline"));
+    ApiClient.checkHealth = async () => {throw new Error("Server offline");};
+    await Dashboard.refresh();
+    assert.strictEqual(Store.state.connected, false);
+    assert.strictEqual(getOrCreateElement("backend-status-text").textContent, "Disconnected");
+    ApiClient.checkHealth = async () => {};
+    ApiClient.getSystemCapabilities = async () => ({cuda: {devices: []}, execution: {cache: {slots: []}}});
+    ApiClient.listRuns = async () => ({runs: []});
+    await Dashboard.refresh();
+    assert.strictEqual(Store.state.connected, true);
+    assert.strictEqual(Store.state.system.error, null);
+    assert.strictEqual(status.textContent, "Status refreshed.");
+    assert(Dashboard.root.querySelector(".dashboard-resources-value").textContent.includes("No resident"));
+    assert(Dashboard.root.querySelector(".dashboard-gpus-value").textContent.includes("No CUDA"));
+    assert(recent.textContent.includes("No saved runs"));
+  } finally {
+    Dashboard.root = originalRoot;
+    ApiClient.checkHealth = originalHealth;
+    ApiClient.getSystemCapabilities = originalSystem;
+    ApiClient.listRuns = originalList;
+    Store.state.system = originalState;
+  }
 });
 
 (async function runAll() {

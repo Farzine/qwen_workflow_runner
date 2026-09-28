@@ -91,7 +91,13 @@ python ui/app.py --demo
 
 Demo mode is an explicit synthetic preview. `DemoBackend` derives a labeled image from the first input and writes valid PNG, comparison, and `{run_id}.json` artifacts, but it does not load or run the Qwen model. Normal startup defaults to production inference. If the selected production runtime is unavailable, the run reports a setup error instead of silently substituting demo output.
 
-The top navigation opens **Inference**, **Models**, **LoRAs**, and **System**. Models and LoRAs use separate focused views of the existing catalogs; the selected model, adapter, and device remain active when you return to Inference. Existing `#model` and configuration-tab links continue to work. Batch progress and outputs remain in Inference → Results, and run history remains available from the header while dedicated views are being added.
+The top navigation opens **Dashboard**, **Inference**, **Batch**, **History**, **Outputs**, **Models**, **LoRAs**, and **System**. Configure and launch multiple inputs in Inference, then open Batch for full-width operation progress, counts, timing, failures, logs, outputs, comparisons, and per-item Details. Switching pages preserves the active monitor. Models and LoRAs use separate focused views of the existing catalogs; the selected model, adapter, and device remain active when you return to Inference. Existing `#model` and configuration-tab links continue to work.
+
+Dashboard shows server/runtime readiness, GPU inventory, resident production pipelines and applied adapters, the next run's selected model/device/LoRA, this tab's batch/download activity, and five recent saved runs. **Refresh status** checks health, system inventory, and the shared history list; unavailable responses show errors and label retained inventory as last known data. System values are timestamped snapshots, refreshed on startup, configuration changes, job completion, or request. Batch and download cards reuse the existing monitors, with no additional polling loop. Select a recent finished run to open its History details. Storage totals, server-wide download listings, and a full queue are not exposed by the existing APIs and are not displayed.
+
+History lists saved runs with full timestamps, status, input, and model context. Use **Open run** to inspect readable details, errors, outputs, or comparisons, and **Refresh** to reload the list. Finished runs can be deleted after confirmation; this also removes their unshared output files. Loading, empty, and retryable error states appear in the list. History shares the result viewer with Inference and Batch: a job completing in the background can display its newest result, and saved records can be reopened at any time.
+
+Outputs browses every generated image listed by saved run records, grouped by input and run. Select a thumbnail to open that exact image, then preview, compare, inspect Run Details, or download it. Thumbnails load lazily, long names retain their full text in the preview, and missing files show **Preview unavailable**. **Refresh** shares the History fetch; job completion and deletion refresh both lists. **Delete run** confirms removal of the entire record and its unshared files, with the existing active-job and shared-file safeguards. Individual-file deletion and orphan cleanup are not supported. The output thumbnail strip also supports native keyboard activation.
 
 ---
 
@@ -350,7 +356,7 @@ in-memory aggregate event stream is unavailable.
   - Removes a finished record and its exclusively owned output/comparison files.
     Shared artifacts remain available to other records. Active inference,
     unsafe paths, linked records, and duplicate run IDs block deletion. The
-    History drawer confirms the action and refreshes its list and displayed result.
+    History page confirms the action and refreshes its list and displayed result.
 - **`GET /api/outputs/{filename}`**
   - Serves generated image files and side-by-side comparison images with cache control.
 

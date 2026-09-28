@@ -766,6 +766,9 @@ class TestTier2Boundaries(unittest.TestCase):
         }
         resp = self.client.post("/api/run", json=payload)
         run_id = resp.json()["run_id"]
+        # Submission is asynchronous; record retrieval waits for persistence.
+        record = self.client.get(f"/api/runs/{run_id}")
+        self.assertEqual(record.status_code, 200)
         disk_file = self.outputs_dir / f"{run_id}.json"
         self.assertTrue(disk_file.exists())
         loaded = json.loads(disk_file.read_text(encoding="utf-8"))
