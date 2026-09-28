@@ -47,6 +47,7 @@ The active checkout is `/mnt/lab/farzine/qwen_workflow_runner`. The path origina
 | `workflow/source_manifest.json` | Source model/workflow provenance. |
 | `scripts/download_examples.py` | Example input download helper. |
 | `scripts/summarize_logs.py` | Durable run-log summarizer. |
+| `scripts/validate_hub_download.py` | Opt-in pinned, size-bounded real HTTP/Xet/API download/cancel/retry/cache/hash/catalog validation without inference. |
 | `scripts/validate_browser_production.js` | Hardware-gated Chrome DevTools driver for real UI selection, production submission, SSE/result inspection, and screenshots. |
 | `VALIDATION_MATRIX.md` | Final scenario-by-scenario automated and live-hardware evidence, including remaining asset-dependent limitations. |
 | `models/`, `outputs/`, `inputs/`, `.cache/` | Ignored runtime assets, results, configured inputs, and thumbnails. |
@@ -150,7 +151,7 @@ Extend the validated Qwen workflow into a production-quality management applicat
 
 ## Active Task
 
-Phase 9.7b4 is complete in the working tree: Dashboard displays server/runtime readiness, timestamped GPU/resident-model/applied-LoRA snapshots, next-run selection, this tab's live batch/download activity, and five recent saved runs. Refresh reuses health/system/history requests; errors preserve labeled last-known inventory and offer retry. Both successful and failed jobs refresh records and system state. No new poller, endpoint, dependency, or static DOM ID was introduced. Fixed a pre-existing stress-test teardown race by draining the shared runner before removing temporary storage. Phase 9.7a was committed as `ef231d6`; Phase 9.7b1 Batch, 9.7b2 History, 9.7b3 Outputs, and 9.7b4 Dashboard changes are all uncommitted and must be preserved. Next is a bounded Phase 9.8 regression/documentation slice.
+Phase 9.8c2 is complete: two real offline browser batches selected cached GGUF ID `model_5f31ccf7dbc4c402207d`, passed exact tensor loading, produced four transformed outputs, and verified companion/device metadata, saved/served hashes, pipeline replacement/reuse, Dashboard/System state, and explicit shutdown. The existing browser validator now accepts `--model-id`, clicks the existing Use button, and rejects mismatched records. No production loader/UI change was needed. All nine prior uncommitted paths remain at HEAD `dc43f4d`. Evidence: `/tmp/qwen-gguf-validation-9znq346l`; validation server/Chrome were stopped. Phase 9.8c1 HTTP/Xet evidence remains valid. Next is Phase 9.8c3: full pretrained user-LoRA validation; `models/loras/` is empty, so a compatible adapter path and expected effect were requested. Stop at this clean asset-dependent checkpoint; the overall project remains unfinished.
 
 ## Completed Tasks
 
@@ -229,6 +230,10 @@ Phase 9.7b4 is complete in the working tree: Dashboard displays server/runtime r
 - [x] Added the dedicated History destination with responsive list/result layout, loading/error/retry states, full timestamps, accessible selection, and existing confirmed deletion.
 - [x] Added the responsive Outputs destination using saved-record artifacts and existing preview/comparison/download/details/delete flows; verified exact non-first-image selection, 33 artifacts, missing files, active navigation, and confirmed temporary-file cleanup in Chrome.
 - [x] Added the responsive Dashboard using shared runtime/catalog/monitor/history state; verified loading/empty/error/recovery, native recent-run access, live success/failure batches, unknown download totals, and three viewport widths without adding polling.
+- [x] Completed Phase 9.8c1 live HTTP/Xet transfer, source hashes, cancel/retry, manifest reuse, SSE/catalog, and actual desktop/phone Models-page verification.
+- [x] Completed Phase 9.8c2 selected-ID cached GGUF browser inference, strict tensors, four outputs, full-to-GGUF replacement, compatible reuse, artifacts, resources, and shutdown.
+- [x] Completed Phase 9.8b real UI selected-model inference, four saved/served outputs, compatible cache reuse, resident-resource pages, explicit shutdown, and interrupted-offload recovery regression.
+- [x] Completed Phase 9.8a integrated eight-route/three-width checks, active synthetic batch navigation, Dashboard retry, production-checker missing/demo evidence guards, and current documentation reconciliation.
 - [x] Made output-strip selection keyboard accessible, cleared deleted artifacts by owning run, invalidated pending selection after deletion, and corrected an asynchronous durable-record regression test.
 - [x] Fixed the shared element helper's native `disabled=false` handling, failed-record stale outputs, and out-of-order history responses; verified real browser cancellation and deletion using temporary assets.
 - [x] Fixed missing toast styles that made notifications consume workspace height, and prevented readable-record labels from shrinking beside long model paths.
@@ -259,6 +264,11 @@ Phase 9.7b4 is complete in the working tree: Dashboard displays server/runtime r
 - [x] Phase 9.7b3: add an Outputs destination for durable multi-output browsing and supported deletion.
 - [x] Phase 9.7b4: add Dashboard status/activity using the existing runtime, catalog, download, and history state.
 - [ ] Phase 9.8: run the expanded regression/hardware/browser matrix and reconcile all documentation.
+- [x] Phase 9.8a: reconcile documentation and run integrated route/state/error/browser regression without loading full weights.
+- [x] Phase 9.8b: repeat selected full-model production UI, compatible cache reuse, resident-resource display, saved artifacts, and shutdown cleanup after final navigation changes.
+- [x] Phase 9.8c1: bounded fresh online Hub download/progress/cache-discovery smoke test using isolated storage.
+- [x] Phase 9.8c2: selected-ID GGUF/alternate compatible model hardware validation where assets/resources permit.
+- [ ] Phase 9.8c3: full pretrained LoRA validation when a compatible adapter is available; document unavailable assets explicitly.
 
 ## Current Problems
 
@@ -367,7 +377,7 @@ Phase 9.7b4 is complete in the working tree: Dashboard displays server/runtime r
 ### State and repository findings
 
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
-- Phase 9.4a, 9.4b, 9.4c, 9.5, 9.6, and 9.7a were committed as `56b4517`, `cf1a010`, `d6d5682`, `ca02524`, `ad1a33d`, and `ef231d6` on `main`. Phase 9.7b1–b4 changes are currently uncommitted; preserve all four when resuming.
+- Phase 9.4a, 9.4b, 9.4c, 9.5, 9.6, and 9.7a were committed as `56b4517`, `cf1a010`, `d6d5682`, `ca02524`, `ad1a33d`, and `ef231d6` on `main`. Phase 9.7b1–b4 were committed together as `dc43f4d` before Phase 9.8a resumed, with a clean working tree. Earlier file-history sections retain their original checkpoint descriptions.
 - Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -411,6 +421,20 @@ Phase 9.7b4 is complete in the working tree: Dashboard displays server/runtime r
 
 All planned Phase 9.7 destinations are wired through existing functional state and APIs. Expanded regression and documentation reconciliation remain in Phase 9.8.
 
+- Phase 9.8a diagnosed stale browser-driver assumptions: `.batch-thumb` is now a native button containing an image, so checking the button's `complete/naturalWidth` never succeeds. `/api/runs` supplies output filenames and readable summaries, not full `parameters`; filtering listings by runtime prefix could silently collect zero records. The driver now checks nested images, matches list outputs by prefix or displayed filenames, requires two successful records, and checks effective production pipeline/device plus selected model ID. Production metadata does not uniformly include a backend class name; the authoritative pipeline marker is `backend.pipeline === WorkflowQwenImage21Pipeline`.
+- Shared collection replaces duplicated evidence code. Failure closes the CDP connection through `finally`; model-free mode verifies all routes and retries without a Child folder or pretrained inference. Production mode exposes `--device=cuda:1` (default `cuda:0`), waits for valid Run controls, and opens Batch so native lazy thumbnails are visible. No new dependency, endpoint, or runtime abstraction was added.
+
+- Phase 9.8b traced a reproducible cache-recovery defect: an OOM during Accelerate `module.to(cuda:1)` leaves part of the text encoder on GPU and the rest on CPU. Its next hook checks the first parameter and skips the transfer, causing Qwen rotary embedding device mismatch. `WorkflowQwenImage21Pipeline` calls `maybe_free_model_hooks` only at successful return. `QwenBackend.generate` now calls that existing cleanup on failure too, restoring model-offload placement/hooks without reloading compatible weights; cleanup failures are logged while the inference exception is preserved. All CLI/web runner calls share this method. The successful path retains existing caching behavior.
+- Runtime readiness and free memory are probe-time facts, not a reservation. A competing GPU allocation can still cause real OOM. Initial setup failures before the core runner starts can remain in-memory-only; the initial diagnostic server later exited 137 without shutdown evidence, with cause unconfirmed. The restarted fixed server completed both batches and explicit shutdown normally. Other processes were never stopped.
+- Default browser runtime `output_dir` can override the server's `--outputs-dir`; the checker now accepts `--output-dir=...` and sets the actual submitted value. Partial completion has label `Completed with errors`; the checker now rejects it immediately and reads current batch-item/terminal diagnostics instead of stale initial validation banners.
+
+- Phase 9.8c1 found no production download defect in the bounded live path. The adapter sees actual HTTP writes and Xet reconstructed-file bytes; speed is not a wire-throughput claim. A small file can report its entire size in one callback, so 99.9% precedes verification and 100% terminal success. A cancelled file may already exist in the Hub cache even though no complete ModelStore manifest was published; retry still reports `cache_hit: false` for the manifest operation and uses the downloaded file. Later complete-manifest requests report `cache_hit: true` with no file-transfer invocation.
+- `scripts/validate_hub_download.py` observes existing progress and wraps actual Hub functions only to count calls; it does not invent callbacks or replace the real network downloader. A cancel POST is issued after an actual Xet byte callback for deterministic publication-boundary coverage. The script requires network/loopback access and the documented external 120-second timeout; it is opt-in, not a default test requiring internet. No new dependency/API abstraction was added.
+
+- Phase 9.8c2 proved cached GGUF tensor/runtime compatibility through the real selected-ID/browser path. Snapshot-path format preservation and offline manifest lookup worked; the strict loader validated all 297 tensors and replaced the full transformer while retaining local companion components. Dashboard/System state, counters, records, hashes, and output differences agreed. No production change was needed.
+- A model dropdown change previews metadata; the existing Use button applies `Store.state.models.selectedId`. The new browser `--model-id` flag must perform both actions. Its first diagnostic omitted Use and correctly failed selected-ID evidence checks after producing full-model outputs. The corrected driver applies Use and asserts the requested ID as well as displayed selection in every record. Missing IDs fail before inference. This was a diagnostic error, not a production model-selection regression.
+- GGUF storage is only the transformer: 68 BF16, 197 Q4_0, and 32 Q4_1 tensors, 4.15 GB on disk. Measured full-pipeline GPU peak remained about 18.81 GB with the separate unquantized companions; do not promise a proportional VRAM reduction from the GGUF file size. Replacement dropped old pipeline references and repeat requests retained the same loaded timestamp. Shutdown measured residual framework allocations before process exit, not zero memory while alive.
+
 ## Reference Implementations
 
 ### `/mnt/lab/farzine/projects/Nunchaku-Generic-Form/klein_generic_infer.py`
@@ -441,6 +465,39 @@ Useful concepts to adapt are the separation of base input from optional referenc
 | Result | Downloads service output | Saves backend PIL output | Current persistence can remain after backend selection is fixed. |
 
 ## Files Modified
+
+Phase 9.8c2 additions (same nine uncommitted paths; all prior work preserved):
+
+- `scripts/validate_browser_production.js` — optional catalog ID, explicit existing Use-button application, and requested-ID assertions for every record; missing/incompatible IDs fail before submission.
+- `README.md` — specific-model validation usage and real GGUF coverage.
+- `VALIDATION_MATRIX.md` — exact GGUF model/tensors/companions, four outputs, replacement/reuse, artifacts, browser/resource/shutdown evidence, and remaining adapter limitation.
+- `CONTEXT.md` — completed task, technical findings, tests, required adapter input, and continuation point. Other earlier modified files and the new Hub script are unchanged in this slice.
+
+Phase 9.8c1 additions (nine uncommitted paths including preserved earlier work):
+
+- `scripts/validate_hub_download.py` — opt-in real API/HTTP/Xet smoke driver using pinned tiny public fixtures, preflight byte ceiling, temporary storage, observed real progress, source hashes, cancellation/retry/cache/SSE/catalog assertions, and retained JSON/JSONL evidence.
+- `README.md` — documented bounded live-validation command and prerequisites; preserved Phase 9.8a/b changes.
+- `VALIDATION_MATRIX.md` — current online and browser evidence plus exact remaining limits; preserved hardware evidence.
+- `CONTEXT.md` — records completion, findings, tests, changed files, and next GGUF checkpoint. Other previously modified production/test/UI/project files are unchanged in this slice.
+
+
+Phase 9.8b additions to the preserved Phase 9.8a working tree:
+
+- `qwen_runner/backend.py` — reset existing Diffusers offload hooks after failed inference, log cleanup errors, and preserve the original exception.
+- `tests/test_runtime.py` — failed-transfer recovery and original-error preservation regression, including a cleanup-failure branch.
+- `scripts/validate_browser_production.js` — optional isolated output directory, current batch/terminal errors, and immediate partial-batch rejection.
+- `VALIDATION_MATRIX.md` — four real outputs, source differences, selected model/device, resources/reuse, measured shutdown, runtime regression, and bounded remaining checks.
+- `README.md`, `ui/README.md` — isolation/device instructions and current core/hardware evidence.
+- `CONTEXT.md` — root-cause/evidence/history, exact next task, and limitations. `PROJECT.md` retains Phase 9.8a changes; M8 remains in progress.
+
+Phase 9.8a preserved working-tree changes (earlier entries below are historical):
+
+- `scripts/validate_browser_production.js` — model-free 24-layout/state/retry checks; current thumbnail/history contracts; shared, strict production evidence; device override; valid submission wait; Batch visibility; guaranteed CDP disconnect.
+- `README.md` — eight-page workflow, cached-pipeline LoRA wording, browser-check modes, and current validation scope.
+- `PROJECT.md` — implemented M6/M7 and active M8 states, task-page/resource architecture, durable history and chunk upload contracts.
+- `ui/README.md` — JSON download polling/resource architecture, current counts, and browser checker usage.
+- `VALIDATION_MATRIX.md` — current Phase 9 management/browser/regression evidence, preserved historical hardware results, and explicit outstanding checks.
+- `CONTEXT.md` — commit-state reconciliation, findings, tests, and exact hardware-validation continuation point.
 
 - `CONTEXT.md` — updated persistent architecture, completed work, validation, blockers, and next action.
 - `requirements-cu126.txt` — added the exact CUDA 12.6 PyTorch/torchvision profile proven on this host.
@@ -643,6 +700,56 @@ Phase 9.7b4 additions to the cumulative files above (uncommitted alongside 9.7b1
 - `ui/README.md`, `CONTEXT.md` — Dashboard usage, snapshot/monitor scope, verification, remaining limitations, and Phase 9.8 handoff.
 
 ## Tests Performed
+
+Phase 9.8c2 validation (2026-09-28):
+
+- Read complete saved context and reconciled Git; all nine existing paths preserved at HEAD `dc43f4d`. Scoped reads covered catalog/server selected-ID resolution, manifest, strict GGUF loader, backend companion invocation, and existing runtime tests. No full audit repeated.
+- Host preflight: GPU 0 had 34,488 MiB free vs GPU 1 31,509 MiB; about 100 GiB host RAM available. Selected `cuda:0`; competing PIDs were preserved. Cached file is 4,151,573,280 bytes. No Hub/network model download; temporary server had `HF_HUB_OFFLINE=1`, selected-ID config forced offline.
+- `timeout 360` and `timeout 240` browser-driver runs, explicit `--model-id=model_5f31ccf7dbc4c402207d --device=cuda:0 --output-dir=/tmp/qwen-gguf-validation-9znq346l/outputs` — both passed two inputs and one shared reference, Completed/100%, loaded results/comparisons, history, and strict selected-ID/device production records. Server had a 600-second SIGINT hard limit and explicit temporary `RunnerBridge` output directory.
+- GGUF source `abenzerps/Qwen-Image-2.1-Uncensored-GGUF`, file `qwen-image-2.1-UC-Q4_0.gguf`, revision `40319fb15542f0ad22921e0124a191a8a935a60a`; strict loader accepted 297 exact names/shapes (68 BF16, 197 Q4_0, 32 Q4_1). Full companion `Qwen/Qwen-Image-2.1@790c926...` supplies text encoder/processor/VAE/configuration; generated records identify actual transformer/pipeline and companion paths. No LoRA.
+- First GGUF records `20260928T091951_2dc4c72ebe_run_000/_001` — 20.3557/18.4044 seconds, cumulative load count 2, reuse 0 (replaced preceding full-model diagnostic). Repeat `20260928T092108_d9a3657614_run_000/_001` — 19.1322/19.0201 seconds, same loaded timestamp, load count 2, reuse 1. Peak allocation about 18.81 GB; total pipeline peak is still dominated by unquantized companion requirements.
+- Disk JSON equals API detail; all PNG hashes and served output/comparison bytes match, ordered `[current_input, img_11.jpg]` conditioning retained. Repeat hashes identical; source/output MAE 65.7581/56.8154, RMSE 82.8120/70.2413, changed pixels above 10 at 96.6156%/97.7890%. GGUF hashes differ from preceding full-model diagnostic. Batch screenshot visually inspected and watercolor edit confirmed.
+- Dashboard/System resident GGUF source, actual pipeline/device, no LoRA, zero active leases, and counters verified after both batches. `--collect-existing --model-id=...` passed without another inference; missing ID exited 1 with `Requested model is missing or incompatible` before submission.
+- Initial driver attempt only changed the dropdown, omitted the existing Use button, and generated two full-model diagnostic outputs `20260928T091832_5dbfc20f20_run_000/_001`. The checker rejected their selected-ID mismatch. Correcting the diagnostic driver fixed this; no production selection bug was found and those outputs are not counted as GGUF evidence.
+- Explicit SIGINT server PID 1869266 completed FastAPI shutdown, disabled leases, and emptied the slot without error. Still-alive wrapper measured 9,568,256 allocated / 29,360,128 reserved bytes, then exited. Chrome PID 1869996 also exited; both were absent from host GPU/process listing. Other host processes unchanged. Evidence root contains `first/second-browser.json`, resource JSON/screenshots, `artifacts.json`, `collected-browser.json`, and `shutdown.json`; helpers `/tmp/qwen_gguf_server.py`, `/tmp/qwen_gguf_inspect.js`, `/tmp/qwen_gguf_artifacts.py` reuse earlier validators.
+- `.venv/bin/python -m pytest -q tests/test_runtime.py -k gguf` — 2 passed, 6 deselected. Host `timeout 300 .venv/bin/python -m pytest -q ui/tests/test_model_catalog.py` — 3 passed, two known Starlette/AnyIO warnings. Node syntax and diff checks passed. No production loader/backend/UI changes, so no redundant full-suite repetition; Phase 9.8b regressions remain valid.
+
+Phase 9.8c1 validation (2026-09-28):
+
+- Full context/Git reconciliation: eight earlier modified files at HEAD `dc43f4d` matched saved state and were preserved; repository audit/hardware work was not restarted.
+- Sandbox HfApi metadata request failed with DNS `Temporary failure in name resolution`; the same bounded request with host network access succeeded. Public metadata preflight confirmed exact pinned files/sizes; no token was used or exposed.
+- Host `timeout 120 .venv/bin/python scripts/validate_hub_download.py` — final pass completed seven terminal jobs: completed HTTP, completed HTTP cache hit, cancelled Xet, completed new-ID retry, completed Xet manifest-cache hit, failed missing-file, failed new-ID retry. Both actual Hub transport functions ran once; no fake downloader/progress was substituted. Evidence `/tmp/qwen-hub-validation-hbikkfmd/evidence.json` and `events.jsonl`; first pass `/tmp/qwen-hub-validation-cax0tm3q`.
+- HTTP fixture `hf-internal-testing/tiny-random-GPT2Model@d6694b0d8fe17978761c9305dc151780506b192e/tokenizer.json` — 31,087 bytes, Git blob hash verified, saved SHA-256 `cb95c4e326977f750eb327eec3e4fd65639f5990fd58e6b067bd49beeabbd6e0`. Xet fixture `hf-internal-testing/tiny-random-gpt2@71034c5d8bde858ff824298bdedc65515b97d2b9/model.safetensors` — 453,864 bytes, Hub LFS SHA-256 `8111d5afb0715dbf5a31396d31432cb56370ba23f6650a035ea0fc8a20b4e500` verified. Total selected bytes 484,951, below 1 MiB. No tensor inference/loading was attempted.
+- Real byte callbacks matched sizes and showed positive reconstructed-byte speed, ETA, and 99.9% before completion. A real cancel API request after the Xet byte callback produced cancelled at 99.9% without a completed manifest/path; the tiny file had already materialized. Retry reused that Hub file and published a complete manifest; later manifest cache hits transferred nothing and had no speed estimate. Completed/cancelled/failed terminal SSE and two incompatible catalog entries were asserted. This does not prove mid-file interruption or network-disconnect recovery.
+- Actual temporary-server Models-page browser run: fresh Xet task `dl_9a7fa4745d` completed at 100%, 443.2 KB/443.2 KB, 1/1 files, zero remaining; catalog listed the file with disabled incompatible selection. Missing-file task `dl_e4c325287d` and retry `dl_be30befae0` failed readably with Size unknown; captured receipts prove new-ID retry. Browser artifact hash matches Hub metadata. Desktop 1440px and phone 390px passed no-horizontal-overflow checks; after transient notifications dismissed, phone Retry was visible/enabled and hit-test reachable. Success/phone screenshots visually inspected, final screenshot `browser-failure-phone-controls.png` saved. Browser files live under `/tmp/qwen-hub-validation-cax0tm3q`; models/Xet cache are under its `browser/` directory. This browser read existing history but did not create/modify user run records.
+- The first temporary browser driver clicked before initialization, submitted no request, and timed out. Waiting for the existing initialized route/dashboard snapshot fixed only the diagnostic driver. No application behavior change was required. Temporary server 7897 and debugger 9236 were closed after validation.
+- Host `timeout 300 .venv/bin/python -m pytest -q ui/tests/test_downloads.py` — 5 passed in 0.93 seconds, two known Starlette/AnyIO deprecation warnings. Script compilation and `git diff --check` passed. Full Phase 9.8b inference/UI suites were not repeated because this slice adds diagnostic code/documentation only.
+
+
+Phase 9.8b validation (2026-09-28):
+
+- `.venv/bin/python -m pytest -q tests` — 42 passed plus 8 parameterized subtests, including failed-transfer cleanup, compatible reuse after reset, and preserving the original error if cleanup fails.
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 438 passed in 23.54 seconds; two known Starlette/AnyIO deprecation warnings.
+- Node frontend and stress harnesses — 49/49 and 15/15 passed. Compilation, `pip check`, JavaScript syntax, and diff checks passed.
+- Two actual `scripts/validate_browser_production.js` submissions against isolated production server 7898 / Chrome 9235, `--device=cuda:1 --output-dir=/tmp/qwen-phase98b.AJEcJM/outputs` — completed both inputs each, 100%, loaded result/comparison images, refreshed history, strict production records. `--collect-existing` also passed without another submission.
+- First records `20260928T081020_047d344da5_run_000` and `_run_001` — inference 25.7832 / 25.8075 seconds, one load, reuse count 0. Second records `20260928T081311_4d102d5929_run_000` and `_run_001` — 25.2712 / 25.8700 seconds, same loaded timestamp, one load, reuse count 1.
+- All four disk records equal API detail; generated PNG SHA-256 matches recorded hash; served output/comparison bytes equal disk. Verified ordered `img_1.jpeg`, `img_10.jpg` inputs, separate `img_11.jpg` reference, `[current_input, reference]` effective conditioning, selected ID `model_4ff66ef0ec9f18e2d3e2`, cached revision `790c926...`, actual production pipeline/device, BF16/model offload, four steps, 512 conditioning resize, and 256×256 canvas. No adapter was applied.
+- Source/output comparisons — MAE 64.0119 / 60.1333 and RMSE 81.0865 / 73.0662 (0–255), 97.4731% / 98.3002% changed pixels above 10. Fixed-seed repeated outputs match across batches. Live Batch/Outputs/Dashboard/System screenshots captured; Batch/Dashboard visually inspected and watercolor transformation confirmed. Peak PyTorch allocation about 18.81 GB (17.52 GiB).
+- Actual tiny CUDA/Diffusers pipeline fault-injection check — interrupted transfer placed the first text-encoder parameter on GPU with other state on CPU; injected OOM preserved, existing offload reset returned all its tensors to CPU, and the next real tiny generation produced 64×64 output. This verifies hook recovery; a second naturally occurring full-model OOM was not induced.
+- Explicit SIGINT of fixed server PID 1678974 — FastAPI shutdown completed, manager stopped accepting jobs, slot became empty with no pipeline/active lease and no error; wrapper measured 9,568,256 allocated / 29,360,128 reserved bytes while still alive, down from 18.81 GB inference peak. Host GPU process listing after exit contained no validation PID. Temporary Chrome was closed. Evidence files: `first-browser.json`, `second-browser.json`, `collected-browser.json`, `first/second-resources.json`, screenshots, `artifacts.json`, `tiny-recovery.json`, `shutdown.json` under `/tmp/qwen-phase98b.AJEcJM`.
+- Earlier failed diagnostics are retained separately: initial context error at `torch.cuda.set_device`; partial batch `20260928T063449_424ab0987b_run_000/_001` with successful first image and second OOM after another process took 40.35 GiB; subsequent `20260928T064115_7566731891_run_000/_001` reproduced mixed-device failures before the fix. Initial server exited 137 without shutdown evidence; cause unconfirmed. All failures were visible; no user assets or competing processes were removed.
+
+
+Phase 9.8a validation:
+
+- Resumed from complete persistent context; Git was clean at `dc43f4d`, which includes all four previously uncommitted Phase 9.7b slices. No user changes were overwritten.
+- `node scripts/validate_browser_production.js http://127.0.0.1:9234 http://127.0.0.1:7899 --navigation-only` — passed 24 layouts (eight routes × 1440/900/390px), visible primary controls, active-route state, preserved prompt/model/LoRA/device, no horizontal overflow, and injected health/system/history 503 → real local Refresh recovery.
+- `/tmp/qwen_phase98_batch.js` against the isolated `/tmp/qwen_dashboard_server.py` — two real CPU DemoBackend operations completed through all eight routes with prompt/device and SSE preserved, two saved records, and two loaded native-button thumbnail images. Assets remain confined to `/tmp/qwen-dashboard-navigation`; no production inference was performed.
+- `--collect-existing` against that displayed diagnostic batch — correctly exited 1 with `Synthetic output is not production evidence`, matching `WorkflowQwenImage21Pipeline[Demo]` against the production pipeline. Injecting an empty `/api/runs` response in the browser tab correctly exited 1 with `Expected two durable records`; normal fetch was restored afterward. These are expected rejection checks, not regression failures.
+- Host-access `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 438 passed in 25.49 seconds, two known Starlette/AnyIO deprecations.
+- `.venv/bin/python -m pytest -q tests` — 41 passed plus 8 subtests in 3.75 seconds. Node frontend harnesses — 49/49 and 15/15 passed.
+- Compilation, `pip check`, both JavaScript syntax checks, and `git diff --check` — passed. The default hardware submission path was repaired by tracing current DOM/API/production metadata and received positive full-model evidence in Phase 9.8b (see above).
+- The isolated server completed application shutdown and diagnostic Chrome was closed. Temporary batch/driver evidence remains under `/tmp`; six task files are uncommitted at this checkpoint.
 
 Phase 9.7b4 validation:
 
@@ -856,10 +963,12 @@ Phase 9.1 validation:
 
 ## Known Issues
 
+- Generation-error cleanup now resets model-offload placement/hooks using Diffusers. If that cleanup itself fails, the original inference error remains authoritative and the secondary error is logged; recovery is not guaranteed for a permanently broken CUDA context. Graceful shutdown cannot run after SIGKILL/exit 137. The normal fixed-server shutdown path was explicitly verified.
+
 - The browser model catalog supports compatible complete Qwen Image 2.1 pipelines and transformer-only checkpoints with one compatible local companion. Unsupported formats and ambiguous companion choices are explicitly rejected. Broader model-family support requires a separate backend/loader design.
-- The full-model selected-ID path was exercised on hardware; selected-ID GGUF loading and a complete browser-to-output run with an alternate model were not repeated in this slice. The catalog's structural check does not replace the loader's exact tensor/shape validation.
+- Full-model and selected-ID GGUF browser-to-output paths were exercised on hardware. GGUF proof covers the cached `40319fb...` Q4_0 checkpoint and compatible `790c926...` companions; it does not establish arbitrary GGUF/model-family compatibility. The catalog's structural check still does not replace exact loader validation.
 - Download cancellation is cooperative at file boundaries. An active Hub file operation can finish before the job stops; the UI says so. Progress speed measures materialized file bytes, not exact network transfer bytes, because Xet may deduplicate or compress them. In-memory job history is lost on server restart; completed model manifests remain durable.
-- The progress adapter was exercised with a fake per-file Hub downloader and the actual offline 33.13 GB cached manifest. A fresh live Hub transfer was not run in this slice, so HTTP/Xet progress integration still merits a bounded online smoke test when network access is available.
+- Live HTTP/Xet progress and cancel/retry/cache/catalog behavior are now verified with pinned tiny fixtures. Cancellation is cooperative before manifest publication after a real byte callback; the small file had already materialized. Large-checkpoint throughput, proxy/rate-limit behavior, and actual interrupted-network recovery remain untested. Tiny incompatible fixtures were never treated as valid inference models.
 - LoRA, catalog-model, and finished-run deletion are available through confirmed web actions. Run deletion removes an entire record and its unshared artifacts; there is not yet an individual output-file management UI. The global active-job guard pauses deletion while any inference job is in progress. Independent CLI processes remain outside the web server's deletion locks. Deletion tests used only temporary assets.
 - Run/output cleanup is best-effort across multiple files: a filesystem error after record removal may leave an orphaned image, though history will not point to a missing image. Outputs browses only record-linked artifacts and intentionally does not implement orphan cleanup.
 - Legacy durable records remain schema-version-1 documents. The new `summary_version: 1` projection is added on API reads without migration; deleted/missing referenced files yield unavailable metadata. Parameter counts are never inferred from a model label, and directory-backed model size requires a matching completed manifest. Run Details retains its first-output summary preview; Outputs allows exact selection/download/comparison of every recorded artifact through the shared viewer.
@@ -877,11 +986,11 @@ Phase 9.1 validation:
 
 ## User Decisions / Required Input
 
-None at this checkpoint.
+Phase 9.8c3 requires an asset: `models/loras/` is empty. Asked the user for a local Qwen Image 2.1-compatible SafeTensors LoRA path and its expected prompt/visual effect. No answer received at this checkpoint. Tiny-model adapter tests already prove generic application/scale/unload; a fabricated adapter or unrelated model's LoRA would not establish pretrained compatibility/quality. Do not download an arbitrary/full model or claim this validation complete without the asset.
 
 ## Next Action
 
-Start Phase 9.8 with a bounded navigation/regression and documentation reconciliation slice. Preserve all uncommitted Phase 9.7b1–b4 changes. Review the existing regression/hardware evidence and `scripts/validate_browser_production.js`; identify stale root `README.md`, `PROJECT.md`, UI documentation, and test assumptions after all eight destinations were wired. Update only the affected documentation/test driver, run an integrated route/state/error/browser pass, and record which hardware/online checks still require a subsequent bounded slice. Reuse existing tests and prior audit rather than repeating completed analysis. Do not declare the overall project complete until the outstanding matrix limitations are explicitly addressed or documented.
+Resume Phase 9.8c3 when a compatible adapter path and expected effect are supplied. Preserve all nine uncommitted paths at HEAD `dc43f4d`; Phase 9.8c2 changed only the browser validator and README/matrix/context. Do not repeat the audit, full-model/download/browser matrix, or successful GGUF validation. First recheck whether the user-provided adapter exists (or `models/loras/` changed); if none, this is an explicit asset checkpoint, not another GPU task. With the asset, inspect header/targets/provenance, then validate actual upload/selection and bounded production inference using full-model ID `model_4ff66ef0ec9f18e2d3e2`, isolated bridge and submitted output directory, offline cached model, current free GPU, and hard runtime limits. Test applied adapter identity/hash/strength and expected output effect with a fixed-seed no-adapter control, compatible pipeline reuse and adapter removal, saved/served artifacts, readable browser state/errors, and cleanup. Do not assume a valid header proves training compatibility or use quantized-LoRA support as an extra requirement. Fix only a demonstrated coherent defect, run appropriate regressions, update matrix/context, and stop at a clean checkpoint. Phase 9.8 remains incomplete until adapter-dependent validation and final documentation reconciliation are handled. All temporary GGUF server/Chrome processes were stopped; retained evidence is `/tmp/qwen-gguf-validation-9znq346l`.
 
 ## Resume Instructions
 

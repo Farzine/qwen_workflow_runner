@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 from pathlib import Path
 from .models import ModelStore, parse_model_ref
 from .sampling import sigma_schedule
@@ -219,11 +220,20 @@ class QwenBackend:
         noise = torch.randn((g.batch_size, 64, height // 16, width // 16), generator=generator, dtype=torch.float32)
         noise *= sigmas[0]  # Empty starting latent; reduced denoise does not blend image1.
         packed = pipe._pack_latents(noise, g.batch_size, 64, height // 16, width // 16)
-        with torch.inference_mode():
-            return pipe(prompt=g.prompt, negative_prompt=g.negative_prompt,
-                        image=images, width=width, height=height,
-                        num_inference_steps=g.steps, true_cfg_scale=g.cfg, sigmas=sigmas,
-                        num_images_per_prompt=g.batch_size, generator=generator,
-                        latents=packed, use_kv_cache=g.kv_cache,
-                        kv_cache_device=g.kv_cache_device,
-                        kv_cache_reserve_gib=g.kv_cache_reserve_gib).images
+        try:
+            with torch.inference_mode():
+                return pipe(prompt=g.prompt, negative_prompt=g.negative_prompt,
+                            image=images, width=width, height=height,
+                            num_inference_steps=g.steps, true_cfg_scale=g.cfg, sigmas=sigmas,
+                            num_images_per_prompt=g.batch_size, generator=generator,
+                            latents=packed, use_kv_cache=g.kv_cache,
+                            kv_cache_device=g.kv_cache_device,
+                            kv_cache_reserve_gib=g.kv_cache_reserve_gib).images
+        except BaseException:
+            # A failed component transfer can leave cached weights on mixed devices.
+            # Successful pipeline calls already reset these offload hooks.
+            try:
+                pipe.maybe_free_model_hooks()
+            except Exception:
+                logging.getLogger(__name__).exception('Pipeline cleanup failed after inference error')
+            raise

@@ -6,9 +6,10 @@ The Qwen Workflow Runner Web UI is a high-performance, single-command web applic
 ### System Architecture
 ```
 Browser (Vanilla SPA HTML/CSS/JS)
+  ├── Primary pages: Dashboard, Inference, Batch, History, Outputs, Models, LoRAs, System
   ├── 1. Input Browser: Folder tree, thumbnail grid, 1-10 drag/click ordered selector
   ├── 2. Parameter Form: ModelConfig, GenerationConfig, RuntimeConfig with live validation and accessible implementation-backed help
-  ├── 3. Model & LoRA Selector: HF repo, local model upload, cached model dropdown, validated LoRA upload/selection
+  ├── 3. Model & LoRA Managers: authoritative compatible catalog selection, measured HF downloads, validated uploads, confirmed deletion
   ├── 4. System Configuration: live CPU/RAM/GPU inventory and dynamic production-device selection
   ├── 5. Run & Output Hub: Launch button, live SSE log/progress stream, output gallery, comparison, readable run details, optional JSON, run history
   │
@@ -18,6 +19,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
   ├── Model Manager: HuggingFace Hub async downloader, chunked file upload to `models/`, cached scanner
   ├── Config Validator: Endpoints to validate Config against `qwen_runner.config.Config.validate()`
   ├── Background Execution Engine:
+  │     ├── PipelineManager: one leased compatible production pipeline per device; reuse, adapter switching, explicit shutdown
   │     ├── Task queue & thread worker invoking `qwen_runner.runner.run(config, backend_factory=...)`
   │     ├── Real-time stdout/stderr capture redirected to SSE event stream
   │     ├── Demo mode support: `DemoBackend` for synthetic fast execution with real outputs & JSON records
@@ -61,6 +63,8 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | 30 | Run History Viewer | Durable history with input/model context, clickable records, and status badges | M1, M2 | R4, survey |
 | 31 | Demo Integrity Backend | Synthetic fast execution backend producing real images and records for demo mode | M1, M3 | ORIGINAL_REQUEST |
 | 32 | Single-Command Startup | Single command `python app.py` starts server with auto-port fallback and docs | M3 | App Startup |
+| 33 | Task Navigation & Dashboard | Eight responsive destinations; timestamped runtime/resources, local activity, recent records, and status retry | M7 | Improvement request |
+| 34 | Saved Output Browser | Record-linked artifacts, exact image selection, lazy previews, comparison/download, and confirmed whole-run deletion | M6, M7 | Improvement request |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
@@ -70,11 +74,14 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | M3 | App Startup, CLI & Packaging | Entrypoint script (`ui/app.py`), configurable port fallback, directory overrides, documentation, and dependency profiles | M1, M2 | COMPLETE |
 | M4 | E2E Verification & Adversarial Hardening | Full automated suites plus hardware-gated browser production validation; evidence in `VALIDATION_MATRIX.md` | M1, M2, M3 | COMPLETE |
 | M5 | Persistent Resource Lifecycle | One exclusive cached production pipeline per device, compatible reuse, LoRA switching, runtime telemetry, and explicit shutdown cleanup | M1, M4 | COMPLETE |
-| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | IN PROGRESS (selection, progress, LoRA deletion complete) |
-| M7 | Records, Batch UX & Task Pages | Versioned human-readable metadata, detailed batch state/ETA, and Dashboard/Models/LoRAs/Inference/Batch/History/Outputs views | M6 | PLANNED |
+| M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | IMPLEMENTED; expanded hardware/online checks remain |
+| M7 | Records, Batch UX & Task Pages | Versioned human-readable metadata, detailed batch state/ETA, and all eight primary destinations | M6 | IMPLEMENTED; regression evidence in VALIDATION_MATRIX.md |
+| M8 | Expanded Validation & Documentation | Integrated navigation/regression, current documentation, and bounded hardware/online follow-up | M6, M7 | IN PROGRESS (Phase 9.8) |
 
 ## Interface Contracts
 ### Client ↔ Server API Endpoints
+- `GET /api/health` and `GET /api/system`:
+  - Health plus timestamped host/device/readiness and resident-pipeline/active-job snapshots. Dashboard and System reuse these APIs; Dashboard does not add a polling loop.
 - `GET /api/inputs/browse?folder=<subfolder>`:
   - Returns: `{"folders": [...], "images": [{"name": "...", "path": "...", "width": int, "height": int, "thumb_url": "..."}]}`
 - `GET /api/inputs/thumbnail?path=<filepath>`:
@@ -88,6 +95,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
   - Cooperative cancellation at file boundaries; retry of failed/cancelled jobs returns a new task ID and reuses valid Hub cache files.
 - `POST /api/models/upload`:
   - Form multipart upload: file (`.gguf` or `.safetensors`). Saves directly to `models/`.
+  - The browser sends chunks with `chunk_index`, `total_chunks`, and `upload_id`; the server assembles and validates the complete file.
   - Returns: `{"success": true, "filename": "...", "path": "..."}`
 - `DELETE /api/models/catalog/{model_id}`:
   - Removes a catalog model after active download/inference checks; unloads an idle resident pipeline and preserves Hub cache files still referenced by other selections or snapshots.
@@ -106,7 +114,7 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 - `GET /api/run/{run_id}/stream`:
   - SSE stream: `event: log`, `event: progress` for legacy step clients, `event: batch` for aggregate counts/stages/timing/per-item status, and `event: complete` with outputs, records, errors, and final batch summary.
 - `GET /api/runs`:
-  - Returns list of completed/active run records in current session.
+  - Returns durable per-attempt records overlaid with current process job state, including readable summaries and output artifact lists. Dashboard, History, and Outputs share this payload.
 - `GET /api/runs/{run_id}`:
   - Returns full `{run_id}.json` record.
 - `DELETE /api/runs/{run_id}`:

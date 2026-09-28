@@ -99,6 +99,45 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(second[0].size, (64,64))
         self.assertEqual(len(seen), 3)  # one conditional + conditional/unconditional
 
+    def test_failed_generation_resets_offload_state_before_reuse(self):
+        import torch
+        from qwen_runner.backend import QwenBackend
+        from qwen_runner.config import Config
+
+        class Pipe:
+            cleanup_calls = 0
+            interrupted_transfer = False
+            fail = True
+            fail_cleanup = False
+            _pack_latents = staticmethod(lambda noise, *args: noise)
+
+            def __call__(self, **kwargs):
+                if self.fail:
+                    self.interrupted_transfer = True
+                    raise torch.OutOfMemoryError('component transfer failed')
+                if self.interrupted_transfer:
+                    raise RuntimeError('cached component still on mixed devices')
+                return types.SimpleNamespace(images=['recovered'])
+
+            def maybe_free_model_hooks(self):
+                self.cleanup_calls += 1
+                if self.fail_cleanup:
+                    raise RuntimeError('cleanup failed')
+                self.interrupted_transfer = False
+
+        backend = QwenBackend(Config()); backend.torch = torch; backend.pipe = Pipe()
+        with self.assertRaisesRegex(torch.OutOfMemoryError, 'component transfer failed'):
+            backend.generate([], (64, 64), 42)
+        self.assertEqual(backend.pipe.cleanup_calls, 1)
+        backend.pipe.fail = False
+        self.assertEqual(backend.generate([], (64, 64), 42), ['recovered'])
+        self.assertEqual(backend.pipe.cleanup_calls, 1)  # Successful calls handle their own hooks.
+        backend.pipe.fail = backend.pipe.fail_cleanup = True
+        with self.assertLogs('qwen_runner.backend', level='ERROR') as logs:
+            with self.assertRaisesRegex(torch.OutOfMemoryError, 'component transfer failed'):
+                backend.generate([], (64, 64), 42)
+        self.assertIn('Pipeline cleanup failed', logs.output[0])
+
     def test_qwen_lora_is_loaded_scaled_activated_and_unloaded(self):
         import hashlib
         import torch

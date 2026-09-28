@@ -209,6 +209,30 @@ Important parameter semantics:
   output. Optional `rgba` preserves alpha for the VAE and composites over white
   for the vision encoder; this is an intentional extension.
 
+## Web application
+
+Start the production UI with `.venv/bin/python ui/app.py`, or add `--demo` for
+explicit synthetic previews. Inference is the initial page. The primary
+navigation provides eight task views:
+
+| Page | Workflow |
+| --- | --- |
+| Dashboard | Server/GPU/resident-resource snapshots, this tab's activity, and five recent runs. |
+| Inference | Configure ordered inputs, shared references, prompt, model, LoRA, and generation; launch the job. |
+| Batch | Monitor the submitted batch, counts, stages, timings, ETA, failures, and results. |
+| History | Inspect durable records and readable details; confirm whole-run deletion. |
+| Outputs | Browse all record-linked images; select the exact preview, comparison, or download. |
+| Models | Download, upload, select a compatible catalog model, or confirm deletion. |
+| LoRAs | Upload/select/scale one adapter or confirm deletion. |
+| System | Inspect hardware/runtime state and apply device/precision/offload for the next job. |
+
+Navigation preserves configuration and the active event stream. Dashboard
+inventory is timestamped and refreshed on request or existing lifecycle events;
+batch/download activity is monitored in the current tab. History and Outputs
+share the result viewer with live jobs. Output deletion removes a whole record
+and its unshared files; it does not remove arbitrary orphan files. See
+[ui/README.md](ui/README.md) for startup options, API contracts, and limitations.
+
 ## Models and cache
 
 The web UI selects an entry from its downloaded-model catalog. The selection
@@ -438,7 +462,8 @@ Use a compatible Qwen 2.1 checkpoint; do not bypass strict validation.
 
 **LoRA loading failed:** verify that the adapter targets the Qwen Image 2.1
 transformer and is a Diffusers/PEFT-compatible `.safetensors` file. Selecting a
-file only takes effect on the next production model load; synthetic demo mode
+file takes effect on the next production job, including a compatible cached
+pipeline; synthetic demo mode
 records the selection but does not apply model adapters.
 
 **HF 401/403:** authenticate and obtain access to the repository, if required.
@@ -458,9 +483,40 @@ networks and temporary GGUF files. They test execution and logging, not image
 quality. The final local validation also ran the cached full model through the
 actual browser with two process inputs, one shared reference, SSE progress,
 `cuda:0`, BF16/model offload, saved comparisons, records, history, and rendered
-results. See `VALIDATION_MATRIX.md` for the scenario-by-scenario evidence and
-remaining asset-dependent LoRA limitation. Pixel-identical ComfyUI parity and
+results. Phase 9.8b repeated the workflow on `cuda:1` after final navigation,
+verified a second compatible batch through one model load, and measured explicit
+server/GPU cleanup. Phase 9.8c2 verified the cached Q4_0 GGUF selection through
+two browser batches, strict tensor loading, compatible reuse, saved/served
+artifacts, and shutdown. Failed inference also resets interrupted offload placement
+before later reuse. The model-free browser check covers all eight pages at three widths
+and Dashboard error recovery:
+
+```bash
+# Start a local UI and Chrome with remote debugging before running this.
+node scripts/validate_browser_production.js http://127.0.0.1:9234 http://127.0.0.1:7899 --navigation-only
+```
+
+Omit `--navigation-only` to submit the hardware-gated two-input production batch
+from the `Child` folder. Choose a free GPU with `--device=cuda:N` and
+use `--output-dir=/tmp/qwen-browser-check/outputs` to isolate generated artifacts.
+Use `--model-id=model_...` to apply a specific compatible catalog selection;
+the checker rejects records that used another model.
+`--collect-existing` instead verifies a displayed
+finished batch without rerunning inference. Production evidence requires two
+durable successful production-pipeline records matching the selected model and device;
+synthetic output is rejected. See `VALIDATION_MATRIX.md` for current regression
+results, historical hardware evidence, and outstanding checks. Pixel-identical ComfyUI parity and
 quality on other hardware still require evaluation on that target system.
+
+The opt-in live download check uses pinned public tiny files (at most 1 MiB
+selected), temporary storage, and real API workers for HTTP/Xet progress,
+cancel/retry, manifests, hashes, catalog discovery, and terminal SSE. It does
+not load models or establish their inference compatibility:
+
+```bash
+# Requires network and local loopback access; evidence is retained under /tmp.
+timeout 120 .venv/bin/python scripts/validate_hub_download.py
+```
 
 ## Sources and licensing
 

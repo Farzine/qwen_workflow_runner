@@ -34,7 +34,8 @@ The Web UI integrates seamlessly with `qwen_runner` to provide an intuitive visu
 Browser (Vanilla SPA HTML5 / CSS3 / ES2020)
   ├── Input Browser (folder tree, uploads, process-input tray, reference tray)
   ├── Parameter Form (ModelConfig, GenerationConfig, RuntimeConfig with live validation)
-  ├── Model Hub (HF downloader with SSE progress, chunked uploader, cached models)
+  ├── Task Navigation (Dashboard, Inference, Batch, History, Outputs, Models, LoRAs, System)
+  ├── Model Hub (HF downloader with JSON progress polling, chunked uploader, compatible catalog)
   ├── System Page (live host/GPU inventory, device, precision, offload, runtime state)
   └── Execution Hub (SSE live logs, output gallery, split comparison slider, JSON viewer)
         │
@@ -45,6 +46,7 @@ Backend Server (`ui/app.py` / `ui/server.py` via FastAPI & Uvicorn)
   ├── Config Validation Engine (direct integration with Config.validate())
   └── Background Runner Bridge:
         ├── Thread worker queue executing qwen_runner.runner.run()
+        ├── Per-device PipelineManager leases and compatible model/LoRA reuse
         ├── Stdout/stderr pipe interception streamed to SSE clients
         └── Synthetic DemoBackend for fast offline mock execution
 ```
@@ -411,9 +413,23 @@ node ui/tests/test_challenger_m2_node.js
 node ui/tests/test_tier5_node_stress.js
 ```
 
-The final Phase 8 result is 31 core tests plus 8 parameterized subtests, 417
-UI/API/E2E tests, and 33/33 plus 15/15 Node cases. The full-model production
-browser run and scenario matrix are recorded in `../VALIDATION_MATRIX.md`.
+The current regression result is 42 core tests plus 8 parameterized subtests,
+438 UI/API/E2E tests, and 49/49 plus 15/15 Node cases. The model-free browser
+checker covers all eight routes at 1440, 900, and 390px, selection preservation,
+and Dashboard failure/retry:
+
+```bash
+# With a running local UI and Chrome remote-debugging endpoint:
+node scripts/validate_browser_production.js http://127.0.0.1:9234 http://127.0.0.1:7899 --navigation-only
+```
+
+Omitting that flag submits the hardware-gated production batch from the `Child`
+input folder. Choose a free GPU with `--device=cuda:N` and
+use `--output-dir=/tmp/qwen-browser-check/outputs` to isolate generated artifacts.
+`--collect-existing` verifies the displayed completed batch;
+missing records or synthetic backends fail validation. Two current full-model
+browser batches verified one model load, compatible reuse, and graceful shutdown.
+Hardware evidence and outstanding hardware/online checks are in `../VALIDATION_MATRIX.md`.
 
 ---
 
