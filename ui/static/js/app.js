@@ -298,6 +298,8 @@
       run: {
         status: "idle", // idle, running, completed, error
         activeJobId: null,
+        monitorStatus: "idle",
+        lastServerStatus: null,
         progress: { step: 0, total: 25, percent: 0 },
         currentOutputs: [],
         currentRecord: null,
@@ -470,6 +472,11 @@
       if (tab) document.getElementById(tab)?.click?.();
       document.body.dataset.page = page;
       this.currentPage = page;
+      if (["inference", "batch"].includes(page)) {
+        // A late saved-record fetch must not replace the live result.
+        RunHistory.selectionRequest++;
+        RunController.showPendingCompletion();
+      }
       if (page === "dashboard") Dashboard.render();
       this.links.forEach((link) => {
         const active = link.dataset.pageTarget === page;
@@ -3070,6 +3077,7 @@
     batchReceivedAt: 0,
     batchTimer: null,
     eventSource: null,
+    pendingCompletion: null,
 
     init() {
       this.runBtn = document.getElementById("btn-run-pipeline");
@@ -3089,7 +3097,12 @@
       }
 
       if (this.cancelBtn) {
-        this.cancelBtn.addEventListener("click", () => this.cancelRun());
+        this.cancelBtn.addEventListener("click", () => {
+          if (["stopped", "disconnected"].includes(Store.state.run.monitorStatus)) {
+            TerminalViewer.clear(); // The server replays this job's retained logs.
+            this.connectStream(Store.state.run.activeJobId);
+          } else this.cancelRun();
+        });
       }
     },
 
@@ -3115,6 +3128,8 @@
         }
 
         try {
+          Store.state.run.activeJobId = null;
+          Store.state.run.lastServerStatus = null;
           this.setRunningState(true);
           TerminalViewer.clear();
           TerminalViewer.appendSystemLog("Initiating inference workflow pipeline...");
@@ -3141,7 +3156,9 @@
           TerminalViewer.appendSystemLog(`Connected to live SSE stream: ${res.stream_url}`);
 
           // Automatically switch view to logs tab during run
-          this.switchOutputTab("tab-btn-logs", "pane-logs");
+          if (!["history", "outputs"].includes(PageNavigation.currentPage)) {
+            this.switchOutputTab("tab-btn-logs", "pane-logs");
+          }
 
           // Connect SSE stream
           this.connectStream(runId);
@@ -3156,25 +3173,39 @@
     },
 
     connectStream(runId) {
+      if (!runId || Store.state.run.status !== "running") return;
+      if (this.eventSource && Store.state.run.monitorStatus === "connecting") return;
       if (this.eventSource) {
         this.eventSource.close();
       }
 
       const streamUrl = `/api/run/${encodeURIComponent(runId)}/stream`;
-      this.eventSource = new EventSource(streamUrl);
+      Store.state.run.activeJobId = runId;
+      this.setMonitorState("connecting");
+      let stream;
+      try {
+        stream = this.eventSource = new EventSource(streamUrl);
+      } catch (error) {
+        this.cancelRun("disconnected");
+        TerminalViewer.appendLogLine(`Monitor connection failed: ${error.message}`, "stderr");
+        return;
+      }
+      const listen = (type, handler) => stream.addEventListener(type, event => {
+        if (this.eventSource === stream) handler(event);
+      });
+      listen("open", () => this.setMonitorState("connected"));
 
       // Status event
-      this.eventSource.addEventListener("status", (e) => {
+      listen("status", (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (this.statusBadge) {
-            this.statusBadge.textContent = (data.status || "RUNNING").toUpperCase();
-          }
+          Store.state.run.lastServerStatus = data.status || "unknown";
+          this.setMonitorState("connected");
         } catch (err) {}
       });
 
       // Log event
-      this.eventSource.addEventListener("log", (e) => {
+      listen("log", (e) => {
         try {
           const data = JSON.parse(e.data);
           TerminalViewer.appendLogLine(data.text || "", data.stream || "stdout");
@@ -3184,25 +3215,27 @@
       });
 
       // Progress event
-      this.eventSource.addEventListener("progress", (e) => {
+      listen("progress", (e) => {
         try {
           const data = JSON.parse(e.data);
           if (!this.batchState) this.updateProgress(data.step, data.total, data.percent);
         } catch (err) {}
       });
 
-      this.eventSource.addEventListener("batch", (e) => {
+      listen("batch", (e) => {
         try { this.renderBatch(JSON.parse(e.data)); }
         catch (err) { TerminalViewer.appendLogLine(`Batch status error: ${err.message}`, "stderr"); }
       });
 
       // Complete event
-      this.eventSource.addEventListener("complete", (e) => {
+      listen("complete", (e) => {
         try {
           const data = JSON.parse(e.data);
+          if (!["success", "partial_success", "error", "interrupted"].includes(data.status)) throw new Error("Unrecognized completion status");
           this.handleComplete(data);
         } catch (err) {
-          console.error("Failed to parse complete event payload:", err);
+          TerminalViewer.appendLogLine(`Could not read completion: ${err.message}`, "stderr");
+          this.cancelRun("disconnected");
         }
         if (this.eventSource) {
           this.eventSource.close();
@@ -3210,15 +3243,8 @@
         }
       });
 
-      this.eventSource.onerror = () => {
-        if (this.eventSource) {
-          this.eventSource.close();
-          this.eventSource = null;
-        }
-        if (Store.state.run.status === "running") {
-          this.setRunningState(false);
-          TerminalViewer.appendSystemLog("SSE stream connection closed.");
-        }
+      stream.onerror = () => {
+        if (this.eventSource === stream) this.cancelRun("disconnected");
       };
     },
 
@@ -3248,7 +3274,7 @@
       }
       if (this.batchPanel) this.batchPanel.classList.toggle("hidden", data.total <= 1);
       this.renderBatchSummary();
-      if (Store.state.run.status === "running" && !this.batchTimer) {
+      if (Store.state.run.status === "running" && !["stopped", "disconnected", "connecting"].includes(Store.state.run.monitorStatus) && !this.batchTimer) {
         this.batchTimer = setInterval(() => this.renderBatchSummary(), 1000);
       }
       const pct = Math.min(100, Math.max(0, Number(data.percent) || 0));
@@ -3282,22 +3308,26 @@
       const data = this.batchState;
       if (!data || !this.batchSummary) return;
       const current = this.batchItems.get(data.current_operation);
-      const elapsed = data.elapsed_seconds + (Store.state.run.status === "running"
+      const stale = ["stopped", "disconnected", "connecting"].includes(Store.state.run.monitorStatus);
+      const elapsed = data.elapsed_seconds + (Store.state.run.status === "running" && !stale
         ? (Date.now() - this.batchReceivedAt) / 1000 : 0);
       this.batchSummary.textContent = `Completed ${data.completed}/${data.total} · Failed ${data.failed}`
         + ` · Remaining ${data.remaining} · Stage ${data.current_stage}`
         + (current ? ` · Current ${current.input_filename}` : "")
-        + ` · Elapsed ${this.formatBatchSeconds(elapsed)} · ETA ${this.formatBatchSeconds(data.eta_seconds)}`;
+        + ` · Elapsed ${this.formatBatchSeconds(elapsed)} · ETA ${this.formatBatchSeconds(data.eta_seconds)}`
+        + (stale ? ` · Last known progress — monitor ${Store.state.run.monitorStatus}` : "");
       Store.notify("batch");
     },
 
     async inspectBatchItem(runId) {
+      const request = ++RunHistory.selectionRequest;
       try {
         const record = await ApiClient.getRunRecord(runId);
+        if (request !== RunHistory.selectionRequest) return;
         JsonInspector.render(record);
         this.switchOutputTab("tab-btn-json", "pane-json");
       } catch (err) {
-        Toast.show(`Could not load run details: ${err.message}`, "error");
+        if (request === RunHistory.selectionRequest) Toast.show(`Could not load run details: ${err.message}`, "error");
       }
     },
 
@@ -3316,6 +3346,46 @@
           isPartial ? "warning" : "success"
         );
 
+        if (isPartial) {
+          const errors = (payload.errors || []).map((item) => {
+            const detail = item.error || {};
+            return `Input ${(item.input_index ?? 0) + 1}: ${detail.message || "generation failed"}`;
+          });
+          if (errors.length) {
+            InputBrowser.showErrorBanner(errors);
+            errors.forEach((message) => TerminalViewer.appendLogLine(message, "stderr"));
+          }
+        }
+      } else {
+        if (this.statusBadge) {
+          this.statusBadge.textContent = "Failed";
+          this.statusBadge.className = "status-pill badge badge-danger";
+        }
+        const errObj = payload.error || {};
+        const errMsg = errObj.message || "Pipeline execution failed.";
+        Toast.show(`Run failed: ${errMsg}`, "error");
+        TerminalViewer.appendLogLine(`Execution error: ${errMsg}`, "stderr");
+        if (errObj.traceback) {
+          TerminalViewer.appendLogLine(errObj.traceback, "stderr");
+        }
+      }
+      Store.state.run.lastServerStatus = payload.status;
+      const footer = document.getElementById("status-bar-active-task");
+      if (footer) footer.textContent = this.statusBadge?.textContent || payload.status;
+      this.pendingCompletion = { ...payload };
+      this.showPendingCompletion();
+      RunHistory.loadHistory();
+      App.refreshRuntimeCapabilities().catch(error => console.warn("Post-run system refresh failed:", error));
+      Store.notify("run");
+    },
+
+    showPendingCompletion() {
+      // Keep saved inspection intact until the user returns to the live workspace.
+      if (!this.pendingCompletion || ["history", "outputs"].includes(PageNavigation.currentPage)) return;
+      const payload = this.pendingCompletion;
+      this.pendingCompletion = null;
+      RunHistory.selectionRequest++;
+      if (payload.status === "success" || payload.status === "partial_success") {
         // Format outputs
         const records = payload.records || [];
         const comparisons = payload.comparisons || [];
@@ -3352,35 +3422,15 @@
         // Render JSON Record
         JsonInspector.render(payload.record || payload);
 
-        // Switch to Outputs view tab
         this.switchOutputTab("tab-btn-outputs", "pane-outputs");
-        if (isPartial) {
-          const errors = (payload.errors || []).map((item) => {
-            const detail = item.error || {};
-            return `Input ${(item.input_index ?? 0) + 1}: ${detail.message || "generation failed"}`;
-          });
-          if (errors.length) {
-            InputBrowser.showErrorBanner(errors);
-            errors.forEach((message) => TerminalViewer.appendLogLine(message, "stderr"));
-          }
-        }
       } else {
-        if (this.statusBadge) {
-          this.statusBadge.textContent = "Failed";
-          this.statusBadge.className = "status-pill badge badge-danger";
-        }
-        const errObj = payload.error || {};
-        const errMsg = errObj.message || "Pipeline execution failed.";
-        Toast.show(`Run failed: ${errMsg}`, "error");
-        TerminalViewer.appendLogLine(`Execution error: ${errMsg}`, "stderr");
-        if (errObj.traceback) {
-          TerminalViewer.appendLogLine(errObj.traceback, "stderr");
-        }
+        Store.state.run.currentOutputs = [];
+        Store.state.run.currentRecord = payload.record || payload;
+        OutputViewer.renderOutputs([]);
+        ComparisonSlider.setup([]);
+        JsonInspector.render(Store.state.run.currentRecord);
         this.switchOutputTab("tab-btn-logs", "pane-logs");
       }
-      RunHistory.loadHistory();
-      App.refreshRuntimeCapabilities().catch(error => console.warn("Post-run system refresh failed:", error));
-      Store.notify("run");
     },
 
     setRunningState(isRunning) {
@@ -3424,18 +3474,53 @@
       }
       const outputPanel = document.getElementById("panel-output");
       if (outputPanel) outputPanel.setAttribute("aria-busy", isRunning ? "true" : "false");
+      this.setMonitorState(isRunning ? "connecting" : "idle");
       if (isRunning) ResponsiveWorkspace.revealRunStatus();
       Store.notify("run");
     },
 
-    cancelRun() {
+    setMonitorState(status) {
+      Store.state.run.monitorStatus = status;
+      const unknown = ["stopped", "disconnected", "connecting"].includes(status);
+      if (unknown && this.batchTimer) { clearInterval(this.batchTimer); this.batchTimer = null; }
+      if (status === "connected" && this.batchState && !this.batchTimer) {
+        this.batchTimer = setInterval(() => this.renderBatchSummary(), 1000);
+      }
+      this.renderBatchSummary();
+      const label = {stopped: "Monitoring stopped", disconnected: "Monitor disconnected",
+        connecting: Store.state.run.activeJobId ? "Connecting monitor" : "Submitting", idle: "Idle",
+        connected: (Store.state.run.lastServerStatus || "running").toUpperCase()}[status];
+      if (this.statusBadge) {
+        this.statusBadge.textContent = label;
+        this.statusBadge.className = `status-pill badge ${unknown ? "badge-warning" : status === "idle" ? "badge-muted" : "badge-primary"}`;
+        this.statusBadge.title = unknown ? "Job status is unverified. Reconnect to check the server; inference was not cancelled." : "";
+      }
+      const footer = document.getElementById("status-bar-active-task");
+      if (footer) footer.textContent = label;
+      if (this.cancelBtn) {
+        const reconnect = ["stopped", "disconnected"].includes(status);
+        this.cancelBtn.textContent = reconnect ? "Reconnect monitor" : "Stop monitoring";
+        this.cancelBtn.title = reconnect ? "Check the same server job without submitting again" : "Disconnect this monitor; server inference continues";
+        this.cancelBtn.disabled = status === "connecting";
+        this.cancelBtn.classList.toggle("hidden", status === "idle" || !Store.state.run.activeJobId);
+      }
+      if (this.runText && Store.state.run.status === "running") this.runText.textContent = unknown ? "Job status unverified" : "Running...";
+      if (this.runBtn) this.runBtn.classList.toggle("is-loading", Store.state.run.status === "running" && !unknown);
+      Store.notify("run");
+    },
+
+    cancelRun(reason = "stopped") {
       if (this.eventSource) {
         this.eventSource.close();
         this.eventSource = null;
       }
-      this.setRunningState(false);
-      Toast.show("Execution monitor stopped.", "info");
-      TerminalViewer.appendSystemLog("Execution monitor aborted by user.");
+      if (Store.state.run.status !== "running" || !Store.state.run.activeJobId) return;
+      this.setMonitorState(reason);
+      const message = reason === "stopped"
+        ? "Monitoring stopped. Server inference was not cancelled. Reconnect to check status."
+        : "Monitor disconnected. Job status is unknown. Reconnect to check status.";
+      Toast.show(message, reason === "stopped" ? "info" : "warning");
+      TerminalViewer.appendSystemLog(message);
     },
 
     switchOutputTab(btnId, paneId) {
@@ -4171,6 +4256,20 @@
       if (!window.confirm(`Delete run "${run.run_id}" and its unshared outputs? This cannot be undone.`)) return;
       try {
         await ApiClient.deleteRun(run.run_id);
+        const pending = RunController.pendingCompletion;
+        if (pending && (pending.run_id === run.run_id || pending.record?.run_id === run.run_id
+          || pending.outputs?.some(output => output.run_id === run.run_id)
+          || pending.records?.some(record => record.run_id === run.run_id))) {
+          pending.outputs = (pending.outputs || []).filter(output => output.run_id !== run.run_id);
+          pending.records = (pending.records || []).filter(record => record.run_id !== run.run_id);
+          pending.comparisons = (pending.comparisons || []).filter(item => item.run_id !== run.run_id);
+          if (pending.record?.run_id === run.run_id || pending.run_id === run.run_id) {
+            pending.record = pending.records.find(record => pending.outputs.some(output => output.run_id === record.run_id)) || null;
+            pending.run_id = pending.record?.run_id;
+            pending.comparison_url = pending.record?.comparison || null;
+          }
+          if (!pending.outputs.length && !pending.record) RunController.pendingCompletion = null;
+        }
         this.selectionRequest++;
         if (Store.state.run.currentRecord?.run_id === run.run_id || OutputViewer.currentOutput?.run_id === run.run_id) {
           Store.state.run.currentRecord = null;
@@ -4351,7 +4450,8 @@
       }).join("\n\n") : "No resident production pipeline.") + `\n${snapshot}${stale}` : unavailable);
       const local = state.run.status === "running";
       const batch = RunController.batchState;
-      let job = local ? `Monitoring ${state.run.activeJobId || "submission"}\n${RunController.batchSummary?.textContent || "Waiting for batch status…"}`
+      let job = local ? `${["stopped", "disconnected", "connecting"].includes(state.run.monitorStatus)
+        ? `Monitor ${state.run.monitorStatus} — job status unverified` : "Monitoring"} ${state.run.activeJobId || "submission"}\n${RunController.batchSummary?.textContent || "Waiting for batch status…"}`
         : batch ? `Last monitored batch\n${RunController.batchSummary?.textContent || batch.current_stage}` : "No batch monitored in this tab.";
       const active = capabilities?.execution?.active_job;
       if (active) job += `\n\nServer snapshot: ${active.status} · ${active.job_id}\n${active.requested_device} · ${active.requested_model}`;

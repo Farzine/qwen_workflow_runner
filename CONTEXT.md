@@ -149,13 +149,33 @@ The original ComfyUI graph follows the same broad semantics: its `KSampler` rece
 
 Extend the validated Qwen workflow into a production-quality management application with authoritative compatible-model selection, efficient per-device resource reuse, observable downloads, safe deletion, human-readable records, dedicated batch workflow, and task-oriented responsive pages.
 
-Phases 0–9 and Phases 10.1–10.4 are complete within the recorded validation scope. Uploaded-model selection uses authoritative catalog IDs; browser/API/singleton output defaults now honor configured storage. Next is Phase 10.5: preserve saved-result inspection when a background job completes. Broader model-family/quantized-LoRA support and quality benchmarking are not implied by the completed roadmap.
+Phases 0–9 and Phases 10.1–10.6 are complete within the recorded validation scope. Uploaded-model selection uses authoritative catalog IDs; browser/API/singleton output defaults honor configured storage. Background/replayed completion preserves saved inspection until returning to Inference/Batch. Stopping or losing monitoring retains an unverified job and reconnects its existing stream without another submission. Next is Phase 10.7: latest authoritative batch replay after the 5,000-event history ceiling. Broader model-family/quantized-LoRA support and quality benchmarking are not implied by the completed roadmap.
 
 ## Active Task
 
-Phase 10.4 is complete. Initial Git state matched the seven pending Phase 10.3 paths at `5c0c29f`; during this session they were committed as `482304d` ("feat: implement uploaded model selection using final receipt path and compatible catalog ID"). Its delta matches all prior work; no changes were discarded or overwritten. Current work has eleven pending paths, including new `ui/tests/test_output_directory.py`. Web defaults resolve through `get_outputs_dir` in shared config conversion; explicit nested/flat/relative overrides remain authoritative, with type/confinement guards. The HTML safely renders the actual path into the native input default used by browser state/presets. Singleton initialization and history now honor configured-root precedence. Core CLI/inference/model/LoRA loading is unchanged. Focused integration: 3 passed; full UI: 447 passed in 14.26s with the runtime guard; Node: 52/52 and stress 15/15. Native desktop/phone checks completed three temporary CPU demo jobs using actual CLI startup (only thumbnails redirected), verified saving/serving/history, and normal shutdown. All 5,268 runtime entries match the retained baseline. No commit created by the agent, new model/GPU inference, download, or user asset modification. Next: Phase 10.5 saved-result inspection during background completion. No user input is pending.
+Phase 10.6 is complete. HEAD remains `f6f498f`; the six pending Phase 10.5
+paths were preserved and extended, with `ui/templates/index.html` added (seven
+modified paths total). No commits were created. The existing RunController now
+keeps an unresolved job locked after monitor stop/disconnection, retains batch
+identity and progress, labels last-known timing/status in the badge/footer/
+Dashboard, and reconnects the same SSE URL. The existing control is available
+in the shared result header on live and saved-result pages. Connecting guards
+avoid duplicate streams; callback identity guards ignore old streams. Only a
+parsed recognized terminal completion unlocks submission. Saved inspection and
+pending live-result delivery from Phase 10.5 are preserved. No new dependency,
+backend cancellation API, model/resource change, or user runtime mutation.
+Node 56/56 and stress 15/15 passed; both added regressions fail against preserved
+pre-10.6 JS (54/56). Full UI: 447 passed in 13.45s. Real temporary CPU demo/browser
+checks passed active reconnection, finished success/failure replay, and injected
+transport disconnection at 1440/900/390px. Nine demo records/eight PNG hashes and
+unchanged 5,268 runtime entries verified; owned server/Chrome exited 0. Next:
+Phase 10.7 latest batch snapshot replay beyond bounded event history. No user
+input is pending. Current limitation is documented; do not expand this slice.
 
 ## Completed Tasks
+
+- [x] Completed Phase 10.6 monitoring truthfulness: unresolved-job submission lock, shared stop/reconnect action, retained batch identity/last-known timing, old-stream guards, terminal validation, saved-inspection preservation, Node/full UI/native browser regressions, and documentation.
+- [x] Completed Phase 10.5 saved-result inspection: deferred viewer completion, immediate status/history/errors, live-page result delivery, failure clearing, deletion/late-response/launch guards, Node/full UI/native browser regressions, and documentation.
 
 - [x] Completed Phase 10.4 configured output defaults: shared web resolution, singleton/history precedence, safely rendered native browser default/presets, explicit overrides preserved, type/confinement checks, real temporary demo/API/browser persistence, regression tests, and documentation.
 
@@ -284,7 +304,9 @@ Phase 10.4 is complete. Initial Git state matched the seven pending Phase 10.3 p
 - [x] Phase 10.2: isolate legacy UI stress tests from real output/history storage, generate temporary inputs, drain/reset sibling/E2E runners, isolate thumbnails, and guard repository runtime artifacts. Final 444 tests pass with unchanged 5,268-entry snapshots.
 - [x] Phase 10.3: final receipt path resolves the refreshed compatible catalog ID; prior valid selection survives incompatible/missing uploads, refresh failures, malformed receipts, and conflicts. Node 51/51, stress 15/15, UI 444, native desktop/phone uploads and real API validation passed.
 - [x] Phase 10.4: configured output defaults agree across browser/presets/API/singleton/history; explicit nested/flat/relative overrides are retained. CLI/env/default integration 3 passed, UI 447, Node 52/52 plus stress 15/15, and three native desktop/phone CPU demo jobs verified.
-- [ ] Phase 10.5: preserve selected saved-record/image inspection in History/Outputs when a background job completes, while retaining current-job status/results and existing navigation. Depends on shared viewer/state from Phases 9.7b2–b3; frontend-only slice with temporary demo/browser regression.
+- [x] Phase 10.5: preserve exact saved inspection during background success/partial/error, deliver current-job results on live-page return, and guard deletion/late responses/launch. Node 54/54, stress 15/15, UI 447, native demo/browser regressions passed.
+- [x] Phase 10.6: truthful stopped/disconnected monitoring, shared same-job reconnect, locked submission until verified completion, stale-event/invalid-completion guards, and saved-view preservation. Node 56/56, stress 15/15, UI 447, real temporary demo/browser checks passed.
+- [ ] Phase 10.7: retain/replay the latest authoritative batch snapshot after 5,000 historical events; preserve bounded logs, current lock/subscriber semantics, and terminal completion. Depends on RunJob/event_generator; CPU-only boundary and race regressions.
 
 ## Current Problems
 
@@ -328,7 +350,7 @@ Phase 10.4 is complete. Initial Git state matched the seven pending Phase 10.3 p
 - The completed-job SSE hang was caused by running Starlette `TestClient` inside the restricted command sandbox. The exact test and full UI suite pass with the local IPC/loopback access already required by these tests; no streaming code change was needed.
 - Backend choice is explicit. The new runtime probe validates the selected device/dtype/offload combination before model loading and returns the same actionable message used by `QwenBackend`.
 - Every meaningful configuration field now has a consistent information control backed by verified implementation behavior. Validation remains inline and outside the help cards.
-- The UI suite now contains 447 tests and completes in about 14 seconds after Phase 10.2 isolation when local loopback sockets are permitted. The frontend Node harness has 52 checks plus 15 stress checks. Core broad validation remains 43 tests/13 subtests from Phase 9.8c3; Phase 10.2 changes only tests/docs; Phase 10.1 changed web upload/storage behavior.
+- The UI suite now contains 447 tests and completes in about 14 seconds after Phase 10.2 isolation when local loopback sockets are permitted. The frontend Node harness has 56 checks plus 15 stress checks. Core broad validation remains 43 tests/13 subtests from Phase 9.8c3; Phase 10.2 changes only tests/docs; Phase 10.1 changed web upload/storage behavior.
 
 ### Model upload collision safety (Phase 9.8d finding; fixed Phase 10.1)
 
@@ -362,6 +384,14 @@ Phase 10.4 is complete. Initial Git state matched the seven pending Phase 10.3 p
 - Content covers prompt image-token order, negative conditioning, steps/strength/schedule behavior, seed/repeat semantics, resolution/canvas sizing, batch multiplication, RGB/RGBA handling, lossless KV-cache placement, VAE tiling, warmup artifacts, memory polling, output confinement, device/dtype/offload constraints, model compatibility, LoRA application, offline mode, and synthetic demo limitations.
 
 ## Important Technical Findings
+
+- Phase 10.5 resume: user commit `f6f498f` contains the exact eleven Phase 10.4 paths; initial Git was clean. Full context and scoped viewer/controller/navigation/deletion/SSE callers reviewed; no repository audit repeated.
+- Saved-view overwrite root cause: `handleComplete` directly assigned shared currentOutputs/currentRecord and rendered outputs/comparison/JSON/tab on every completion. Failure also switched to logs. `pendingCompletion` separates result delivery from job status without duplicating the viewer. Live-page return invalidates earlier record requests before delivering completion once. Batch detail fetches now share the existing selection counter; launch receipts preserve saved-page tabs.
+- Deletion must also evict pending completion because a completed job may not yet own the displayed viewer. Filtering by actual run IDs preserves undeleted siblings; deleting the primary chooses a remaining sibling record/comparison. The existing backend active-job/filesystem guards are unchanged.
+- Phase 10.6 root cause: `cancelRun`/SSE `onerror` closed only this tab's stream, called `setRunningState(false)`, and falsely marked the job idle. The control had a cancellation title without calling a cancellation API. Fixed by separate monitorStatus plus retained unresolved run state; the existing submission guard remains authoritative. The shared header button reconnects existing SSE history/live events; lastServerStatus is retained, batch timing freezes when unverified, and actual terminal payload validation unlocks submission.
+- Phase 10.6 stream identity guards cover all listeners/error callbacks, preventing an old closed stream from clearing or completing its replacement. Native open/status distinguish connecting/connected; queued jobs remain locked. Reconnection clears retained terminal logs before full replay. Invalid completion/constructor failure retains the job as disconnected. History/Outputs completion stays deferred through Phase 10.5's original guard.
+- Node fixture App.init already called RunController.init synchronously, while the harness also called its RunHub alias init. This double-bound the monitor click, causing stop/reconnect in one click; removed only the duplicate fixture initialization, not production behavior.
+- Next Phase 10.7 concrete finding: RunJob.push_event stores the first 5,000 events, then only complete/error/status. Batch updates continue to live subscribers but the latest batch state is absent from replay after the cap. event_generator snapshots history and subscribes under job._lock, so add latest snapshot replay there without introducing a new endpoint/log service or race.
 
 - Phase 10.4 resume: the seven pending Phase 10.3 paths were preserved and then committed as `482304d` during work. The commit contains the exact previous slice only; current follow-up remains uncommitted.
 - Output-default root cause: native HTML, client initial state, and presets hard-coded `outputs`; singleton construction also used relative `outputs`; validation kept the core default while submission substituted only for omitted nested fields. Flat explicit output paths could be discarded at submission. Shared web conversion now resolves defaults once, and run confinement checks the actual resolved config. HTML path escaping is required because configuration paths may contain quotes or markup characters; a standard-library HTMLParser regression and native browser prove those values round-trip.
@@ -513,7 +543,19 @@ Useful concepts to adapt are the separation of base input from optional referenc
 
 ## Files Modified
 
-Phase 10.4 current changes (eleven pending paths at HEAD `482304d`):
+Phase 10.6 current changes (seven modified paths at HEAD `f6f498f`, including retained Phase 10.5 work):
+
+- `ui/static/js/app.js` — monitor state, retained unresolved job/submission lock, existing-job reconnect, old-stream/terminal guards, last-known batch timing, Dashboard/footer labels. Retains Phase 10.5 pending completion, live return, failure clearing, deferred deletion, and asynchronous selection/launch guards.
+- `ui/templates/index.html` — move the existing monitor button to the shared output header; truthful stop-monitoring label/title; same ID and native accessible button.
+- `ui/tests/test_challenger_m2_node.js` — two parameterized monitoring/replay checks; remove duplicate controller fixture binding; retains the two Phase 10.5 checks and original 52 cases.
+- `ui/README.md` — stop/reconnect/locked-submission/saved-inspection contract, replay limits, current Node count.
+- `PROJECT.md` — completed Phase 10.6 and next bounded-replay slice.
+- `VALIDATION_MATRIX.md` — regression/pre-fix/browser/storage/shutdown evidence and precise scope/next acceptance area; preserves Phase 10.5 evidence.
+- `CONTEXT.md` — reconciled preserved pending work, exact state/tests/limits/files, task history, and next continuation point.
+
+Phase 10.5 historical slice remains uncommitted in these same files: separated job completion from result delivery, retained one pending payload on saved pages, consumed on live return, cleared failed results, and guarded deferred deletion and asynchronous selection/details/launch. Original validation is preserved below.
+
+Phase 10.4 historical changes (eleven paths committed by the user as `f6f498f`; original HEAD `482304d`):
 
 - `ui/server.py` — escaped output default in served HTML; shared omitted/empty path resolution and type guard in web config conversion; run confinement checks resolved config, including flat overrides; remove duplicate submission-only default substitution.
 - `ui/runner_bridge.py` — singleton construction uses the existing server directory resolver; history removes redundant environment/state merging so configured precedence is respected while registered per-job roots remain available.
@@ -809,6 +851,29 @@ Phase 9.7b4 additions to the cumulative files above (uncommitted alongside 9.7b1
 - `ui/README.md`, `CONTEXT.md` — Dashboard usage, snapshot/monitor scope, verification, remaining limitations, and Phase 9.8 handoff.
 
 ## Tests Performed
+
+Phase 10.6 validation (2026-09-29 Asia/Dhaka):
+
+- Read full CONTEXT and scoped current Git/diffs/callers; HEAD `f6f498f`, six pending Phase 10.5 paths preserved. No applicable AGENTS.md; no audit/model run repeated. Traced cancelRun/connectStream/status/error/complete, start/validation, activeJobId, batch timer/summary, badge/footer/Dashboard, shared header and runner bridge snapshot/subscription/terminal replay.
+- `node ui/tests/test_challenger_m2_node.js` — 56/56; `node ui/tests/test_tier5_node_stress.js` — 15/15. New tests cover native stop/reconnect, same ID/URL with no POST, validation/start lock, retained batch/progress/clock, queued/running/connecting/disconnected status, old stream callbacks, success/partial/error/interrupted replay, saved-view preservation/live return, constructor errors and malformed/unknown completion. Fixture double-init was corrected; production initialization unchanged.
+- Preserved pre-10.6 JS `/tmp/qwen-phase106-before-app.js` (includes pending Phase 10.5) against the new harness intentionally fails both added cases (54/56); evidence `/tmp/qwen-phase106-before-65vwngdz/harness.log`. Production source was not reverted.
+- Host `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 447 passed in 13.45s with runtime metadata guard; only known Starlette/AnyIO deprecations. Core/model/GPU/download code unchanged, so those suites were not rerun.
+- Host `timeout 120 .venv/bin/python /tmp/qwen_monitor_browser.py` — exited 0. Actual CLI/FastAPI/bridge/native Chrome/SSE with temporary inputs/models/LoRAs/outputs/cache/profile, CPU float32. One two-output saved fixture plus four two-input UI jobs: native stop/reconnect active success (1440 Outputs), native stop/finished success replay (900 Outputs), native stop/finished failure replay (390 History), injected native transport error/reconnect active success (390 Batch). Reconnect used exactly the existing URL and no new POST; submission stayed disabled until actual terminal completion. Badge/footer/Dashboard and last-known batch labels checked; reconnect button reachable by hit-test; no horizontal overflow. Exact saved second image/download/comparison/JSON/tab preserved through replay, then live-page return showed new results or cleared failed images/logs.
+- Evidence `/tmp/qwen-monitor-browser-eshj7zcv`: browser.json, four screenshots, artifacts.json, fresh runtime-before.json, server/Chrome logs, shutdown.json. Nine durable demo records (two errors), eight output PNG SHA-256 values, unrelated working-directory fixture, and all 5,268 repository runtime file/symlink modes/sizes/mtimes verified. Server PID 3545010 and Chrome PID 3545011 exited 0. Desktop stopped/phone disconnected screenshots visually inspected.
+- Wrapper delays DemoBackend three seconds and injects explicit prompt failures only in temporary demo execution. Transport loss closes the native EventSource and dispatches its error event; not a real network outage. First driver had nonexistent batch IDs; corrected to existing IDs, fresh full run passed. Diagnostic evidence `/tmp/qwen-monitor-browser-3g2tugv5` retained, owned server/Chrome exited 0. No real weights/GPU/download/user deletion.
+- `node --check ui/static/js/app.js`, Node/browser driver syntax and `git diff --check` passed. Phase 10.7's 5,000-event replay limitation is documented, not fixed here.
+
+Phase 10.5 validation (2026-09-29 Asia/Dhaka):
+
+- Read CONTEXT completely; clean Git at `f6f498f`, all eleven prior Phase 10.4 paths committed. No applicable AGENTS.md. Scoped caller review covered shared currentOutputs/currentRecord, completion/errors, start/receipt/SSE, page routing, indexed saved selection, batch details, comparison/JSON/strip, history refresh, and deletion request guards. No full audit or model run repeated.
+- `node ui/tests/test_challenger_m2_node.js` — 54/54; `node ui/tests/test_tier5_node_stress.js` — 15/15. New tests cover both saved pages with success/partial/error, exact second image/download, comparison position/mode/input, raw/readable record and active tab, status/identity/100% batch progress, immediate refresh/error feedback, one-time live delivery, normal completion/failure clearing, deletion of deferred primary/all outputs, unaffected deletion, stale selection/details responses, and delayed submission receipt. Initial driver failures were missing VM interval globals and a mistaken input-method name; corrected fixture and real toggleSelection call passed. No production workaround for the fixture was added.
+- Updated harness against `git show HEAD:ui/static/js/app.js` in `/tmp/qwen-phase105-before-mfgh05al` intentionally fails both added tests (52/54); `harness.log` captures the failures. Production source was not reverted.
+- Host `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 447 passed in 13.76s, including the runtime-file metadata guard. Only the known Starlette/AnyIO deprecations remain. Final app-JS changes after this run were explanatory comments only.
+- `timeout 100 .venv/bin/python /tmp/qwen_inspection_browser.py` — fresh full run exited 0. Actual CLI/FastAPI/bridge/native UI/SSE with temporary inputs/models/LoRAs/outputs/thumbnail/profile directories; DemoBackend-only three-second delay and deliberate prompt/input-specific failures made inspection observable. One actual two-output saved fixture plus five two-input UI jobs exercised success on Outputs at 1440, failure on History at 390, partial success on Outputs at 900, pending primary deletion with sibling preservation, and ordinary Batch completion. Exact second image/download, comparison position/mode, saved JSON, thumbnail pressed state, and tab matched before/after completion. Live return showed the new job or cleared images/logs. Native delete cancellation preserved files; acceptance removed JSON/PNG and the deferred sibling was shown on Batch return. All viewports had no horizontal overflow.
+- Evidence `/tmp/qwen-inspection-browser-ffhw_zlt`: `browser.json`, five screenshots, `artifacts.json`, fresh `runtime-before.json`, server/Chrome logs, and `shutdown.json`. Ten retained demo records (three errors) and eight output PNG SHA-256 values verified. Unrelated working-directory fixture and all 5,268 repository runtime file/symlink modes/sizes/mtimes unchanged against the fresh pre-browser snapshot. No fresh large-model content hashing is claimed. Server PID 3471306 and Chrome PID 3471307 exited 0. Desktop success/phone failure screenshots visually inspected.
+- First browser attempt `/tmp/qwen-inspection-browser-spwdkczb` passed success and failure but took a partial-success before snapshot using stale hidden-image metadata while saved JSON was still fetching. The corrected wait requires the exact saved JSON ID and visible preview; fresh full run passed. That diagnostic server/Chrome also exited 0; retained temporary artifacts were not deleted.
+- `node --check ui/static/js/app.js`, browser driver syntax, and `git diff --check` passed. Core/GPU/LoRA/download suites were not rerun because their implementations did not change; prior hardware evidence retains its original scope.
+
 
 Phase 10.4 validation (2026-09-29 Asia/Dhaka):
 
@@ -1144,7 +1209,8 @@ Phase 9.1 validation:
 
 - Phase 10.3 fixes uploaded-model ID selection and truthful failure states. Upload publication still does not establish exact tensor/loader compatibility; the structural browser fixtures were never used for inference.
 - Phase 10.4 fixes configured web output defaults while preserving explicit overrides and core CLI defaults. Non-default per-run directories are registered in memory for this server session; they are not automatically rediscovered after restart. Default-root durable history is verified after restart.
-- Phase 10.5 pending: selecting a saved image in History/Outputs still shares the viewer with live completion, which replaces the inspected result. Preserve inspection without losing current-job status/results; see Next Action.
+- Phase 10.5 preserves saved-page inspection through background/replayed completion and delivers one pending result on return to Inference/Batch. Deferred payload and monitor job ID remain browser-memory state; tab reload/restart recovery and separate persistent viewers are not introduced.
+- Phase 10.6 fixes misleading idle/cancel behavior on monitor stop/disconnection. Manual reconnect uses the same job and keeps submission locked until recognized completion; a missing server job remains disconnected/unverified. Backend inference cancellation is not implemented. The first 5,000 retained events can omit later batch snapshots, so active long-job replay can show stale early progress; latest-snapshot replay is Phase 10.7.
 - Model upload replacement is fixed in Phase 10.1. Atomic publication requires filesystem hard-link support and does not fall back to overwriting. Normal failure/conflict cleanup is verified, but permission/disk errors can still prevent cleanup, and abandoned incomplete chunk sessions have no new automatic expiry. Concurrency coverage uses distinct upload IDs; session identity/retry/quota management is unchanged. Upload success is not compatibility/checksum verification.
 - Generation-error cleanup now resets model-offload placement/hooks using Diffusers. If that cleanup itself fails, the original inference error remains authoritative and the secondary error is logged; recovery is not guaranteed for a permanently broken CUDA context. Graceful shutdown cannot run after SIGKILL/exit 137. The normal fixed-server shutdown path was explicitly verified.
 
@@ -1155,8 +1221,8 @@ Phase 9.1 validation:
 - LoRA, catalog-model, and finished-run deletion are available through confirmed web actions. Run deletion removes an entire record and its unshared artifacts; there is not yet an individual output-file management UI. The global active-job guard pauses deletion while any inference job is in progress. Independent CLI processes remain outside the web server's deletion locks. Deletion tests used only temporary assets.
 - Run/output cleanup is best-effort across multiple files: a filesystem error after record removal may leave an orphaned image, though history will not point to a missing image. Outputs browses only record-linked artifacts and intentionally does not implement orphan cleanup.
 - Legacy durable records remain schema-version-1 documents. The new `summary_version: 1` projection is added on API reads without migration; deleted/missing referenced files yield unavailable metadata. Parameter counts are never inferred from a model label, and directory-backed model size requires a matching completed manifest. Run Details retains its first-output summary preview; Outputs allows exact selection/download/comparison of every recorded artifact through the shared viewer.
-- Aggregate batch events and ETA live in the server process, with replay for an existing job. After restart, durable per-attempt history remains, but the aggregate event stream is not reconstructed from disk. The Batch destination monitors the current browser submission and displays its results; configuration/launch remains in Inference. The current monitor-stop button disconnects SSE; it does not cancel a running model operation.
-- The SPA now has focused Dashboard, Inference, Batch, History, Outputs, Models, LoRAs, and System destinations using shared DOM/state. History and Outputs share the result/log viewer with live inference; a background job completing can replace the viewed saved result with the newest output. Saved records can be reopened; historical logs are not independently persisted by this UI.
+- Aggregate batch events and ETA live in the server process, with replay for an existing job and manual same-tab reconnection. After restart, durable per-attempt history remains, but the aggregate event stream is not reconstructed from disk. The Batch destination monitors the current browser submission and displays its results; configuration/launch remains in Inference. Stop monitoring disconnects only SSE; the job remains unverified until completion is checked.
+- The SPA now has focused Dashboard, Inference, Batch, History, Outputs, Models, LoRAs, and System destinations using shared DOM/state. History and Outputs share the result/log viewer with live inference; saved inspection is preserved during background completion until returning to a live page. Saved records can be reopened; historical logs are not independently persisted by this UI.
 - Dashboard health/system/resource values are snapshots refreshed on startup, configuration changes, completion, or request. Batch and download cards monitor this tab using existing event/timer sources; a fresh tab does not reconnect to another tab's active stream/download. Server active-job data is a snapshot, not a complete queue. Backend APIs do not expose global download listings or storage totals. Very large history libraries retain the existing unpaginated payload limitation.
 - Outputs uses the full existing history payload without pagination; native lazy loading bounds image requests, but very large record libraries can still slow API/DOM rendering. A `ponytail:` comment records the pagination upgrade point. It lists recorded generated images; comparison artifacts are inspected in the comparison viewer rather than treated as independent gallery outputs. Deletion remains whole-run only.
 - The original same-image behavior still exists inside explicit synthetic demo mode by design, but it can no longer masquerade as production inference.
@@ -1169,11 +1235,27 @@ Phase 9.1 validation:
 
 ## User Decisions / Required Input
 
-None. The supplied adapter and original runtime assets remain unchanged. Explicit per-run output paths remain authoritative; blank/default paths honor server configuration. The next frontend task should preserve saved-result inspection while background job status/results continue updating. Existing workflow intent is sufficient; no new model, adapter, or architecture decision is required.
+None. The supplied adapter and original runtime assets remain unchanged. Explicit per-run output paths remain authoritative; blank/default paths honor server configuration. Saved-result inspection and truthful manual monitoring/reconnection are implemented. The next latest-batch replay task follows the existing event/job design; no new model, adapter, or architecture decision is required.
 
 ## Next Action
 
-Implement Phase 10.5 only: preserve saved-result inspection when a background job completes. HEAD is `482304d`; eleven Phase 10.4 paths above are pending and must be preserved or reconciled if committed by the user. Trace `RunController.startRun`/`handleComplete`/error completion, `RunHistory.selectRun` and request-counter guards, `OutputViewer.renderOutputs`/selected image, `ComparisonSlider`, `JsonInspector`, shared `Store.state.run`, and `PageNavigation` transitions. The confirmed current limitation is that `handleComplete` always replaces currentOutputs/currentRecord, renders the new primary image/comparison/details, and switches the result tab even if the user is inspecting a saved record/image on History/Outputs. Keep current-job completion/progress/history refresh truthful and its results available when returning to Inference/Batch, while preserving the chosen saved record, exact non-first image, comparison/details/tab during inspection. Reuse existing state/controllers; avoid adding a parallel viewer or speculative architecture. Add focused Node and temporary CPU-demo/browser regression for successful/failed background completion, normal live result behavior, navigation, and deletion/late-response compatibility. No real model/GPU/download run is needed for this frontend slice. No user input is pending. Do not create commits, delete prior records, or discard changes unless requested.
+Implement Phase 10.7 only: latest authoritative batch snapshot replay after the
+bounded event history fills. HEAD is `f6f498f`; seven paths above contain pending
+Phases 10.5/10.6 work and must be preserved or reconciled if the user commits them.
+Read full context and Git first; do not repeat completed viewer/output/model/
+monitor work. Trace `RunJob.__init__`, `push_event`, batch-state producers,
+`RunnerBridge.event_generator` snapshot/subscribe/replay/terminal paths and their
+existing tests. Concrete defect: after 5,000 retained events, batch events are
+broadcast but no longer recorded; a reconnecting active job replays stale early
+counts/stages/items/elapsed/ETA. Retain one latest authoritative batch snapshot
+and replay it under the existing lock/snapshot/subscriber semantics. Avoid duplicate
+or out-of-order snapshot/live delivery, preserve terminal replay and the log ceiling,
+and preserve new browser monitor/saved-view guards. Use CPU-only synthetic events
+and isolated actual API/demo checks for cap boundary, latest counts/stage/items/
+timing, active subscription races, finished completion, and subscriber cleanup.
+No new endpoint/log service, real weights/GPU/download run, or user input is needed.
+Keep a coherent checkpoint, update context/docs/evidence, and stop after this task.
+Do not create commits or delete/discard user assets/work unless requested.
 
 ## Resume Instructions
 

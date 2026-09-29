@@ -491,11 +491,105 @@ Core CLI defaults and inference loading are unchanged.
   outputs/inputs/cache/small model files; large model sizes/mtimes are unchanged.
   This is synthetic workflow/storage validation, not new GPU inference evidence.
 
+## Phase 10.5 saved-result inspection
+
+Completed 2026-09-29. Completion updates status, progress, errors, history, and
+system snapshots immediately. The shared viewer defers one completion while
+History or Outputs is open, preserving the exact selected image, comparison
+position/mode, details, and result tab. Returning to Inference/Batch applies it
+once. Failures clear stale live images and show logs. Confirmed deletion evicts
+matching deferred artifacts and retains undeleted sibling outputs; late saved
+selection or batch-details responses cannot replace newer live/selected results.
+A launch receipt arriving after saved selection also preserves its result tab.
+
+- Node frontend: 54/54; stress: 15/15. Two new parameterized regressions cover
+  History/Outputs × success/partial/error, exact second image, comparison state,
+  details/tab, current-job identity/progress, refreshes, one-time application,
+  ordinary completion, deletion, late responses, and delayed launch/navigation.
+  Both fail against committed pre-fix JS (52/54); evidence
+  `/tmp/qwen-phase105-before-mfgh05al/harness.log`.
+- Host full UI suite: 447 passed in 13.76s with the repository runtime-file
+  guard; only known Starlette/AnyIO deprecation warnings remain. JS syntax and
+  diff whitespace checks passed. Core/model/GPU/download code did not change.
+- Real temporary CPU demo/SSE/native Chrome workflow at 1440/900/390px:
+  successful Outputs inspection, failed History inspection, partial-success
+  Outputs inspection, deferred-result deletion, and ordinary live completion.
+  Preview/download/second-image selection, comparison position/mode, saved JSON,
+  and active tab were identical before/after completion. Navigation then showed
+  the completed job or failure logs; all viewports had no horizontal overflow.
+  Native confirmation cancellation preserved a new result; acceptance deleted
+  its JSON/PNG and the remaining sibling appeared on return to Batch.
+- `/tmp/qwen-inspection-browser-ffhw_zlt`: `browser.json`, five screenshots,
+  `artifacts.json`, fresh `runtime-before.json`, logs, and `shutdown.json`.
+  Ten retained durable demo records (three errors), eight output PNG hashes,
+  unchanged unrelated working-directory fixture, and all 5,268 repository
+  runtime file modes/sizes/mtimes verified. Server PID 3471306 and Chrome PID
+  3471307 exited 0. Desktop/phone screenshots visually inspected.
+- Temporary wrapper uses actual CLI/server/bridge startup, redirects thumbnails,
+  and delays DemoBackend generation by three seconds with explicit fixture-only
+  failures. No real weights/GPU/download or user-asset deletion was performed.
+  First browser run passed success/failure but captured stale JSON before an
+  asynchronous saved selection completed. The corrected wait requires loaded
+  saved JSON and visible preview; the fresh full run exited 0. Its earlier
+  evidence is retained at `/tmp/qwen-inspection-browser-spwdkczb`.
+
+## Phase 10.6 monitor stop and reconnection
+
+Completed 2026-09-29. The root cause was `cancelRun`/SSE error calling
+`setRunningState(false)` after closing only the browser stream. No server
+cancellation occurred. The existing controller now retains the unresolved job
+and batch state, labels stopped/disconnected/connecting monitoring, freezes
+last-known timing, and keeps submission locked until parsed terminal completion.
+The existing button moved to the shared result header and switches between
+**Stop monitoring** and **Reconnect monitor**. Reconnection reuses existing SSE
+replay; old-stream callbacks cannot replace a newer stream or deliver completion.
+Saved inspection and deferred live-result delivery remain intact.
+
+- Node frontend: 56/56; stress: 15/15. Two parameterized tests exercise native
+  control clicks, same-job URLs, locked validation/submission, retained batch
+  identity/counts/timing, Dashboard/footer labels, connecting/queued/running,
+  stale callbacks, success/partial/error/interrupted replay, saved views,
+  constructor failure, malformed completion, and unavailable monitoring.
+  Both new tests fail against the preserved pre-10.6 JS (54/56), evidence
+  `/tmp/qwen-phase106-before-65vwngdz/harness.log`. The fixture now relies on
+  App.init's existing controller binding instead of binding its click twice.
+- Host full UI/API/E2E: 447 passed in 13.45s, including the runtime-file guard;
+  only existing Starlette/AnyIO deprecation warnings. JS syntax and diff checks
+  passed. No backend/model/GPU/download implementation changed.
+- Actual temporary CLI/FastAPI/bridge/native Chrome CPU demo at 1440/900/390px:
+  stopped monitor reconnects while active; stopped monitor reconnects after
+  server success/failure; browser transport-error handling reconnects while
+  active. Every reconnect opened the same URL with no additional run POST.
+  Run remained disabled until verified completion, and status/footer reflected
+  monitoring versus completion. Saved second-image/JSON/tab/comparison state
+  survived both successful and failed replay; returning to Batch showed the
+  new result or cleared failed images/logs. All widths had no horizontal
+  overflow, and hit-testing confirmed the reconnect action was reachable.
+- Evidence `/tmp/qwen-monitor-browser-eshj7zcv`: `browser.json`, four screenshots,
+  `artifacts.json`, fresh `runtime-before.json`, server/Chrome logs, and
+  `shutdown.json`. Nine durable demo records (two errors), eight PNG hashes,
+  the unrelated working-directory fixture, and all 5,268 repository runtime
+  file/symlink modes/sizes/mtimes verified unchanged. Server PID 3545010 and
+  Chrome PID 3545011 exited 0; desktop/phone screenshots visually inspected.
+- Temporary wrappers redirect thumbnails and delay DemoBackend by three
+  seconds with explicit fixture-only failures. Transport loss was injected by
+  closing the native EventSource and dispatching its error event; this verifies
+  the browser recovery path, not a physical network outage. Backend SSE, jobs,
+  storage, and terminal events were real. No model weights/GPU/download ran.
+  First diagnostic driver used nonexistent batch IDs; corrected to existing
+  IDs and a fresh full run passed. Earlier diagnostic evidence remains at
+  `/tmp/qwen-monitor-browser-3g2tugv5`; its owned processes also exited 0.
+
 ## Remaining scope and next task
 
-**Phase 10.5 — Saved-result inspection:** background completion currently replaces
-the shared History/Outputs viewer. Preserve the user's saved-image inspection
-while keeping completed-job progress/results available through the existing state.
+**Phase 10.7 — Latest batch replay:** `RunJob.push_event` retains the first
+5,000 events, then only status/error/complete. Active reconnection can replay
+stale early batch counts, stages, elapsed time, and ETA until another live event
+arrives. Preserve the latest authoritative batch snapshot for replay under the
+existing job lock while retaining bounded logs and terminal delivery. Add CPU-only
+regressions for replay after the history ceiling and subscription/terminal races.
+Reconnection currently requires the same tab/job ID; missing server jobs stay
+unverified. Tab-reload recovery and backend inference cancellation are unchanged.
 
 Model upload publication requires filesystem hard-link support and fails safely
 when unavailable; no overwrite fallback is provided. Distinct concurrent upload
@@ -507,5 +601,5 @@ Arbitrary model families, quantized-transformer LoRA compatibility, production
 portrait-quality benchmarking, large-download throughput, and interrupted-network
 recovery are not established by these bounded checks. Large unpaginated history,
 in-memory batch/download state, whole-run output deletion, and model-dependent
-reference adherence remain documented operating limits. Phases 10.1–10.4 are complete;
-saved-result inspection during background completion is the next focused task.
+reference adherence remain documented operating limits. Phases 10.1–10.6 are complete;
+latest authoritative batch replay is the next focused task.

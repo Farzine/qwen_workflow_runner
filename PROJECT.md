@@ -89,8 +89,14 @@ passed with unchanged runtime snapshots. Phase 10.3 is complete: uploaded models
 are selected by matching the final receipt path to a refreshed compatible catalog
 ID; failures preserve the prior valid selection. Phase 10.4 is complete: browser
 defaults/presets, validation, submission, and singleton history honor the configured
-output root while preserving explicit per-run paths. The next focused UX task is
-preserving saved-result inspection when a background job finishes. Broader model families,
+output root while preserving explicit per-run paths. Phase 10.5 is complete:
+background completion preserves saved inspection in History/Outputs and displays
+the finished job when returning to Inference/Batch; deletion and late-response
+guards prevent stale artifacts from reappearing. Phase 10.6 is complete: stopped or
+disconnected monitoring keeps the job unverified and submission locked; the shared
+result header reconnects the same SSE job without resubmission, preserving saved
+inspection and accepting only verified completion. Next: make long-job replay
+include the latest batch snapshot beyond the 5,000-event history ceiling. Broader model families,
 quantized LoRA, large-download recovery, and portrait-quality benchmarking
 remain outside the validated scope.
 

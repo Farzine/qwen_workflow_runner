@@ -294,6 +294,8 @@ const sandbox = {
     return setTimeout(fn, delay);
   },
   clearTimeout: (id) => clearTimeout(id),
+  setInterval,
+  clearInterval,
   fetch: async (url, opts) => {
     return {
       ok: true,
@@ -361,7 +363,7 @@ function runTest(name, fn) {
 InputBrowser.init();
 ParamForm.init();
 ComparisonSlider.init();
-RunHub.init();
+// App.init already binds RunController synchronously in this ready DOM fixture.
 
 function assertJsonEqual(actual, expected, msg) {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(actual)), JSON.parse(JSON.stringify(expected)), msg);
@@ -1573,6 +1575,321 @@ runTest("Outputs library scales, handles missing previews, and deletes by owning
     ApiClient.getRunRecord = originalFetch;
     RunHistory.loadHistory = originalLoad;
     mockWindow.confirm = originalConfirm;
+  }
+});
+
+runTest("Saved inspection survives background success, partial failure, and failure until returning to the live view", async () => {
+  const originalFetch = ApiClient.getRunRecord;
+  const originalList = ApiClient.listRuns;
+  const originalRuntime = App.refreshRuntimeCapabilities;
+  const previousStatus = Store.state.run.status;
+  let refreshes = 0, runtimeRefreshes = 0;
+  const saved = {run_id: "saved-inspection", status: "success", input_image: "/saved-source.png", comparison: "/saved-comparison.png",
+    outputs: [{filename: "first.png", width: 64, height: 64}, {filename: "chosen.png", width: 96, height: 64}]};
+  const liveRecord = {run_id: "live-completion", status: "success", input_image: "/live-source.png"};
+  try {
+    OutputViewer.init();
+    ApiClient.listRuns = async () => { refreshes++; return {runs: [saved]}; };
+    App.refreshRuntimeCapabilities = async () => { runtimeRefreshes++; };
+    ApiClient.getRunRecord = async () => saved;
+    for (const page of ["history", "outputs"]) {
+      for (const status of ["success", "partial_success", "error"]) {
+        PageNavigation.show(page);
+        await RunHistory.selectRun(saved.run_id, 1);
+        RunController.switchOutputTab("tab-btn-comparison", "pane-comparison");
+        ComparisonSlider.setMode("side");
+        ComparisonSlider.handle.style.left = "27%";
+        const currentOutputs = Store.state.run.currentOutputs;
+        const chosen = OutputViewer.currentOutput;
+        const details = JsonInspector.codeElem.textContent;
+        Store.state.run.status = "running";
+        Store.state.run.activeJobId = "live-job";
+        const payload = {status, record: {...liveRecord, status}, records: [liveRecord],
+          outputs: status === "error" ? [] : [{run_id: liveRecord.run_id, filename: "live.png", width: 64, height: 64}],
+          comparisons: [{run_id: liveRecord.run_id, url: "/api/outputs/live-comparison.png"}],
+          errors: [{input_index: 1, error: {message: "Second input failed"}}], error: {message: "Generation failed"},
+          batch: {total: 2, completed: status === "error" ? 0 : 1, failed: status === "success" ? 0 : 1,
+            remaining: 0, current_stage: "finished", elapsed_seconds: 3, eta_seconds: null, percent: 100, items: []}};
+        RunController.handleComplete(payload);
+        await new Promise(resolve => setImmediate(resolve));
+        assert.strictEqual(PageNavigation.currentPage, page);
+        assert.strictEqual(Store.state.run.currentRecord, saved);
+        assert.strictEqual(Store.state.run.currentOutputs, currentOutputs);
+        assert.strictEqual(OutputViewer.currentOutput, chosen);
+        assert.strictEqual(OutputViewer.downloadBtn.download, "chosen.png");
+        assert.strictEqual(JsonInspector.codeElem.textContent, details);
+        assert.strictEqual(JsonInspector.currentData, saved);
+        assert(getOrCreateElement("pane-comparison").classList.contains("active"));
+        assert(ComparisonSlider.beforeImg.src.includes("saved-source.png"));
+        assert.strictEqual(ComparisonSlider.afterImg.src, chosen.url);
+        assert.strictEqual(ComparisonSlider.handle.style.left, "27%");
+        assert(!ComparisonSlider.twoUpWrapper.classList.contains("hidden"));
+        assert.strictEqual(RunController.batchState.percent, 100);
+        assert.strictEqual(Store.state.run.status, "idle");
+        assert.strictEqual(Store.state.run.activeJobId, "live-job");
+        assert.strictEqual(RunController.statusBadge.textContent, status === "error" ? "Failed" : status === "partial_success" ? "Completed with errors" : "Completed");
+        if (status === "partial_success") assert(lastAlertMessages.some(message => message.includes("Second input failed")));
+        if (status === "error") assert(toastLog.some(toast => toast.msg.includes("Generation failed")));
+        PageNavigation.show(page === "history" ? "outputs" : "history");
+        assert.strictEqual(OutputViewer.currentOutput, chosen, "Saved-page navigation must not consume completion");
+        PageNavigation.show(page === "history" ? "inference" : "batch");
+        assert.strictEqual(RunController.pendingCompletion, null);
+        assert.strictEqual(Store.state.run.currentRecord.run_id, liveRecord.run_id);
+        assert.strictEqual(JsonInspector.currentData.run_id, liveRecord.run_id);
+        if (status === "error") {
+          assert.strictEqual(OutputViewer.currentOutput, null);
+          assert.strictEqual(Store.state.run.currentOutputs.length, 0);
+          assert(getOrCreateElement("pane-logs").classList.contains("active"));
+        } else {
+          assert.strictEqual(OutputViewer.currentOutput.filename, "live.png");
+          assert(ComparisonSlider.beforeImg.src.includes("live-source.png"));
+          assert(getOrCreateElement("pane-outputs").classList.contains("active"));
+        }
+        RunController.switchOutputTab("tab-btn-json", "pane-json");
+        PageNavigation.show("inference");
+        assert(getOrCreateElement("pane-json").classList.contains("active"), "Completion is consumed only once");
+      }
+    }
+    assert.strictEqual(refreshes, 6);
+    assert.strictEqual(runtimeRefreshes, 6);
+    // Ordinary completion still renders immediately, including failures clearing the previous output.
+    PageNavigation.show("batch");
+    RunController.handleComplete({status: "success", record: liveRecord, outputs: [{filename: "immediate.png"}]});
+    assert.strictEqual(OutputViewer.currentOutput.filename, "immediate.png");
+    RunController.handleComplete({status: "error", record: {run_id: "failed-live"}, error: {message: "Failed live"}});
+    assert.strictEqual(OutputViewer.currentOutput, null);
+    assert.strictEqual(Store.state.run.currentRecord.run_id, "failed-live");
+  } finally {
+    ApiClient.getRunRecord = originalFetch;
+    ApiClient.listRuns = originalList;
+    App.refreshRuntimeCapabilities = originalRuntime;
+    RunController.pendingCompletion = null;
+    Store.state.run.status = previousStatus;
+    PageNavigation.show("inference");
+  }
+});
+
+runTest("Deferred results respect deletion, late selections, batch details, and asynchronous launch navigation", async () => {
+  const originalFetch = ApiClient.getRunRecord, originalDelete = ApiClient.deleteRun;
+  const originalList = ApiClient.listRuns, originalRuntime = App.refreshRuntimeCapabilities;
+  const originalConfirm = mockWindow.confirm, originalStart = ApiClient.startRun;
+  const originalValidation = ParamForm.runValidation, originalConnect = RunController.connectStream;
+  const previousStatus = Store.state.run.status;
+  const records = ["first-owner", "second-owner"].map(run_id => ({run_id, status: "success", input_image: `/${run_id}.png`}));
+  const completion = () => ({status: "success", run_id: records[0].run_id, record: records[0], records,
+    outputs: records.map(record => ({run_id: record.run_id, filename: `${record.run_id}.png`})),
+    comparisons: records.map(record => ({run_id: record.run_id, url: `/api/outputs/${record.run_id}-compare.png`}))});
+  try {
+    ApiClient.listRuns = async () => ({runs: []});
+    App.refreshRuntimeCapabilities = async () => {};
+    ApiClient.deleteRun = async () => {};
+    mockWindow.confirm = () => true;
+    PageNavigation.show("outputs");
+    RunController.handleComplete(completion());
+    await RunHistory.deleteRun({run_id: "unrelated"});
+    assert.strictEqual(RunController.pendingCompletion.outputs.length, 2);
+    await RunHistory.deleteRun(records[0]);
+    assert.strictEqual(RunController.pendingCompletion.outputs.length, 1);
+    let resolveSelection;
+    ApiClient.getRunRecord = () => new Promise(resolve => {resolveSelection = resolve;});
+    const lateSelection = RunHistory.selectRun("old-saved");
+    PageNavigation.show("batch");
+    resolveSelection({run_id: "old-saved", outputs: [{filename: "stale.png"}]});
+    await lateSelection;
+    assert.strictEqual(OutputViewer.currentOutput.filename, "second-owner.png");
+    assert.strictEqual(Store.state.run.currentRecord.run_id, "second-owner");
+    assert(ComparisonSlider.beforeImg.src.includes("second-owner.png"));
+    PageNavigation.show("outputs");
+    RunController.handleComplete(completion());
+    await RunHistory.deleteRun(records[0]);
+    await RunHistory.deleteRun(records[1]);
+    assert.strictEqual(RunController.pendingCompletion, null);
+    PageNavigation.show("batch");
+    assert.strictEqual(OutputViewer.currentOutput, null, "Deleted deferred artifacts must not reappear");
+    let resolveDetails;
+    ApiClient.getRunRecord = () => new Promise(resolve => {resolveDetails = resolve;});
+    const lateDetails = RunController.inspectBatchItem("old-details");
+    PageNavigation.show("history");
+    ApiClient.getRunRecord = async () => records[1];
+    await RunHistory.selectRun("second-owner");
+    resolveDetails({run_id: "old-details"}); await lateDetails;
+    assert.strictEqual(JsonInspector.currentData.run_id, "second-owner");
+    // A submission receipt arriving after saved selection may connect SSE but cannot switch its tab.
+    PageNavigation.show("inference");
+    Store.state.run.status = "idle";
+    InputBrowser.clearAll(); InputBrowser.toggleSelection({path: "/input.png", name: "input.png"}, "input");
+    ParamForm.runValidation = async () => {Store.state.validation.valid = true;};
+    let resolveLaunch, connected;
+    ApiClient.startRun = () => new Promise(resolve => {resolveLaunch = resolve;});
+    RunController.connectStream = id => {connected = id;};
+    const launch = RunController.startRun();
+    await new Promise(resolve => setImmediate(resolve));
+    PageNavigation.show("outputs");
+    await RunHistory.selectRun("second-owner");
+    RunController.switchOutputTab("tab-btn-json", "pane-json");
+    resolveLaunch({run_id: "new-job", stream_url: "/stream"}); await launch;
+    assert.strictEqual(connected, "new-job");
+    assert(getOrCreateElement("pane-json").classList.contains("active"));
+    assert.strictEqual(JsonInspector.currentData.run_id, "second-owner");
+  } finally {
+    ApiClient.getRunRecord = originalFetch; ApiClient.deleteRun = originalDelete;
+    ApiClient.listRuns = originalList; App.refreshRuntimeCapabilities = originalRuntime;
+    mockWindow.confirm = originalConfirm; ApiClient.startRun = originalStart;
+    ParamForm.runValidation = originalValidation; RunController.connectStream = originalConnect;
+    RunController.setRunningState(false); Store.state.run.status = previousStatus;
+    RunController.pendingCompletion = null; PageNavigation.show("inference");
+  }
+});
+
+runTest("Monitor stop/disconnect keeps the job locked and reconnects the same stream safely", async () => {
+  const originalSource = sandbox.EventSource, originalStart = ApiClient.startRun;
+  const originalList = ApiClient.listRuns, originalRuntime = App.refreshRuntimeCapabilities;
+  const previousRun = {...Store.state.run}, originalRoot = Dashboard.root;
+  const streams = [];
+  class TestStream {
+    constructor(url) { this.url = url; this.handlers = {}; this.closed = false; streams.push(this); }
+    addEventListener(type, handler) { (this.handlers[type] ||= []).push(handler); }
+    close() { this.closed = true; }
+    emit(type, data = {}) { for (const handler of this.handlers[type] || []) handler({data: JSON.stringify(data)}); }
+  }
+  try {
+    sandbox.EventSource = TestStream;
+    let submissions = 0, refreshes = 0;
+    ApiClient.startRun = async () => { submissions++; };
+    ApiClient.listRuns = async () => { refreshes++; return {runs: []}; };
+    App.refreshRuntimeCapabilities = async () => {};
+    Dashboard.root = Utils.el("div", {}, Utils.el("p", {class: "dashboard-jobs-value"}));
+    PageNavigation.show("batch");
+    Store.state.run.activeJobId = "monitored/job";
+    RunController.setRunningState(true);
+    RunController.connectStream(Store.state.run.activeJobId);
+    const first = streams[0];
+    assert.strictEqual(first.url, "/api/run/monitored%2Fjob/stream");
+    assert.strictEqual(RunController.cancelBtn.disabled, true);
+    first.emit("open"); first.emit("status", {status: "running"});
+    const batch = {total: 2, completed: 0, failed: 0, remaining: 2, current_stage: "generating",
+      elapsed_seconds: 2, eta_seconds: null, percent: 25, step: 1, steps: 2,
+      items: [{operation_index: 1, input_filename: "input.png", status: "generating"}]};
+    first.emit("batch", batch);
+    const items = RunController.batchItems, snapshot = RunController.batchState;
+    RunController.cancelBtn.dispatchEvent("click");
+    assert(first.closed);
+    assert.strictEqual(Store.state.run.status, "running", "Unverified server work must stay locked");
+    assert.strictEqual(Store.state.run.monitorStatus, "stopped");
+    assert.strictEqual(RunController.eventSource, null);
+    assert.strictEqual(RunController.batchItems, items);
+    assert.strictEqual(RunController.batchState, snapshot);
+    assert.strictEqual(RunController.batchState.percent, 25);
+    assert.strictEqual(RunController.batchTimer, null);
+    assert.strictEqual(RunController.statusBadge.textContent, "Monitoring stopped");
+    assert.strictEqual(getOrCreateElement("status-bar-active-task").textContent, "Monitoring stopped");
+    assert(Dashboard.root.textContent.includes("job status unverified"));
+    assert(RunController.batchSummary.textContent.includes("Last known progress"));
+    const frozen = RunController.batchSummary.textContent;
+    RunController.batchReceivedAt -= 60000; RunController.renderBatchSummary();
+    assert.strictEqual(RunController.batchSummary.textContent, frozen);
+    ParamForm.renderValidationResult(true, []);
+    assert.strictEqual(RunController.runBtn.disabled, true);
+    await RunController.startRun(); assert.strictEqual(submissions, 0);
+    RunController.cancelBtn.dispatchEvent("click");
+    const second = streams[1];
+    assert.strictEqual(second.url, first.url);
+    assert.strictEqual(Store.state.run.activeJobId, "monitored/job");
+    assert.strictEqual(RunController.batchItems, items, "Reconnection must not reset the batch");
+    RunController.connectStream("monitored/job"); assert.strictEqual(streams.length, 2);
+    first.onerror(); first.emit("complete", {status: "error", error: {message: "Stale completion"}});
+    assert.strictEqual(RunController.eventSource, second);
+    assert.strictEqual(second.closed, false);
+    second.emit("open"); second.emit("status", {status: "queued"});
+    assert.strictEqual(RunController.statusBadge.textContent, "QUEUED");
+    assert(RunController.batchTimer);
+    second.onerror();
+    assert.strictEqual(Store.state.run.monitorStatus, "disconnected");
+    assert.strictEqual(RunController.statusBadge.textContent, "Monitor disconnected");
+    assert.strictEqual(RunController.runBtn.disabled, true);
+    RunController.cancelBtn.dispatchEvent("click");
+    const third = streams[2]; third.emit("open"); third.emit("status", {status: "running"});
+    third.emit("complete", {status: "success", record: {run_id: "finished"}, outputs: [{filename: "finished.png"}]});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(Store.state.run.status, "idle");
+    assert.strictEqual(Store.state.run.monitorStatus, "idle");
+    assert.strictEqual(OutputViewer.currentOutput.filename, "finished.png");
+    assert.strictEqual(getOrCreateElement("status-bar-active-task").textContent, "Completed");
+    assert.strictEqual(RunController.runBtn.disabled, false);
+    assert(RunController.cancelBtn.classList.contains("hidden"));
+    assert(third.closed);
+    third.emit("complete", {status: "error"}); third.onerror();
+    assert.strictEqual(refreshes, 1, "Old/duplicate terminal events must be ignored");
+    assert.strictEqual(RunController.statusBadge.textContent, "Completed");
+  } finally {
+    if (RunController.eventSource) RunController.eventSource.close();
+    RunController.eventSource = null; RunController.setRunningState(false);
+    Object.assign(Store.state.run, previousRun);
+    sandbox.EventSource = originalSource; ApiClient.startRun = originalStart;
+    ApiClient.listRuns = originalList; App.refreshRuntimeCapabilities = originalRuntime;
+    Dashboard.root = originalRoot;
+  }
+});
+
+runTest("Reconnect handles finished failures and malformed/unavailable streams without replacing saved inspection", async () => {
+  const originalSource = sandbox.EventSource, originalFetch = ApiClient.getRunRecord;
+  const originalList = ApiClient.listRuns, originalRuntime = App.refreshRuntimeCapabilities;
+  const previousRun = {...Store.state.run};
+  const streams = [];
+  class TestStream {
+    constructor(url) { this.handlers = {}; streams.push(this); }
+    addEventListener(type, handler) { this.handlers[type] = handler; }
+    close() {}
+    emit(type, data) { this.handlers[type]?.({data: typeof data === "string" ? data : JSON.stringify(data)}); }
+  }
+  try {
+    ApiClient.listRuns = async () => ({runs: []}); App.refreshRuntimeCapabilities = async () => {};
+    const saved = {run_id: "saved-monitor", input_image: "/saved.png", outputs: [{filename: "saved.png"}]};
+    ApiClient.getRunRecord = async () => saved;
+    for (const terminalStatus of ["success", "partial_success", "error", "interrupted"]) {
+      sandbox.EventSource = TestStream;
+      PageNavigation.show("outputs"); await RunHistory.selectRun(saved.run_id);
+      RunController.switchOutputTab("tab-btn-json", "pane-json");
+      const preview = OutputViewer.currentOutput;
+      Store.state.run.activeJobId = "finished-offline";
+      RunController.setRunningState(true); RunController.connectStream("finished-offline");
+      RunController.cancelRun();
+      RunController.cancelBtn.dispatchEvent("click");
+      const replay = streams.at(-1);
+      replay.emit("status", {status: "running"});
+      replay.emit("complete", {status: terminalStatus, record: {run_id: "replayed-terminal"},
+        outputs: ["success", "partial_success"].includes(terminalStatus) ? [{filename: "replayed.png"}] : [],
+        error: {message: "Replayed generation failure"}});
+      assert.strictEqual(OutputViewer.currentOutput, preview);
+      assert.strictEqual(JsonInspector.currentData, saved);
+      assert(getOrCreateElement("pane-json").classList.contains("active"));
+      assert.strictEqual(Store.state.run.status, "idle");
+      PageNavigation.show("batch");
+      assert.strictEqual(Store.state.run.currentRecord.run_id, "replayed-terminal");
+      if (["error", "interrupted"].includes(terminalStatus)) assert.strictEqual(OutputViewer.currentOutput, null);
+    }
+    Store.state.run.activeJobId = "unavailable";
+    RunController.setRunningState(true);
+    sandbox.EventSource = class {constructor() {throw new Error("Transport unavailable");}};
+    RunController.connectStream("unavailable");
+    assert.strictEqual(Store.state.run.monitorStatus, "disconnected");
+    assert.strictEqual(RunController.runBtn.disabled, true);
+    sandbox.EventSource = TestStream;
+    RunController.cancelBtn.dispatchEvent("click");
+    const broken = streams.at(-1); broken.emit("complete", "{");
+    assert.strictEqual(Store.state.run.monitorStatus, "disconnected");
+    assert.strictEqual(RunController.eventSource, null);
+    RunController.cancelBtn.dispatchEvent("click");
+    streams.at(-1).emit("complete", {status: "unknown"});
+    assert.strictEqual(Store.state.run.monitorStatus, "disconnected");
+    assert.strictEqual(RunController.runBtn.disabled, true);
+  } finally {
+    if (RunController.eventSource) RunController.eventSource.close();
+    RunController.eventSource = null; RunController.setRunningState(false);
+    RunController.pendingCompletion = null; Object.assign(Store.state.run, previousRun);
+    sandbox.EventSource = originalSource; ApiClient.getRunRecord = originalFetch;
+    ApiClient.listRuns = originalList; App.refreshRuntimeCapabilities = originalRuntime;
+    PageNavigation.show("inference");
   }
 });
 
