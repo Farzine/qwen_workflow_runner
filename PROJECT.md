@@ -100,8 +100,10 @@ long-job replay restores the latest full batch snapshot beyond the 5,000-event
 history ceiling, before live events or completion, under the existing job lock.
 Phase 10.8 is complete: log scrolling is coalesced into native animation frames,
 Clear cancels pending scrolling, and phone terminal height is bounded.
-Next: compact the persistent handoff while archiving completed task/evidence
-history without losing architecture, decisions, or limitations. Broader model families,
+Phase 10.9 is complete: [CONTEXT.md](CONTEXT.md) is the concise current handoff;
+[CONTEXT_HISTORY.md](docs/CONTEXT_HISTORY.md) preserves the complete prior state
+and evidence byte for byte. No further implementation task is queued.
+Broader model families,
 quantized LoRA, large-download recovery, and portrait-quality benchmarking
 remain outside the validated scope.
 

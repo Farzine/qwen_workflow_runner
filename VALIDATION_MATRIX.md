@@ -666,10 +666,19 @@ Phone terminal height is bounded at 60vh so it can actually scroll.
 
 ## Remaining scope and next task
 
-**Phase 10.9 — Persistent handoff maintenance:** archive detailed completed-task,
-file and test history without losing evidence or decisions, and keep root
-CONTEXT.md concise with current architecture/state/limits/next action. No
-production behavior change. Reconnection still requires the same tab/job ID;
+**Phase 10.9 completed — Persistent handoff maintenance:**
+[CONTEXT.md](CONTEXT.md) holds current architecture/state/limits; the full prior
+1,310-line file is preserved byte for byte in
+[CONTEXT_HISTORY.md](docs/CONTEXT_HISTORY.md). HEAD `95e0f22` contains all prior
+nine paths. Archive equality/hash, required sections, local links/anchors, retained
+evidence existence, protected source hashes and runtime metadata were checked.
+Four documentation paths only; no production/test change or suite, model,
+browser, GPU or network rerun. All 5,268 pre-existing runtime entries are unchanged;
+one concurrent added setup-error record reports a missing default example input
+and is preserved separately (see Current Problems in CONTEXT.md). Check record:
+`/tmp/qwen-phase109-validation.json`. No next implementation task is queued.
+
+Reconnection still requires the same tab/job ID;
 missing jobs remain unverified. Tab-reload recovery, omitted ordinary logs and
 inference cancellation are unchanged. Live browser log nodes remain unbounded
 until Clear/next job/reconnect; native frames can wait in hidden tabs, while text
@@ -686,5 +695,6 @@ Arbitrary model families, quantized-transformer LoRA compatibility, production
 portrait-quality benchmarking, large-download throughput, and interrupted-network
 recovery are not established by these bounded checks. Large unpaginated history,
 in-memory batch/download state, whole-run output deletion, and model-dependent
-reference adherence remain documented operating limits. Phases 10.1–10.8 are complete within this scope; persistent handoff maintenance
-is the next focused task. No new functional scope is implied.
+reference adherence remain documented operating limits. Phases 10.1–10.9 are
+complete within this scope. Current handoff and archived history retain these
+limitations; no new functional scope is implied.
