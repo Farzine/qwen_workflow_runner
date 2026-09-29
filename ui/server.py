@@ -772,29 +772,42 @@ async def upload_model(
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     # Enforce final destination is within models_dir
-    final_file = (models_dir / dest_name).resolve()
-    if not final_file.is_relative_to(models_dir):
+    final_file = models_dir / dest_name
+    if not final_file.resolve().is_relative_to(models_dir):
         raise HTTPException(status_code=400, detail="Invalid model filename: traversal outside models directory")
 
+    conflict = HTTPException(status_code=409, detail=(
+        f"Model file '{dest_name}' already exists. Rename your upload or delete the stored model first."
+    ))
+
+    def publish(temp_file):
+        # Both paths publish complete bytes atomically without replacing a racing upload.
+        try:
+            os.link(temp_file, final_file)
+        except FileExistsError:
+            raise conflict from None
+
     if total_chunks <= 1:
-        temp_target = final_file.with_suffix(f".tmp_{uuid.uuid4().hex[:6]}")
+        if os.path.lexists(final_file):
+            raise conflict
+        temp_target = None
         total_read = 0
         try:
-            with open(temp_target, "wb") as out:
+            with tempfile.NamedTemporaryFile(dir=models_dir, prefix=".model-upload-", suffix=".tmp", delete=False) as out:
+                temp_target = Path(out.name)
                 while chunk := await file.read(1024 * 1024):
                     total_read += len(chunk)
                     out.write(chunk)
             if total_read == 0:
-                if temp_target.exists():
-                    temp_target.unlink()
                 raise HTTPException(status_code=400, detail="File is empty")
-            temp_target.replace(final_file)
+            publish(temp_target)
         except HTTPException:
             raise
         except Exception as err:
-            if temp_target.exists():
-                temp_target.unlink()
             raise HTTPException(status_code=500, detail=f"Upload failed: {err}")
+        finally:
+            if temp_target is not None:
+                temp_target.unlink(missing_ok=True)
 
         return {
             "success": True,
@@ -819,6 +832,15 @@ async def upload_model(
     if not chunk_file.is_relative_to(temp_dir) or not chunk_file.is_relative_to(models_dir):
         raise HTTPException(status_code=400, detail="Invalid upload_id: path traversal outside uploads directory")
 
+    parts = [(temp_dir / f"{uid}_chunk_{i:04d}.part").resolve() for i in range(total_chunks)]
+    for part in parts:
+        if not part.is_relative_to(temp_dir):
+            raise HTTPException(status_code=400, detail="Path traversal outside uploads directory")
+    if os.path.lexists(final_file):
+        for part in parts:
+            part.unlink(missing_ok=True)
+        raise conflict
+
     chunk_read = 0
     try:
         with open(chunk_file, "wb") as out:
@@ -832,17 +854,12 @@ async def upload_model(
             chunk_file.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=f"Failed to write chunk {chunk_index}: {err}")
 
-    parts = [(temp_dir / f"{uid}_chunk_{i:04d}.part").resolve() for i in range(total_chunks)]
-    # Verify all part paths are within models_dir
-    for part in parts:
-        if not part.is_relative_to(models_dir):
-            raise HTTPException(status_code=400, detail="Path traversal outside models directory")
-
     if all(p.is_file() for p in parts):
-        temp_final = final_file.with_suffix(f".tmp_{uuid.uuid4().hex[:6]}")
+        temp_final = None
         try:
             total_assembled_bytes = 0
-            with open(temp_final, "wb") as outfile:
+            with tempfile.NamedTemporaryFile(dir=models_dir, prefix=".model-upload-", suffix=".tmp", delete=False) as outfile:
+                temp_final = Path(outfile.name)
                 for part in parts:
                     with open(part, "rb") as infile:
                         while chunk := infile.read(1024 * 1024):
@@ -850,21 +867,18 @@ async def upload_model(
                             outfile.write(chunk)
 
             if total_assembled_bytes == 0:
-                if temp_final.exists():
-                    temp_final.unlink()
-                for part in parts:
-                    part.unlink(missing_ok=True)
                 raise HTTPException(status_code=400, detail="File is empty")
 
-            temp_final.replace(final_file)
-            for part in parts:
-                part.unlink(missing_ok=True)
+            publish(temp_final)
         except HTTPException:
             raise
         except Exception as err:
-            if temp_final.exists():
-                temp_final.unlink()
             raise HTTPException(status_code=500, detail=f"Failed to assemble chunks: {err}")
+        finally:
+            if temp_final is not None:
+                temp_final.unlink(missing_ok=True)
+            for part in parts:
+                part.unlink(missing_ok=True)
 
         return {
             "success": True,

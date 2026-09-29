@@ -75,8 +75,20 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
 | M4 | E2E Verification & Adversarial Hardening | Full automated suites plus hardware-gated browser production validation; evidence in `VALIDATION_MATRIX.md` | M1, M2, M3 | COMPLETE |
 | M5 | Persistent Resource Lifecycle | One exclusive cached production pipeline per device, compatible reuse, LoRA switching, runtime telemetry, and explicit shutdown cleanup | M1, M4 | COMPLETE |
 | M6 | Dynamic Model Authority & Management | Stable model IDs, compatibility inspection, authoritative selection, download progress, and safe model/LoRA/output deletion | M5 | COMPLETE for supported Qwen 2.1 assets; hardware/HTTP/Xet evidence in VALIDATION_MATRIX.md |
-| M7 | Records, Batch UX & Task Pages | Versioned human-readable metadata, detailed batch state/ETA, and all eight primary destinations | M6 | IMPLEMENTED; regression evidence in VALIDATION_MATRIX.md |
-| M8 | Expanded Validation & Documentation | Integrated navigation/regression, current documentation, and bounded hardware/online follow-up | M6, M7 | IN PROGRESS; Phase 9.8c3 pretrained LoRA validation complete, final stabilization review next |
+| M7 | Records, Batch UX & Task Pages | Versioned human-readable metadata, detailed batch state/ETA, and all eight primary destinations | M6 | COMPLETE; regression/browser evidence in VALIDATION_MATRIX.md |
+| M8 | Expanded Validation & Documentation | Integrated navigation/regression, current documentation, and bounded hardware/online follow-up | M6, M7 | COMPLETE for documented scope; Phase 9.8d review complete |
+
+Phase 10.1 is complete: both model upload paths reject existing destinations
+and publish complete new files atomically without replacement, protecting files
+referenced by active jobs and uploads racing to the same filename. Temporary
+asset tests cover conflicts, cleanup, catalog refresh, and frontend errors.
+Phase 10.2 is complete: UI stress tests generate their own temporary inputs
+and history, sibling/E2E runners drain before cleanup, and pytest isolates
+thumbnail writes and guards repository runtime file metadata. The full suite
+passed with unchanged runtime snapshots. Next, Phase 10.3 will correct upload
+auto-selection, which still compares hashed catalog IDs with the uploaded filename. Broader model families,
+quantized LoRA, large-download recovery, and portrait-quality benchmarking
+remain outside the validated scope.
 
 ## Interface Contracts
 ### Client ↔ Server API Endpoints
@@ -95,7 +107,8 @@ Backend Server (`ui/app.py` / `ui/server.py` using FastAPI / Starlette / ASGI)
   - Cooperative cancellation at file boundaries; retry of failed/cancelled jobs returns a new task ID and reuses valid Hub cache files.
 - `POST /api/models/upload`:
   - Form multipart upload: file (`.gguf` or `.safetensors`). Saves directly to `models/`.
-  - The browser sends chunks with `chunk_index`, `total_chunks`, and `upload_id`; the server assembles and validates the complete file.
+  - The browser sends chunks with `chunk_index`, `total_chunks`, and `upload_id`; the server assembles a non-empty file with an allowed extension. Catalog inspection and the inference loader check compatibility separately; upload does not verify a supplied content checksum.
+  - Existing destinations return HTTP 409 with rename/delete guidance. Both single and assembled uploads publish atomically using a hard link, so a concurrent upload cannot replace the first complete file. Temporary/assembled parts are removed on publication success or failure.
   - Returns: `{"success": true, "filename": "...", "path": "..."}`
 - `DELETE /api/models/catalog/{model_id}`:
   - Removes a catalog model after active download/inference checks; unloads an idle resident pipeline and preserves Hub cache files still referenced by other selections or snapshots.

@@ -1674,6 +1674,58 @@ runTest("Dashboard refresh shares existing requests, exposes errors, and recover
   }
 });
 
+runTest("Model upload conflicts show API details, stop chunks, and preserve selection", async () => {
+  const originalFetch = sandbox.fetch;
+  const originalFormData = sandbox.FormData;
+  const originalLoad = ModelManager.loadModels;
+  const originalSelect = ModelManager.cachedSelect;
+  const originalProps = {};
+  for (const [prop, id] of Object.entries({uploadProgressWrap: "model-upload-progress-container",
+    uploadProgressBar: "model-upload-bar", uploadProgressStatus: "model-upload-status-label",
+    uploadProgressBadge: "model-upload-percent-badge", uploadProgressError: "model-upload-error"})) {
+    originalProps[prop] = ModelManager[prop];
+    ModelManager[prop] = domRegistry.get(id);
+  }
+  const selected = JSON.stringify([Store.state.models.selectedId, Store.state.config.model]);
+  let requests = 0, refreshes = 0;
+  const detail = "Model file 'existing.gguf' already exists. Rename your upload or delete the stored model first.";
+  const size = 6 * 1024 * 1024;
+  const file = {name: "existing.gguf", size, slice: () => new Blob(["chunk"])};
+  try {
+    sandbox.FormData = FormData;
+    sandbox.fetch = async (url) => {
+      assert.strictEqual(url, "/api/models/upload");
+      requests++;
+      return {ok: false, status: 409, json: async () => ({detail})};
+    };
+    ModelManager.loadModels = async () => { refreshes++; };
+    ModelManager.cachedSelect = null;
+    await ModelManager.uploadFile(file);
+    assert.strictEqual(requests, 1, "A conflict must stop remaining chunks");
+    assert.strictEqual(refreshes, 0);
+    assert.strictEqual(ModelManager.uploadProgressStatus.textContent, "Upload failed");
+    assert(ModelManager.uploadProgressError.textContent.includes(detail));
+    assert(!ModelManager.uploadProgressError.classList.contains("hidden"));
+    assert.strictEqual(ModelManager.uploadProgressBadge.textContent, "0%");
+    assert.strictEqual(toastLog.at(-1).type, "error");
+    assert.strictEqual(JSON.stringify([Store.state.models.selectedId, Store.state.config.model]), selected);
+
+    sandbox.fetch = async () => { requests++; return {ok: true, json: async () => ({status: "completed"})}; };
+    await ModelManager.uploadFile({...file, name: "new.gguf"});
+    assert.strictEqual(requests, 3);
+    assert.strictEqual(refreshes, 1, "Successful uploads must refresh the catalog");
+    assert(ModelManager.uploadProgressError.classList.contains("hidden"));
+    assert.strictEqual(ModelManager.uploadProgressBadge.textContent, "100%");
+    assert.strictEqual(toastLog.at(-1).type, "success");
+  } finally {
+    sandbox.fetch = originalFetch;
+    sandbox.FormData = originalFormData;
+    ModelManager.loadModels = originalLoad;
+    ModelManager.cachedSelect = originalSelect;
+    Object.assign(ModelManager, originalProps);
+  }
+});
+
 (async function runAll() {
   console.log("\n=======================================================");
   console.log("CHALLENGER M2: Node.js Frontend State Machine Harness");

@@ -20,6 +20,8 @@ import unittest
 
 from PIL import Image
 
+from ui.runner_bridge import shutdown_runner_bridge
+
 from ui.tests.e2e.common import (
     compute_sha256,
     create_test_image,
@@ -57,6 +59,8 @@ class TestTier3Pairwise(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        shutdown_runner_bridge()
+        cls.client.close()
         cls.temp_dir.cleanup()
 
     def test_pair01_custom_size_overrides_resolution_zero(self):

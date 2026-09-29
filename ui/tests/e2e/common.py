@@ -30,6 +30,7 @@ from fastapi.testclient import TestClient
 
 from qwen_runner.config import Config, GenerationConfig, ModelConfig, RuntimeConfig
 from qwen_runner.runner import run as core_run
+from ui.runner_bridge import get_runner_bridge, shutdown_runner_bridge
 
 
 class DemoBackend:
@@ -352,6 +353,12 @@ def get_test_client(inputs_dir: Path | None = None, models_dir: Path | None = No
             resolved_out.mkdir(parents=True, exist_ok=True)
             server_app.state.outputs_dir = resolved_out
             os.environ["OUTPUTS_DIR"] = str(resolved_out)
+
+        if outputs_dir is not None:
+            shutdown_runner_bridge()
+            bridge = get_runner_bridge()
+            bridge.output_dir = resolved_out
+            bridge.custom_output_dirs = {resolved_out}
 
         return TestClient(server_app)
     except (ImportError, AttributeError):

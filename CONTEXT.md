@@ -1,6 +1,6 @@
 # Repository Context
 
-Last updated: 2026-09-28 (Asia/Dhaka)
+Last updated: 2026-09-29 (Asia/Dhaka)
 
 ## Project Overview
 
@@ -40,7 +40,7 @@ The active checkout is `/mnt/lab/farzine/qwen_workflow_runner`. The path origina
 | `ui/static/js/app.js` | Client state, hash-based task navigation, server-side image browser, ordered selection, forms, run submission, SSE, history, and comparison viewer. |
 | `ui/static/css/style.css` | Three-panel inference workspace, focused management views, and responsive styling. |
 | `tests/` | Core configuration, sampling, image, GGUF, cache, and small runtime tests. |
-| `ui/tests/` | API, security, concurrency, workflow, DOM, and JavaScript state-machine tests. |
+| `ui/tests/` | API, security, concurrency, workflow, DOM, and JavaScript state-machine tests. `conftest.py` isolates pytest thumbnails and guards repository runtime file metadata. |
 | `workflow/original.json` | Original ComfyUI workflow graph. |
 | `workflow/PORTING_NOTES.md` | Workflow parity decisions and current limitations. |
 | `workflow/reviewed_gguf_tensor_inventory.json` | Reviewed GGUF tensor inventory. |
@@ -149,9 +149,12 @@ The original ComfyUI graph follows the same broad semantics: its `KSampler` rece
 
 Extend the validated Qwen workflow into a production-quality management application with authoritative compatible-model selection, efficient per-device resource reuse, observable downloads, safe deletion, human-readable records, dedicated batch workflow, and task-oriented responsive pages.
 
+Phases 0–9, Phase 10.1 model-upload collision safety, and Phase 10.2 UI test-output isolation are complete within the recorded validation scope. Next is Phase 10.3: correct uploaded-model auto-selection to use authoritative stable catalog IDs. Broader model-family/quantized-LoRA support and quality benchmarking are not implied by the completed roadmap.
+
 ## Active Task
 
-Phase 9.8c3 is complete. The user supplied `models/loras/`, containing `bfs_head_v1.1_qwen_2.1.safetensors` (260,096,144 bytes; SHA-256 `d1d748d5601077f3b6d05766f6823510e901970d916afa404a97e85dc92fa88e`). Fixed a real AI-Toolkit fused-MLP LoRA format gap in the shared pipeline; numerical, alpha-scaling, malformed-pair, old-adapter, and full regression checks passed. Four real browser batches (eight outputs) validated fixed-seed controls, existing adapter, native browser-uploaded copy, and removal: uploaded/selected copies produced identical hashes, removal restored exact control hashes, and all four jobs reused one full-model load on `cuda:0`. Header-derived head-swap prompt supplied the intended effect without further user input. Original file untouched; evidence/storage isolated under `/tmp/qwen-lora-validation-hyd258je`. Server/Chrome stopped and shutdown/context release verified. HEAD remains `fae667e`; nine current modified paths include the preserved context reconciliation and this slice. Next: Phase 9.8d final stabilization/documentation review; no asset blocker remains for the supplied adapter. Overall improvement work is not yet declared finished.
+Phase 10.2 is complete. HEAD remains `5c8d379`; all nine pending Phase 10.1/9.8d paths were preserved. The legacy workflow stress tests now use generated temporary inputs, explicit temporary output/model paths, a test-owned runner, and confined environment/app-state/history fallback roots. Each case starts with empty history and produces its own results; the hash check cannot skip or silently omit assertions. Shared E2E and sibling singleton suites now drain/reset jobs before switching roots or removing storage; backend API tests use their owned bridge. Pytest thumbnails use temporary cache storage and a session guard fails if repository runtime file paths/modes/sizes/mtimes change. Focused workflow tests: 4 passed; final UI suite: 444 passed in 14.01s, including the session guard. Separate before/after snapshots of 5,268 runtime entries show no additions/removals/changes, with SHA-256 for outputs/inputs/cache and small model files; large model sizes/mtimes are unchanged. Existing synthetic records were retained. This session changes only tests and documentation; no new production/UI/inference change, browser, model, GPU, or network run. There are 22 pending paths, including two new test files; see Files Modified. Next: Phase 10.3 uploaded-model auto-selection. No user input is pending.
+
 ## Completed Tasks
 
 - [x] Inspected Git state, tracked source, documentation, workflow artifacts, entry points, tests, runtime directories, and recent history.
@@ -232,6 +235,9 @@ Phase 9.8c3 is complete. The user supplied `models/loras/`, containing `bfs_head
 - [x] Completed Phase 9.8c1 live HTTP/Xet transfer, source hashes, cancel/retry, manifest reuse, SSE/catalog, and actual desktop/phone Models-page verification.
 - [x] Completed Phase 9.8c2 selected-ID cached GGUF browser inference, strict tensors, four outputs, full-to-GGUF replacement, compatible reuse, artifacts, resources, and shutdown.
 - [x] Completed Phase 9.8c3 fused Qwen 2.1 LoRA loading fix and eight full-model browser outputs, native upload, exact hashes/effect/removal, one-load reuse, regressions, and shutdown.
+- [x] Completed Phase 9.8d stabilization review, committed-state reconciliation, retained-artifact verification, focused LoRA regression, accurate documentation/milestone status, and concrete upload-defect diagnosis.
+- [x] Completed Phase 10.2 UI test-output isolation: independent stress fixtures, confined history, exact generated-file hash/bytes, drained sibling/E2E runners, temporary thumbnails, runtime regression guard, and 444-test/artifact snapshot verification.
+- [x] Completed Phase 10.1 model upload collision protection for single/chunked uploads, atomic racing publication, existing/active file preservation, cleanup, visible frontend errors, real API/Node/browser checks, and documentation.
 - [x] Completed Phase 9.8b real UI selected-model inference, four saved/served outputs, compatible cache reuse, resident-resource pages, explicit shutdown, and interrupted-offload recovery regression.
 - [x] Completed Phase 9.8a integrated eight-route/three-width checks, active synthetic batch navigation, Dashboard retry, production-checker missing/demo evidence guards, and current documentation reconciliation.
 - [x] Made output-strip selection keyboard accessible, cleared deleted artifacts by owning run, invalidated pending selection after deletion, and corrected an asynchronous durable-record regression test.
@@ -263,13 +269,16 @@ Phase 9.8c3 is complete. The user supplied `models/loras/`, containing `bfs_head
 - [x] Phase 9.7b2: add the dedicated Run History destination using the existing durable history API and controls.
 - [x] Phase 9.7b3: add an Outputs destination for durable multi-output browsing and supported deletion.
 - [x] Phase 9.7b4: add Dashboard status/activity using the existing runtime, catalog, download, and history state.
-- [ ] Phase 9.8: run the expanded regression/hardware/browser matrix and reconcile all documentation.
+- [x] Phase 9.8: run the expanded regression/hardware/browser matrix and reconcile all documentation within the stated supported scope.
 - [x] Phase 9.8a: reconcile documentation and run integrated route/state/error/browser regression without loading full weights.
 - [x] Phase 9.8b: repeat selected full-model production UI, compatible cache reuse, resident-resource display, saved artifacts, and shutdown cleanup after final navigation changes.
 - [x] Phase 9.8c1: bounded fresh online Hub download/progress/cache-discovery smoke test using isolated storage.
 - [x] Phase 9.8c2: selected-ID GGUF/alternate compatible model hardware validation where assets/resources permit.
 - [x] Phase 9.8c3: full pretrained LoRA validation using the supplied compatible adapter; former asset blocker resolved.
-- [ ] Phase 9.8d: final stabilization/diff/documentation review, reconcile completion state and explicit supported-scope limitations.
+- [x] Phase 9.8d: final stabilization/diff/documentation review, reconcile completion state and explicit supported-scope limitations.
+- [x] Phase 10.1: prevent model uploads from replacing existing storage, including files used by active jobs; collision-safe atomic publication for single/chunked requests, meaningful conflicts, cleanup, concurrency and UI/API regressions.
+- [x] Phase 10.2: isolate legacy UI stress tests from real output/history storage, generate temporary inputs, drain/reset sibling/E2E runners, isolate thumbnails, and guard repository runtime artifacts. Final 444 tests pass with unchanged 5,268-entry snapshots.
+- [ ] Phase 10.3: use the final upload receipt path and refreshed compatible catalog entry to auto-select an uploaded model by its stable ID; preserve prior selection for invalid/incompatible uploads and conflicts. Depends on Phase 9.2 catalog authority and Phase 10.1 safe uploads; no model loader redesign needed.
 
 ## Current Problems
 
@@ -313,7 +322,22 @@ Phase 9.8c3 is complete. The user supplied `models/loras/`, containing `bfs_head
 - The completed-job SSE hang was caused by running Starlette `TestClient` inside the restricted command sandbox. The exact test and full UI suite pass with the local IPC/loopback access already required by these tests; no streaming code change was needed.
 - Backend choice is explicit. The new runtime probe validates the selected device/dtype/offload combination before model loading and returns the same actionable message used by `QwenBackend`.
 - Every meaningful configuration field now has a consistent information control backed by verified implementation behavior. Validation remains inline and outside the help cards.
-- The UI suite contains 438 tests after Phase 9.7b4 and completes in about 24 seconds when local loopback sockets are permitted. The frontend Node harness now has 49 checks plus 15 stress checks.
+- The UI suite now contains 444 tests and completes in about 14 seconds after Phase 10.2 isolation when local loopback sockets are permitted. The frontend Node harness has 50 checks plus 15 stress checks. Core broad validation remains 43 tests/13 subtests from Phase 9.8c3; Phase 10.2 changes only tests/docs; Phase 10.1 changed web upload/storage behavior.
+
+### Model upload collision safety (Phase 9.8d finding; fixed Phase 10.1)
+
+- Phase 9.8d reproduced both branches publishing with `Path.replace`, silently replacing model bytes without a bridge/lease check. Phase 10.1 now rejects occupied paths early and shares atomic `os.link` publication; the complete first upload wins even if another writer races after the early check. All existing files are protected, including queued/running source paths, without unloading a resident model.
+- Logical destination paths remain un-followed at publication; the separate resolved confinement check is retained. Dangling symlinks are rejected as occupied. `finally` removes temporary publication files and assembled session parts; an early chunk conflict clears that request's relevant parts and preserves unrelated uploads.
+- Upload still checks extension, path, chunk fields, and non-empty content; catalog/loader compatibility inspection occurs separately. Arbitrary non-empty `.gguf` bytes can be stored, with no expected-checksum comparison. Storage needs hard-link support and fails safely if unavailable; no replacement fallback exists.
+- Separate follow-up: `ModelManager.uploadFile` searches `option.value.includes(file.name)` after refreshing models. Catalog values are `model_<hash>` IDs, so that auto-selection path cannot identify the newly uploaded file. Existing manual selection works. Phase 10.3 should match the returned path to a compatible catalog entry and apply its ID; this finding comes from source inspection, not a new inference run.
+
+### Test storage isolation (Phase 10.2)
+
+- `RunnerBridge._get_search_output_dirs` merges bridge/custom roots, OUTPUTS_DIR, the server getter, and app.state.outputs_dir. Patching only the bridge left real history visible. The stress fixture now controls all four sources and restores environment/state after draining its runner.
+- The old SHA check selected an arbitrary existing record and inspected an optional filename field, allowing it to assert nothing. Durable output entries have path/sha256; the new check always creates its own record, derives the filename from path, and compares served bytes to disk and the recorded hash.
+- History scaling now generates exactly 20 records in an initially empty fixture, so it passes alone and cannot rely on the burst case or old user history. Bounded done_event waits replace fixed sleeps.
+- Shared E2E setup resets runner history roots; sibling suites reset/drain their singleton before directory changes/cleanup. Backend API tests patch server dispatch to their existing owned bridge. Nested E2E clients restore environment/state and close/drain before cleanup.
+- `ui/tests/conftest.py` redirects thumbnails and compares repository outputs/inputs/models/.cache file/symlink metadata before/after the pytest session. This guard does not hash large weights or cover external directories, directory-only mutations, direct unittest invocation, or forced process death. Separate real snapshots hash output/input/cache/small model files; large-weight content hashes were not rerun.
 
 ### Responsive workflow UI
 
@@ -340,6 +364,7 @@ Phase 9.8c3 is complete. The user supplied `models/loras/`, containing `bfs_head
 - Before Phase 2.1, calling `resolve_backend_factory(False)` returned `DemoBackend` in this environment. It now returns `QwenBackend` and raises the documented CUDA compatibility setup error during `load()`.
 - The production backend's generation path does not directly return an input image. It starts from seeded noise and passes all references only as conditioning, consistent with the original graph.
 - Phase 9.8c3 found a separate real-adapter compatibility gap: AI-Toolkit stores fused `img_mlp.gate_up` updates, while the installed transformer exposes `gate_layer` and `proj`. Shared loading now splits B rows with the same A, preserving alpha scaling. Eight controlled full-model outputs prove adapter effect, equivalent uploaded/selected copies, exact control restoration after removal, and compatible pipeline reuse.
+- Phase 9.8d source review confirms one managed inference thread (`ThreadPoolExecutor(max_workers=1)`), not isolated inference subprocesses. Optional browser diagnostics rely on native Node `fetch`/`WebSocket`; local Node 22.22.0 provides both. No Node dependency is required by the Python application itself.
 
 ### Model and workflow findings
 
@@ -381,6 +406,9 @@ Phase 9.8c3 is complete. The user supplied `models/loras/`, containing `bfs_head
 - Audit start: branch `main`, commit `52e353e`, matching `origin/main`, with a clean tracked working tree.
 - Phase 9.4a, 9.4b, 9.4c, 9.5, 9.6, and 9.7a were committed as `56b4517`, `cf1a010`, `d6d5682`, `ca02524`, `ad1a33d`, and `ef231d6` on `main`. Phase 9.7b1–b4 were committed together as `dc43f4d` before Phase 9.8a resumed, with a clean working tree. Earlier file-history sections retain their original checkpoint descriptions.
 - Resume after Phase 9.8c2: commit `fae667e` contains all nine formerly uncommitted Phase 9.8a/b/c1/c2 paths, including the backend cleanup fix and both validation drivers. Source changes match the recorded work. The working tree was clean before that context-only reconciliation; the adapter directory was empty at that earlier checkpoint. Phase 9.8c3 resolved the asset requirement with the user-supplied adapter.
+- Phase 9.8d resume: user commit `5c8d379` contains all nine Phase 9.8c3 paths. Initial Git status was clean. This checkpoint adds five documentation changes only; earlier uncommitted descriptions below are historical, not current Git state.
+- Phase 10.2 resume: HEAD still `5c8d379`, with the recorded nine pending Phase 10.1/9.8d paths preserved. Added 13 test paths; current pending total is 22. No commits or user runtime file changes. Exact artifact snapshots and checks are recorded below.
+- Phase 10.1 resume: HEAD still `5c8d379` with the five Phase 9.8d documentation paths modified. All were preserved. This checkpoint has nine current paths: five docs, two web production files, existing Node harness, and new `ui/tests/test_model_uploads.py`. No commits or existing model replacements. The full legacy suite created synthetic repository output records; see current tests/known issues.
 - Phase 8 was committed as `be41eb4`; Phase 7 as `7e8867f`; Phase 6 as `f923e2f`; Phase 4 and Phase 5 together as `593f631`; Phase 3.2 as `c1b1bb9`.
 - Runtime assets are large but ignored: the local environment, models, outputs, and cache must not be treated as source changes.
 - The FastAPI job executor is intentionally single-worker. It captures process stdout/stderr and publishes events to per-run SSE subscribers.
@@ -422,7 +450,7 @@ Phase 9.8c3 is complete. The user supplied `models/loras/`, containing `bfs_head
 - Dashboard shares `RunHistory.loadHistory` for loading/empty/error/recent-five states. Finished native buttons open the existing History details; active records are disabled. `handleComplete` now refreshes history for failed jobs as well as successful ones, preventing failed durable records from disappearing from Dashboard/History/Outputs until manual refresh. Health failure is checked before demo mode when rendering the header, so disconnected demo sessions no longer claim to be online.
 - The first full UI regression passed all test bodies but hit a teardown error: the stress suite's final burst submission was still persisting files while its temporary directory was deleted. `shutdown_runner_bridge()` now drains and clears the singleton before test storage cleanup; the final full suite passed. Production runner behavior is unchanged.
 
-All planned Phase 9.7 destinations are wired through existing functional state and APIs. Expanded regression and documentation reconciliation remain in Phase 9.8.
+All planned Phase 9.7 destinations are wired through existing functional state and APIs. Expanded regression and documentation reconciliation were completed through Phase 9.8d; the findings below retain their original phase history.
 
 - Phase 9.8a diagnosed stale browser-driver assumptions: `.batch-thumb` is now a native button containing an image, so checking the button's `complete/naturalWidth` never succeeds. `/api/runs` supplies output filenames and readable summaries, not full `parameters`; filtering listings by runtime prefix could silently collect zero records. The driver now checks nested images, matches list outputs by prefix or displayed filenames, requires two successful records, and checks effective production pipeline/device plus selected model ID. Production metadata does not uniformly include a backend class name; the authoritative pipeline marker is `backend.pipeline === WorkflowQwenImage21Pipeline`.
 - Shared collection replaces duplicated evidence code. Failure closes the CDP connection through `finally`; model-free mode verifies all routes and retries without a Child folder or pretrained inference. Production mode exposes `--device=cuda:1` (default `cuda:0`), waits for valid Run controls, and opens Batch so native lazy thumbnails are visible. No new dependency, endpoint, or runtime abstraction was added.
@@ -466,14 +494,42 @@ Useful concepts to adapt are the separation of base input from optional referenc
 | --- | --- | --- | --- |
 | Input processing | Iterates independent base images | Core/API and browser expand ordered `input_images` into independent durable generations and results | Phase 8 proved two ordered inputs through the real browser/full-model path. |
 | References | Separate optional reference field | Browser and API keep ordered shared `reference_images` separate and preserve `[input, *references]` conditioning order | The transport and UI distinction are complete; adherence quality remains model/prompt dependent. |
-| LoRA | Sends optional `adapter_name` | Discovers/uploads one local SafeTensors adapter, applies it through Diffusers/PEFT, and records effective state | Full pretrained testing requires a compatible user adapter; invalid/load failures are explicit. |
+| LoRA | Sends optional `adapter_name` | Discovers/uploads one local SafeTensors adapter, applies it through Diffusers/PEFT, and records effective state | Phase 9.8c3 validated the supplied pretrained adapter; unrelated layouts and quantized-transformer adapters remain unproven. Invalid/load failures are explicit. |
 | Device/model | Remote service owns them | Local `QwenBackend` owns them | Local capability reporting and strict device errors are required. |
 | Execution | Always requests remote inference | Production by default; synthetic demo requires explicit opt-in | Continue validating the real backend through the complete UI/API path. |
 | Result | Downloads service output | Saves backend PIL output | Current persistence can remain after backend selection is fixed. |
 
 ## Files Modified
 
-Phase 9.8c3 current changes (nine modified paths at HEAD `fae667e`):
+Phase 10.2 current changes (22 total pending paths at HEAD `5c8d379`; nine prior paths below retained):
+
+- `ui/tests/test_tier5_frontend_stress.py` — independent temporary fixture/owned bridge/history roots, generated image, shared submission/terminal verification, exact 20-record history, mandatory disk/API/hash checks, and LIFO drain before cleanup; removes duplicated payloads and fixed sleeps.
+- `ui/tests/conftest.py` (new) — temporary pytest thumbnail cache and session-wide repository runtime file metadata regression guard.
+- `ui/tests/test_backend.py` — API dispatch uses the fixture's owned bridge and closes/stops it before removing storage.
+- `ui/tests/e2e/common.py` — align/reset singleton search roots with configured temporary E2E outputs.
+- `ui/tests/e2e/test_tier1_features.py`, `test_tier2_boundaries.py`, `test_tier3_pairwise.py`, `test_tier4_scenarios.py` — drain/close before temporary storage cleanup; Tier 2 nested clients restore env/state, and empty history now must actually be empty.
+- `ui/tests/test_adversarial_remediation_challenge.py`, `test_adversarial_stress.py`, `test_challenger_m1_2.py`, `test_challenger_m1_stress.py`, `test_tier5_adversarial.py` — reset and confine class-owned singleton history, drain before teardown (existing drain in adversarial stress retained).
+- `README.md`, `ui/README.md`, `PROJECT.md`, `VALIDATION_MATRIX.md`, `CONTEXT.md` — isolation/guard scope, real unchanged-artifact evidence, final tests, preserved history, and exact Phase 10.3 handoff.
+- Prior production files `ui/server.py`/`ui/static/js/app.js`, Node harness, and new upload API tests are unchanged in this session.
+
+Phase 10.1 changes (nine paths at that checkpoint; retained in the current 22):
+
+- `ui/server.py` — shared atomic non-replacing publication for both upload branches, readable conflicts, dangling-symlink protection, and temporary/part cleanup. No pipeline/resource/model-loading change.
+- `ui/static/js/app.js` — failed model uploads set the visible status to `Upload failed`; existing detail/toast/selection behavior reused.
+- `ui/tests/test_model_uploads.py` (new) — six real API tests for occupied/queued/running files, both success paths/catalog discovery, late collisions/permission failure cleanup, concurrent winners, unrelated parts, dangling symlinks, and 244-character filenames with short owned temporary paths.
+- `ui/tests/test_challenger_m2_node.js` — one real client/controller check for 409 details, stopping chunks, preserved selection, failed status/error visibility, and catalog refresh after success.
+- `README.md`, `ui/README.md`, `PROJECT.md`, `VALIDATION_MATRIX.md` — supported upload contract, filesystem requirement, 444-UI/50-Node results, live desktop/phone proof, and stable-ID selection follow-up; prior stabilization edits retained.
+- `CONTEXT.md` — completed task, exact state/findings/evidence, limits, and Phase 10.2 isolation/Phase 10.3 selection handoff.
+
+Phase 9.8d changes (five documentation paths; original HEAD `5c8d379`; preserved above):
+
+- `README.md` — completed Phase 9 scope, new upload-safety follow-up, native Node browser-check prerequisite, web dependency installation, and accurate remaining-limits wording.
+- `ui/README.md` — accurate extension/non-empty model upload checks, pending overwrite safety, same-process single-thread execution, device-matched runtime/browser diagnostic prerequisites, and final scoped validation state.
+- `PROJECT.md` — M7/M8 complete within the documented validation scope; next Phase 10.1 hardening task and precise upload API contract.
+- `VALIDATION_MATRIX.md` — stabilization review, retained-evidence verification, focused test results, reproduced overwrite defect, and exact follow-up acceptance criteria.
+- `CONTEXT.md` — committed-state reconciliation, preserved history, completed Phase 9.8d, concrete remaining bug, tests, and Phase 10.1 continuation point.
+
+Phase 9.8c3 changes (nine paths at original HEAD `fae667e`, now committed as `5c8d379`):
 
 - `qwen_runner/pipeline.py` — shared classmethod retains Diffusers key/alpha normalization and metadata return contract, then splits fused gate/up LoRA B rows with shared A; rejects malformed pairs and colliding fused/split targets. All CLI/web backend loading routes use it.
 - `tests/test_runtime.py` — real tiny split-MLP forward math, down/up alpha scaling, metadata return contract, and five malformed/collision cases; existing adapter lifecycle remains covered.
@@ -722,6 +778,32 @@ Phase 9.7b4 additions to the cumulative files above (uncommitted alongside 9.7b1
 - `ui/README.md`, `CONTEXT.md` — Dashboard usage, snapshot/monitor scope, verification, remaining limitations, and Phase 9.8 handoff.
 
 ## Tests Performed
+
+Phase 10.2 validation (2026-09-29 Asia/Dhaka; runs began on 2026-09-28 UTC):
+
+- Read context completely; Git/recent commits match `5c8d379` and nine prior paths. No applicable AGENTS.md. Scoped caller review included history search roots, singleton creation/shutdown, actual API routes, E2E helper and sibling teardown patterns; no full repo audit repeated.
+- Initial focused test exposed real history through get_outputs_dir fallback (4 failed); confining it gave 3 passed/1 failed, revealing durable output entries use path rather than filename. Controlling all env/state roots and using Path(output.path).name produced final 4 passed/6 deselected in 1.54s. No checks were weakened or skipped.
+- Host `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 444 passed in 13.99s. Added the metadata guard, then final run: 444 passed in 14.01s including successful fixture teardown. Only the two known Starlette/AnyIO deprecations remain. Full runs include the existing frontend stress harness; prior standalone Node 50/50 and 15/15 evidence is retained, not claimed as newly rerun.
+- Runtime snapshots `/tmp/qwen-phase102-runtime-before.json` / `after.json` / `report.json` and helper `/tmp/qwen_phase102_snapshot.py`: 5,268 file/symlink entries; no added, removed, or changed paths. SHA-256 covers repository outputs/inputs/.cache and model files smaller than 1 MiB, with large model sizes/mtimes recorded. Synthetic records from earlier runs remain untouched. First snapshot attempt used hashlib.file_digest unavailable in Python 3.10; bounded chunk hashing corrected the diagnostic.
+- `.venv/bin/python -m compileall -q ui/tests` and `git diff --check` pass. Core/production/browser/GPU/network checks were not rerun: no production implementation changed this slice. Session guard is for pytest and does not watch directories outside the checkout or directory-only changes.
+
+Phase 10.1 validation (2026-09-28):
+
+- Resumed from saved context; Git and recent changes match the recorded five modified documentation paths at `5c8d379`. No applicable `AGENTS.md` found. Traced real upload route, API callers, model controller/caching/selection, catalog IDs, and existing API/Node tests. No repository or inference re-audit.
+- Host `timeout 300 .venv/bin/python -m pytest -q ui/tests -k TestModelUploads` — 5 passed, 438 deselected in 1.40s. Covers both branches, pre-existing bytes referenced by queued/running/finished jobs, new-file persistence/catalog listing, forced late collision, permission failure, cleanup, unrelated parts, dangling symlinks, and concurrent atomic publication. Each two-thread race yields one 200 and one 409 with exact complete winner bytes. No GPU execution involved.
+- Host `timeout 300 .venv/bin/python -m pytest -q ui/tests` — initially 443 passed in 24.48s; after adopting owned short `NamedTemporaryFile` paths and adding the long-filename regression, final 444 passed in 24.13s. Two known Starlette/AnyIO deprecations and a non-failing temporary Hub permissions diagnostic were observed. Node frontend harness — 50/50; stress — 15/15. The first new Node test's success branch used an old mock select without iterable options; isolating that unrelated mock fixed the driver, not production behavior.
+- Python compilation, application JS syntax, and diff whitespace checks passed. No core suite or model/GPU inference rerun: core loading/generation behavior is unchanged and prior hardware/regression evidence remains valid. Browser validation preceded the final stdlib temporary-name refinement; the final API suite verifies that refinement and long filenames.
+- Real native Chrome file-input uploads via the existing CDP client/wait helpers, temporary offline server, and 6,300,000-byte deliberately invalid model fixtures: desktop 1440 and phone 390 display readable HTTP 409 rename/delete errors, `Upload failed`, 0%, and no horizontal overflow. New file completes in two chunks with actual 200/200 responses, 100%, hidden error, and refreshed catalog. Server preserves original stored bytes; uploaded SHA-256 matches incoming content; no temporary/part files remain. These files were not treated as compatible inference models. Existing history was read but no run submitted or record mutated.
+- Evidence `/tmp/qwen-model-upload-browser-18sjbgl2`: `browser.json`, `conflict-1440.png`, `conflict-390.png`, `server.log`, `chrome.log`, `shutdown.json`, isolated incoming/model/profile data. Both screenshots visually inspected. Server PID 2128398/Chrome PID 2128399 exited 0 and server completed FastAPI shutdown. Helpers `/tmp/qwen_model_upload_browser.py`/`.js` enforce external 90s and inner 45s limits and close only their own processes.
+- Earlier diagnostic roots `...-ppv4uyzf` (desktop succeeded, timeout after capture) and `...-qwq9odft` (busy-port fallback mismatched hard-coded URL) are retained. Fresh ephemeral ports, bounded CDP calls, and separate incoming phone file selection fixed the driver. Both earlier server/Chrome pairs also exited normally. The new upload tests and browser use `/tmp` fixtures. The broad legacy suite does not fully isolate outputs: repository JSON records such as `20260928T104624_ae93c6f7e2_run_000.json` identify `DemoBackend`, prompt `Stress test burst run 9`, and the external `men_002.jpg` input. `TestLiveWorkflowExecutionStress` submits jobs to literal `outputs` and reads existing history. Synthetic output records remain; no deletion was attempted. Phase 10.2 will isolate these callers and check other defaults before any broad suite repeat.
+
+Phase 9.8d stabilization validation (2026-09-28):
+
+- Read persistent context completely; Git clean at `5c8d379`; commit delta matches all recorded Phase 9.8c3 changes. Scoped review covered loader/backend callers, installed Diffusers metadata/return path, browser flags, existing numeric/standard-adapter tests, docs, and retained hardware evidence. No audit or model/network run repeated.
+- `.venv/bin/python -m pytest -q tests/test_runtime.py -k lora` — 2 passed, 7 deselected, 5 subtests passed in 2.52 seconds. No production changes in this slice; the previous 43-core/13-subtest and 438-UI broad results remain the latest broad validation.
+- Standard-library evidence assertions read `/tmp/qwen-lora-validation-hyd258je/artifacts.json`, hashed all eight actual output PNGs, checked existing/uploaded equality and baseline/cleared equality, nonzero adapter effect, conditioning/hash flags, one model load, and empty zero-lease shutdown with three reuses. Preflight still reports 352 raw/384 converted tensors with actual target shapes matched. Full-model, GGUF, and Hub evidence roots/JSON remain available. These are retained previous results, not fresh GPU/network validation.
+- Real `ui.server.upload_model` coroutine invoked directly for single and two-chunk uploads with `SpooledTemporaryFile` multipart objects, explicit args, and patched model root in a `TemporaryDirectory`. Both completed and overwrote pre-existing `.gguf` fixtures with arbitrary non-empty bytes. Source has no bridge/lease guard or supplied-checksum verification. All fixtures were temporary; no active production model was overwritten. The first diagnostic used `BytesIO`, stalled in the sandbox's thread fallback, and was stopped with Ctrl-C; the bounded in-memory upload diagnostic completed normally.
+- Local Node `v22.22.0` reports global `fetch` and `WebSocket` functions. Both browser/application JavaScript syntax checks and `.venv/bin/python -m pip check` passed (pip cache disabled because home cache is unwritable; no broken requirements). Local Markdown link targets and `git diff --check` passed. No new UI test, server, Chrome, model, or GPU process started.
 
 Phase 9.8c3 validation (2026-09-28):
 
@@ -1004,6 +1086,10 @@ Phase 9.1 validation:
 
 ## Known Issues
 
+- Phase 10.2 fixes the confirmed UI test output/history leakage and drains the audited sibling/E2E runners. Pytest has a temporary thumbnail cache and repository file metadata guard; this does not cover external-directory writes, directory-only mutations, direct unittest invocation, or abrupt termination. Earlier synthetic records are deliberately retained.
+
+- Model upload auto-selection still searches stable hashed option IDs for the filename after catalog refresh. New storage appears correctly; manual selection works. Phase 10.3 must use the final upload path to find and apply a compatible catalog ID, preserving prior selection for invalid uploads/conflicts.
+- Model upload replacement is fixed in Phase 10.1. Atomic publication requires filesystem hard-link support and does not fall back to overwriting. Normal failure/conflict cleanup is verified, but permission/disk errors can still prevent cleanup, and abandoned incomplete chunk sessions have no new automatic expiry. Concurrency coverage uses distinct upload IDs; session identity/retry/quota management is unchanged. Upload success is not compatibility/checksum verification.
 - Generation-error cleanup now resets model-offload placement/hooks using Diffusers. If that cleanup itself fails, the original inference error remains authoritative and the secondary error is logged; recovery is not guaranteed for a permanently broken CUDA context. Graceful shutdown cannot run after SIGKILL/exit 137. The normal fixed-server shutdown path was explicitly verified.
 
 - The browser model catalog supports compatible complete Qwen Image 2.1 pipelines and transformer-only checkpoints with one compatible local companion. Unsupported formats and ambiguous companion choices are explicitly rejected. Broader model-family support requires a separate backend/loader design.
@@ -1027,10 +1113,12 @@ Phase 9.1 validation:
 
 ## User Decisions / Required Input
 
-None. The user supplied `/mnt/lab/farzine/qwen_workflow_runner/models/loras`; its single adapter was found and tested. Expected head-swap behavior and prompt were inferred directly from the adapter's own metadata. The previous empty-directory/asset request is resolved.
+None. The supplied adapter and original runtime assets remain unchanged. Uploaded compatible models should be selected through the existing authoritative ID controller; incompatible uploads/conflicts should preserve the prior selection. This follows the existing intended upload behavior and needs no new architecture decision or user asset.
+
 ## Next Action
 
-Implement Phase 9.8d only: final stabilization/diff/documentation review. HEAD is `fae667e`; nine current modified paths are listed in Files Modified, including the previous context-only reconciliation. All bounded functional checkpoints through 9.8c3 have passed; do not re-audit or rerun full-model/download/GGUF/LoRA hardware tasks without a new source change/failure that justifies it. Review the current small production loader override, browser diagnostic flags, tests, and documentation for supported-scope consistency and source attribution; preserve original user LoRA and ignored model/input/output assets. Run appropriate final checks only if edits affect behavior, reconcile README/UI/PROJECT/matrix/context completion status and known limitations, then provide a clean final checkpoint. No user input is pending. Standard Diffusers adapter flow and supplied fused AI-Toolkit adapter work; do not broaden model families, quantized-LoRA formats, or quality benchmarking as part of stabilization. Temporary validation server/Chrome processes are stopped; retained evidence `/tmp/qwen-lora-validation-hyd258je`. Do not create commits or discard changes unless requested.
+Implement Phase 10.3 only: correct model upload auto-selection using stable catalog IDs. HEAD is `5c8d379`; 22 current paths are listed above and must be preserved or reconciled if the user commits them. In `ui/static/js/app.js`, `ModelManager.uploadFile` currently discards each `ApiClient.uploadModelChunk` receipt, refreshes the catalog, then checks `opt.value.includes(file.name)`. Those values are `model_<hash>` IDs (`ui/model_catalog.py`), so the filename comparison cannot identify the upload. Retain the final completed receipt's exact path, find the refreshed compatible `Store.state.models.cached` entry by that path, set the selector to its ID, and call the existing `applySelectedCachedModel` controller. Keep authoritative selection/legacy APIs intact and preserve previous selection for incompatible uploads, malformed/missing completion receipts, or conflicts. Use the existing Node harness and isolated API/browser fixtures to verify old selected A/new compatible B, incompatible/failed upload, stable-ID request payload, visible active metadata, and catalog refresh. Do not change inference loading or add a new API/abstraction; no model/GPU/download rerun is needed for a frontend ID fix. Record any completed-but-unselectable upload truthfully. Broader chunk-session expiry/quota/header validation and model-quality work remain separate. No user input is pending. Do not create commits or discard changes unless requested.
+
 ## Resume Instructions
 
 When the user says `Continue from CONTEXT.md`:

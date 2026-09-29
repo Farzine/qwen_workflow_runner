@@ -26,6 +26,7 @@ from starlette.testclient import TestClient
 from qwen_runner.config import Config, GenerationConfig, ModelConfig, RuntimeConfig
 from qwen_runner.images import load_references, reference_size, save_comparison
 from ui.runner_bridge import DemoBackend, RunJob, RunnerBridge, get_runner_bridge, resolve_backend_factory
+from ui.runner_bridge import shutdown_runner_bridge
 from ui.server import app, dict_to_config, get_outputs_dir
 
 
@@ -61,10 +62,15 @@ class TestChallengerM12ExecutionIntegrity(unittest.TestCase):
         cls.img_large = cls.root / "img_large.png"
         Image.new("RGB", (1600, 1200), color=(180, 70, 140)).save(cls.img_large, format="PNG")
 
+        shutdown_runner_bridge()
+        bridge = get_runner_bridge()
+        bridge.output_dir = cls.outputs_dir
+        bridge.custom_output_dirs = {cls.outputs_dir}
         cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
+        shutdown_runner_bridge()
         os.environ.pop("INPUTS_DIR", None)
         os.environ.pop("OUTPUTS_DIR", None)
         os.environ.pop("MODELS_DIR", None)

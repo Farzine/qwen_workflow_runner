@@ -2600,6 +2600,7 @@
         }
       } catch (err) {
         console.error("Upload error:", err);
+        if (this.uploadProgressStatus) this.uploadProgressStatus.textContent = "Upload failed";
         if (this.uploadProgressError) {
           this.uploadProgressError.textContent = `Upload failed: ${err.message}`;
           this.uploadProgressError.classList.remove("hidden");

@@ -56,6 +56,7 @@ class TestAdversarialStress(unittest.TestCase):
         img.save(cls.sample_img)
 
         # Re-initialize runner bridge pointing to test outputs
+        shutdown_runner_bridge()
         bridge = get_runner_bridge()
         bridge.output_dir = cls.outputs_dir
         bridge.custom_output_dirs = {cls.outputs_dir}

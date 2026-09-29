@@ -42,6 +42,7 @@ from ui.runner_bridge import (
     RunJob,
     RunnerBridge,
     get_runner_bridge,
+    shutdown_runner_bridge,
     resolve_backend_factory,
 )
 from ui.server import (
@@ -82,6 +83,7 @@ class BaseTier5AdversarialTestCase(unittest.TestCase):
         img.save(cls.valid_img, format="PNG")
 
         # Synchronize runner bridge to use test outputs dir
+        shutdown_runner_bridge()
         bridge = get_runner_bridge()
         bridge.output_dir = cls.outputs_dir
         bridge.custom_output_dirs = {cls.outputs_dir}
@@ -90,6 +92,7 @@ class BaseTier5AdversarialTestCase(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        shutdown_runner_bridge()
         app.state.inputs_dir = None
         app.state.models_dir = None
         app.state.outputs_dir = None

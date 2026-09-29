@@ -1,9 +1,14 @@
 # Validation Matrix
 
 This matrix records Phase 9.8c3 pretrained LoRA, Phase 9.8c2 GGUF, Phase 9.8c1 download, and Phase 9.8b evidence and preserves the
-historical Phase 8 production validation. Automated checks use temporary files and synthetic or tiny models
-where loading the 33 GB pretrained checkpoint would add no useful coverage.
+historical Phase 8 production validation. Scoped checks use temporary files and synthetic or tiny models
+where loading the 33 GB pretrained checkpoint would add no useful coverage. A legacy
+stress-test output-isolation gap discovered in Phase 10.1 is fixed by Phase 10.2 below.
 Hardware rows identify the live RTX A6000 checks separately.
+
+Phase 10.1 upload collision safety and Phase 9.8d stabilization/documentation
+review are complete (2026-09-28). The model-upload overwrite defect found during
+the review is fixed; remaining follow-up and scope limits are recorded below.
 
 ## Functional matrix
 
@@ -327,10 +332,123 @@ strength along with model/device records. Production UI controls are unchanged.
 Evidence includes `baseline/existing/uploaded/cleared-browser.json`, resource
 snapshots/screenshots, `upload.json`, `artifacts.json`, and `shutdown.json`.
 
-## Remaining scope
+## Phase 9.8d stabilization review
+
+- Resumed with a clean working tree at `5c8d379`, which commits all nine Phase
+  9.8c3 paths. Reviewed the shared LoRA override, backend callers, installed
+  Diffusers loading/return contract, numerical regression, browser flags, and
+  primary-source attribution already recorded in the porting notes.
+- Rechecked retained full-model, GGUF, Hub, and LoRA evidence JSON. LoRA
+  artifacts retain eight outputs, adapter/control comparisons, one base load
+  and three reuses, an empty shutdown slot, and the 352-to-384 tensor preflight.
+  These are previous live results, not new GPU or network runs.
+- Focused LoRA regression: 2 tests and 5 subtests passed. Full Phase 9.8c3
+  regressions remain the latest broad results: 43 core tests/13 subtests, 438
+  UI/API/E2E tests, Node 49/49 and 15/15. No production code changed in this slice.
+- Corrected upload checksum/process-isolation claims and reconciled milestone,
+  supported-scope, and continuation state. Documented the browser validator's
+  native `fetch`/`WebSocket` requirement (local Node 22.22.0).
+- Retained-artifact hashes/identity/control/shutdown assertions, local Markdown
+  links, both JavaScript syntax checks, dependency consistency, and final diff
+  whitespace checks passed. Broad suites were not repeated for documentation edits.
+- A direct call to each real upload route branch, using in-memory multipart
+  files and isolated temporary storage, accepted arbitrary non-empty `.gguf`
+  bytes and replaced a pre-existing same-name file. This is an expected
+  diagnostic reproduction of a defect, not a passing safety check. Source
+  inspection shows no bridge/lease guard on replacement. No user asset changed.
+
+## Phase 10.1 model upload collision safety
+
+Both upload branches now reject existing destinations with HTTP 409 and clear
+rename/delete guidance. A shared publication step uses `os.link` on a completely
+written temporary file; the destination cannot be replaced even if another
+upload wins after the initial check. Logical destination paths are retained so
+dangling symlinks count as occupied instead of redirecting a new upload.
+Publication/assembly success and failure clean temporary files and relevant
+parts. No active resource has to be unloaded because uploads never replace it.
+The existing UI preserves selection, stops remaining chunks, displays server
+details, and now labels the operation `Upload failed` on failure.
+
+- Six new real API tests cover single/chunk uploads, queued/running/idle source
+  preservation, fresh catalog discovery, late collisions, denied publication,
+  cleanup, unrelated part preservation, dangling symlinks, 244-character filenames
+  with short owned stdlib temporary paths, and two threads
+  reaching atomic publication together. Each race has one 200 and one 409;
+  stored bytes exactly match the complete winning upload.
+- Initial targeted upload tests: 5 passed. After the sixth long-filename test
+  and owned temporary path refinement, full UI/API/E2E suite: 444 passed in 24.13
+  seconds with the two known deprecation warnings. Node frontend: 50/50; stress:
+  15/15. The new Node case exercises actual client/controller code against 409
+  response data, verifies unchanged selection, stopped chunks, visible error,
+  no catalog refresh on failure, and refresh after successful upload.
+- Python compilation, JavaScript syntax, and diff whitespace checks passed.
+  Core/GPU inference was not rerun because loading/generation code is unchanged.
+  New upload tests and browser fixtures use temporary assets. The broad legacy
+  suite also created synthetic demo records in repository `outputs/`; see below.
+  A temporary Hub permissions diagnostic was non-failing.
+- Real Chrome native file-input uploads on a temporary offline server passed at
+  1440px and 390px: visible rename/delete errors, `Upload failed`, 0% after
+  conflict, and no horizontal overflow. A new 6,300,000-byte file completed in
+  two chunks, refreshed the catalog, cleared the error, and reached 100%.
+  Actual response statuses were 409/409/200/200; existing bytes were preserved,
+  new bytes matched the source hash, and no temporary/part files remained.
+  These deliberately invalid GGUF fixtures were stored and listed, not used for
+  inference. Screenshots were visually inspected. Evidence and clean shutdown
+  are under `/tmp/qwen-model-upload-browser-18sjbgl2`; server PID 2128398 and
+  Chrome PID 2128399 both exited 0. Earlier driver attempts timed out after
+  desktop capture or reused a busy port; fresh ports and bounded debugger calls
+  fixed the diagnostic. No user model/input/output file was changed.
+
+## Phase 10.2 UI test storage isolation
+
+Completed 2026-09-29 (Asia/Dhaka). The old workflow stress tests submitted demo
+jobs to literal `outputs`, used an external input, and searched existing history.
+Their SHA check could skip or perform no assertion because durable outputs use
+`path`, whereas catalog/listing entries include `filename`.
+
+- Each stress case now uses a generated temporary input, explicit temporary
+  output/model paths, an owned runner, and isolated getter/environment/app-state
+  history roots. It starts with empty history. Twenty test-owned records exercise
+  scaling; the byte/hash test always creates and verifies its own saved output.
+- Bounded completion waits replace fixed sleeps. Cleanup drains jobs before
+  deleting storage. Shared E2E setup/sibling singleton suites reset and drain
+  runners; backend API tests dispatch to their fixture-owned runner. Nested
+  E2E clients restore environment/state, and empty history must actually be empty.
+- `ui/tests/conftest.py` sends pytest thumbnail writes to temporary storage and
+  fails the session if repository runtime file/symlink paths, modes, sizes, or
+  mtimes change under outputs/inputs/models/.cache. It excludes external paths,
+  directory-only mutations, direct unittest execution, and forced process death.
+- Focused workflow tests: 4 passed/6 deselected in 1.54s. Final full UI/API/E2E:
+  444 passed in 14.01s, including the session guard, with two known deprecations.
+  The first full run passed 444 in 13.99s before adding the guard. Initial fixture
+  checks exposed the getter fallback and filename assumption; both were fixed.
+- Separate snapshots of 5,268 runtime entries show zero additions, removals, or
+  changes. SHA-256 covers outputs/inputs/cache and model files smaller than 1 MiB;
+  large model sizes/mtimes match. Evidence: `/tmp/qwen-phase102-runtime-before.json`,
+  `after.json`, `report.json` (same prefix), and `/tmp/qwen_phase102_snapshot.py`.
+  Earlier synthetic records remain; no user history cleanup was attempted.
+- Python compilation and diff whitespace checks passed. Production code is
+  unchanged in this slice, so no new browser/GPU/model/network validation was run.
+  Earlier Node/core/hardware evidence is retained without claiming fresh reruns.
+
+## Remaining scope and next task
+
+**Phase 10.3 — Uploaded model selection:** `ModelManager.uploadFile` still
+searches option values for the filename, although catalog values are stable
+`model_<hash>` IDs. Use the upload receipt path to find the refreshed compatible
+entry and apply its ID through the existing selection controller. Preserve the
+current selection for incompatible uploads and conflicts. This finding is from
+source inspection; manual catalog selection remains supported.
+
+Model upload publication requires filesystem hard-link support and fails safely
+when unavailable; no overwrite fallback is provided. Distinct concurrent upload
+IDs were tested; chunk-session identity/retry/disk-quota management is unchanged.
+Upload success establishes storage, not model compatibility or checksum verification.
 
 The previous missing-adapter limitation is resolved for this supplied asset.
 Arbitrary model families, quantized-transformer LoRA compatibility, production
 portrait-quality benchmarking, large-download throughput, and interrupted-network
-recovery are not established by these bounded checks. Final documentation and
-stabilization review remains Phase 9.8d.
+recovery are not established by these bounded checks. Large unpaginated history,
+in-memory batch/download state, whole-run output deletion, and model-dependent
+reference adherence remain documented operating limits. Phases 10.1 and 10.2 are complete;
+uploaded-model selection is the next focused task.

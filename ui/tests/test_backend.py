@@ -33,10 +33,14 @@ class TestBackendRunnerBridge(unittest.TestCase):
         app.state.outputs_dir = self.outputs_dir
         os.environ["OUTPUTS_DIR"] = str(self.outputs_dir)
         self.bridge = RunnerBridge(output_dir=str(self.outputs_dir))
+        self.bridge_patch = patch("ui.server.get_runner_bridge", return_value=self.bridge)
+        self.bridge_patch.start()
         self.client = TestClient(app)
 
     def tearDown(self):
         self.bridge.shutdown()
+        self.client.close()
+        self.bridge_patch.stop()
         app.state.outputs_dir = None
         os.environ.pop("OUTPUTS_DIR", None)
         self.temp_dir.cleanup()

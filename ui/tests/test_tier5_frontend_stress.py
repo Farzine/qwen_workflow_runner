@@ -22,14 +22,20 @@ Audits:
 
 import hashlib
 import html.parser
+import os
 import re
 import subprocess
+import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from PIL import Image
 
 from starlette.testclient import TestClient
 
+from ui.runner_bridge import RunnerBridge
 from ui.server import app
 
 
@@ -213,141 +219,95 @@ class TestDOMIntegrityAndA11y(unittest.TestCase):
 class TestLiveWorkflowExecutionStress(unittest.TestCase):
     """Evaluates live backend workflow execution under rapid bursts and history scaling."""
 
-    @classmethod
-    def setUpClass(cls):
-        cls.client = TestClient(app)
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="workflow_stress_")
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.outputs_dir = self.root / "outputs"
+        self.input_image = self.root / "input.png"
+        Image.new("RGB", (64, 64), (80, 140, 200)).save(self.input_image)
+        self.bridge = RunnerBridge(output_dir=str(self.outputs_dir))
+        for guard in (
+            patch("ui.server.get_runner_bridge", return_value=self.bridge),
+            patch("ui.server.get_outputs_dir", return_value=self.outputs_dir),
+            patch.dict(os.environ, {"OUTPUTS_DIR": str(self.outputs_dir)}),
+            patch.dict(app.state._state, {"outputs_dir": self.outputs_dir}),
+        ):
+            guard.start()
+            self.addCleanup(guard.stop)
+        # Cleanup is LIFO: drain jobs while their storage and route patch exist.
+        self.addCleanup(self.bridge.shutdown)
+        self.client = TestClient(app)
+        self.addCleanup(self.client.close)
+        self.assertEqual(self.client.get("/api/runs").json()["runs"], [])
+
+    def submit_run(self, seed=42):
+        response = self.client.post("/api/run", json={
+            "model": {"source": "test/model", "cache_dir": str(self.root / "models")},
+            "generation": {
+                "images": [str(self.input_image)],
+                "prompt": "Stress test <image1>",
+                "steps": 1, "seed": seed,
+                "custom_size": True, "width": 128, "height": 128,
+            },
+            "runtime": {
+                "device": "cpu", "dtype": "float32", "offload": "none",
+                "output_dir": str(self.outputs_dir), "save_comparison": True,
+            },
+            "demo_mode": True,
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["run_id"]
+
+    def completed_record(self, run_id):
+        self.assertTrue(self.bridge.jobs[run_id].done_event.wait(timeout=5), run_id)
+        response = self.client.get(f"/api/runs/{run_id}")
+        self.assertEqual(response.status_code, 200, response.text)
+        record = response.json()
+        self.assertEqual(record["status"], "success")
+        self.assertTrue(record["outputs"])
+        self.assertTrue((self.outputs_dir / f"{run_id}.json").is_file())
+        self.assertEqual(record["input_image"], str(self.input_image))
+        for output in record["outputs"]:
+            self.assertEqual(Path(output["path"]).parent, self.outputs_dir)
+        return record
 
     def test_rapid_burst_run_submissions(self):
-        """Stress-test submitting 10 rapid runs sequentially without delay."""
-        submitted_runs = []
-        start_time = time.time()
-
-        for i in range(10):
-            payload = {
-                "model": {"source": "https://huggingface.co/Qwen/Qwen-Image-2.1", "cache_dir": "models"},
-                "generation": {
-                    "images": ["/mnt/lab/farzine/inputs/Men/men_002.jpg"],
-                    "prompt": f"Stress test burst run {i} <image1>",
-                    "steps": 5,
-                    "cfg": 1.0,
-                    "seed": 5000 + i,
-                    "strength": 1.0,
-                    "custom_size": False,
-                    "width": 1024,
-                    "height": 1024,
-                    "batch_size": 1,
-                },
-                "runtime": {
-                    "device": "cpu",
-                    "dtype": "float32",
-                    "offload": "none",
-                    "output_dir": "outputs",
-                    "save_comparison": True,
-                },
-                "demo_mode": True,
-            }
-            res = self.client.post("/api/run", json=payload)
-            self.assertEqual(res.status_code, 200, f"Run {i} failed: {res.text}")
-            run_id = res.json().get("run_id")
-            self.assertTrue(run_id, f"Run {i} missing run_id")
-            submitted_runs.append(run_id)
-
-        duration = time.time() - start_time
-        self.assertLess(duration, 5.0, f"Submitting 10 runs took {duration:.2f}s, expected < 5s")
-
-        # Allow execution worker to process jobs
-        time.sleep(2.0)
-
-        # Verify all 10 runs produced records
-        for r_id in submitted_runs:
-            res = self.client.get(f"/api/runs/{r_id}")
-            self.assertEqual(res.status_code, 200, f"Run {r_id} record not found")
-            data = res.json()
-            self.assertIn(data.get("status"), ("success", "completed"), f"Run {r_id} status invalid")
-            self.assertTrue(len(data.get("outputs", [])) > 0, f"Run {r_id} missing outputs")
+        """Ten quick submissions produce distinct, durable test-owned results."""
+        start = time.monotonic()
+        run_ids = [self.submit_run(seed=5000 + index) for index in range(10)]
+        self.assertLess(time.monotonic() - start, 5)
+        self.assertEqual(len(set(run_ids)), 10)
+        for run_id in run_ids:
+            self.completed_record(run_id)
 
     def test_history_drawer_scaling_with_many_runs(self):
-        """Verifies /api/runs handles 20+ runs with proper schema and ordering."""
-        res = self.client.get("/api/runs")
-        self.assertEqual(res.status_code, 200)
-        runs = res.json().get("runs", [])
-        self.assertGreaterEqual(len(runs), 10, f"Expected at least 10 runs in history, got {len(runs)}")
-
-        for r in runs[:20]:
-            self.assertIn("run_id", r)
-            self.assertIn("status", r)
-            self.assertTrue(r["run_id"].startswith("2026") or len(r["run_id"]) > 5)
+        """History contains only the twenty records created by this test."""
+        run_ids = [self.submit_run(seed=index) for index in range(20)]
+        for run_id in run_ids:
+            self.completed_record(run_id)
+        response = self.client.get("/api/runs")
+        self.assertEqual(response.status_code, 200)
+        runs = response.json()["runs"]
+        self.assertEqual({run["run_id"] for run in runs}, set(run_ids))
+        self.assertEqual(len(runs), 20)
+        self.assertEqual([run["timestamp"] for run in runs],
+                         sorted((run["timestamp"] for run in runs), reverse=True))
 
     def test_nonexistent_or_deleted_run_record_handling(self):
-        """Verifies GET /api/runs/{run_id} returns HTTP 404 for deleted or nonexistent runs."""
-        res = self.client.get("/api/runs/nonexistent_deleted_run_id_99999")
-        self.assertEqual(res.status_code, 404)
-        self.assertIn("not found", res.json().get("detail", "").lower())
+        """Missing records return a readable 404 in empty test-owned history."""
+        response = self.client.get("/api/runs/nonexistent_deleted_run_id_99999")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("not found", response.json()["detail"].lower())
 
     def test_output_file_byte_accuracy_and_sha256(self):
-        """Verifies output image SHA-256 byte parity between served file and record."""
-        res = self.client.get("/api/runs")
-        runs = res.json().get("runs", [])
-
-        # Find a run that has outputs; if none exist yet, create one now so this
-        # test is not dependent on test_rapid_burst_run_submissions having run first.
-        run_with_outputs = None
-        for r in runs:
-            rec_res = self.client.get(f"/api/runs/{r['run_id']}")
-            if rec_res.status_code == 200:
-                rec = rec_res.json()
-                if rec.get("outputs"):
-                    run_with_outputs = rec
-                    break
-
-        if run_with_outputs is None:
-            # Submit a single demo run to generate an output we can verify.
-            payload = {
-                "model": {"source": "https://huggingface.co/Qwen/Qwen-Image-2.1", "cache_dir": "models"},
-                "generation": {
-                    "images": ["/mnt/lab/farzine/inputs/Men/men_002.jpg"],
-                    "prompt": "SHA256 verification run <image1>",
-                    "steps": 1,
-                    "cfg": 1.0,
-                    "seed": 99999,
-                    "strength": 1.0,
-                    "custom_size": False,
-                    "width": 1024,
-                    "height": 1024,
-                    "batch_size": 1,
-                },
-                "runtime": {
-                    "device": "cpu",
-                    "dtype": "float32",
-                    "offload": "none",
-                    "output_dir": "outputs",
-                    "save_comparison": True,
-                },
-                "demo_mode": True,
-            }
-            run_res = self.client.post("/api/run", json=payload)
-            if run_res.status_code == 200:
-                run_id = run_res.json().get("run_id")
-                time.sleep(2.0)
-                rec_res = self.client.get(f"/api/runs/{run_id}")
-                if rec_res.status_code == 200:
-                    run_with_outputs = rec_res.json()
-
-        if run_with_outputs is None or not run_with_outputs.get("outputs"):
-            self.skipTest("No completed run with outputs available for SHA-256 verification")
-
-        out = run_with_outputs["outputs"][0]
-        filename = out.get("filename")
-        expected_hash = out.get("sha256")
-        if filename and expected_hash:
-            img_res = self.client.get(f"/api/outputs/{filename}")
-            self.assertEqual(img_res.status_code, 200)
-            actual_hash = hashlib.sha256(img_res.content).hexdigest()
-            self.assertEqual(
-                actual_hash,
-                expected_hash,
-                f"SHA-256 mismatch for output file {filename}",
-            )
+        """A freshly generated output must match both disk and served bytes."""
+        record = self.completed_record(self.submit_run(seed=99999))
+        output = record["outputs"][0]
+        response = self.client.get(f"/api/outputs/{Path(output['path']).name}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, Path(output["path"]).read_bytes())
+        self.assertEqual(hashlib.sha256(response.content).hexdigest(), output["sha256"])
 
 
 class TestNodeFrontendStressHarness(unittest.TestCase):

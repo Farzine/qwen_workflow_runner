@@ -42,7 +42,7 @@ Browser (Vanilla SPA HTML5 / CSS3 / ES2020)
         ▼ HTTP REST & SSE Streaming
 Backend Server (`ui/app.py` / `ui/server.py` via FastAPI & Uvicorn)
   ├── Static Asset & Thumbnail Service (disk-cached 256px/1024px thumbnails)
-  ├── Model Store & Upload Processor (chunked reassembly, SHA-256 validation)
+  ├── Model Store & Upload Processor (chunked reassembly, extension/non-empty checks)
   ├── Config Validation Engine (direct integration with Config.validate())
   └── Background Runner Bridge:
         ├── Thread worker queue executing qwen_runner.runner.run()
@@ -58,6 +58,10 @@ Backend Server (`ui/app.py` / `ui/server.py` via FastAPI & Uvicorn)
 ### 1. Prerequisites
 
 Ensure Python 3.10+ and the required packages are installed in your virtual environment:
+
+Install a PyTorch build matching the target device/driver first, following the
+[core installation guide](../README.md#1-install). Its CUDA 12.6 profile is the
+one validated on this host; generic requirements do not select a CUDA build.
 
 ```bash
 # Activate your virtual environment
@@ -269,6 +273,9 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
 - **`POST /api/models/upload`**
   - Multipart chunked upload for `.gguf` and `.safetensors` files directly into `models/`.
   - Form fields: `file` (UploadFile), `upload_id` (str), `chunk_index` (int), `total_chunks` (int).
+  - Upload checks the extension, confined destination, chunk fields, and non-empty assembled content. Catalog and loader compatibility checks occur separately; no expected content checksum is verified.
+  - Existing files, directories, and dangling destination symlinks return HTTP 409. Rename the upload or confirm deletion of the stored model first; active model deletion remains guarded separately.
+  - Single files and assembled chunks publish complete bytes atomically without replacing a concurrent winner. Temporary publication files and assembled/conflicting upload parts are cleaned up. The model filesystem must support hard links; unsupported publication returns an error rather than falling back to replacement.
 - **`DELETE /api/models/catalog/{model_id}`**
   - Deletes a discovered model by its stable catalog ID after browser confirmation.
     Direct local files/directories are removed; completed Hub selection manifests
@@ -414,9 +421,20 @@ node ui/tests/test_tier5_node_stress.js
 ```
 
 The current regression result is 43 core tests plus 13 parameterized subtests,
-438 UI/API/E2E tests, and 49/49 plus 15/15 Node cases. The model-free browser
+444 UI/API/E2E tests, and 50/50 plus 15/15 Node cases. The model-free browser
 checker covers all eight routes at 1440, 900, and 390px, selection preservation,
-and Dashboard failure/retry:
+and Dashboard failure/retry.
+
+The pytest UI suite generates temporary workflow inputs/history and drains
+test runners before removing storage. Its session fixture redirects thumbnails
+to a temporary cache and fails if repository `outputs/`, `inputs/`, `models/`,
+or `.cache/` file paths, modes, sizes, or modification times change. This guard
+does not watch external directories or directory-only changes, and applies to
+pytest rather than direct unittest execution. Existing runtime records are retained.
+
+The optional validator needs Node with global `fetch` and `WebSocket` (verified
+here with Node 22.22.0), a running UI, and Chrome with remote debugging. The
+application itself does not need Node.
 
 ```bash
 # With a running local UI and Chrome remote-debugging endpoint:
@@ -429,7 +447,9 @@ use `--output-dir=/tmp/qwen-browser-check/outputs` to isolate generated artifact
 `--collect-existing` verifies the displayed completed batch;
 missing records or synthetic backends fail validation. Two current full-model
 browser batches verified one model load, compatible reuse, and graceful shutdown.
-Hardware evidence and outstanding hardware/online checks are in `../VALIDATION_MATRIX.md`.
+Phase 9 stabilization is complete for the documented scope. Hardware evidence,
+supported-scope limits, and the completed upload-safety task are in
+[VALIDATION_MATRIX.md](../VALIDATION_MATRIX.md).
 `--model-id=model_...` applies a specific compatible catalog entry. Optional
 `--lora-path=/absolute/adapter.safetensors`, `--lora-scale=1`, and
 `--prompt-file=/path/to/prompt.txt` select and verify an adapter-specific batch.
@@ -445,4 +465,4 @@ are converted to the installed Diffusers projection layout during real loading.
 - **Safe Path Confinement**: All input and output file paths are validated against allowed root directories via `is_safe_path()`. Directory traversal attempts (e.g. `../../etc/passwd`) are rejected with HTTP 400.
 - **Upload Sanitization**: Chunked upload filenames and IDs are sanitized to prevent shell injections and directory traversal.
 - **Zero External CDNs**: All fonts, stylesheets, icons (SVG), and scripts are bundled locally; no external network requests are made by the browser.
-- **Process Isolation**: Runner executions occur within managed background workers without blocking the asynchronous ASGI event loop.
+- **Background Execution**: Inference runs in one managed worker thread in the server process, leaving the ASGI event loop available. It does not run in an isolated subprocess.

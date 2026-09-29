@@ -19,6 +19,8 @@ import unittest
 
 from PIL import Image
 
+from ui.runner_bridge import shutdown_runner_bridge
+
 from ui.tests.e2e.common import (
     compute_sha256,
     create_test_image,
@@ -56,6 +58,8 @@ class TestTier4Scenarios(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        shutdown_runner_bridge()
+        cls.client.close()
         cls.temp_dir.cleanup()
 
     def test_scenario_01_single_reference_casual_edit(self):

@@ -22,11 +22,16 @@ Features Covered (>=80 tests across all 16 features):
 from io import BytesIO
 import json
 import math
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from PIL import Image
+
+from ui.runner_bridge import shutdown_runner_bridge
+from ui.server import app
 
 from ui.tests.e2e.common import (
     compute_sha256,
@@ -62,6 +67,8 @@ class TestTier2Boundaries(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        shutdown_runner_bridge()
+        cls.client.close()
         cls.temp_dir.cleanup()
 
     # =========================================================================
@@ -519,11 +526,14 @@ class TestTier2Boundaries(unittest.TestCase):
     # =========================================================================
 
     def test_b09_discovery_empty_models_dir_returns_empty_list(self):
-        with tempfile.TemporaryDirectory() as empty_m:
+        with tempfile.TemporaryDirectory() as empty_m, patch.dict(os.environ), patch.dict(app.state._state):
             temp_client = get_test_client(models_dir=Path(empty_m))
-            resp = temp_client.get("/api/models")
-            self.assertEqual(resp.status_code, 200)
-            self.assertEqual(resp.json()["models"], [])
+            try:
+                resp = temp_client.get("/api/models")
+                self.assertEqual(resp.status_code, 200)
+                self.assertEqual(resp.json()["models"], [])
+            finally:
+                temp_client.close()
 
     def test_b09_discovery_case_insensitive_extension_matching(self):
         # Write .GGUF in uppercase
@@ -779,11 +789,15 @@ class TestTier2Boundaries(unittest.TestCase):
     # =========================================================================
 
     def test_b15_history_empty_session_returns_empty_list(self):
-        with tempfile.TemporaryDirectory() as empty_env:
+        with tempfile.TemporaryDirectory() as empty_env, patch.dict(os.environ), patch.dict(app.state._state):
             c = get_test_client(outputs_dir=Path(empty_env))
-            resp = c.get("/api/runs")
-            self.assertEqual(resp.status_code, 200)
-            self.assertIsInstance(resp.json()["runs"], list)
+            try:
+                resp = c.get("/api/runs")
+                self.assertEqual(resp.status_code, 200)
+                self.assertEqual(resp.json()["runs"], [])
+            finally:
+                shutdown_runner_bridge()
+                c.close()
 
     def test_b15_history_accumulates_across_multiple_runs(self):
         init_len = len(self.client.get("/api/runs").json()["runs"])

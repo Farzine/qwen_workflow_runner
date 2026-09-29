@@ -26,6 +26,7 @@ from starlette.testclient import TestClient
 
 from qwen_runner.config import Config, GenerationConfig, ModelConfig, RuntimeConfig
 from ui.runner_bridge import RunnerBridge, RunJob, get_runner_bridge
+from ui.runner_bridge import shutdown_runner_bridge
 from ui.server import app, get_models_dir, get_outputs_dir, get_inputs_dir
 
 
@@ -57,12 +58,14 @@ class TestAdversarialRemediationChallenge(unittest.TestCase):
         img.save(cls.valid_img)
 
         # Sync bridge
+        shutdown_runner_bridge()
         bridge = get_runner_bridge()
         bridge.output_dir = cls.outputs_dir
         bridge.custom_output_dirs = {cls.outputs_dir}
 
     @classmethod
     def tearDownClass(cls):
+        shutdown_runner_bridge()
         app.state.inputs_dir = None
         app.state.models_dir = None
         app.state.outputs_dir = None

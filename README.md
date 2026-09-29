@@ -211,6 +211,9 @@ Important parameter semantics:
 
 ## Web application
 
+Install the web dependencies after the core runtime:
+`python -m pip install -r ui/requirements.txt`.
+
 Start the production UI with `.venv/bin/python ui/app.py`, or add `--demo` for
 explicit synthetic previews. Inference is the initial page. The primary
 navigation provides eight task views:
@@ -474,12 +477,31 @@ The project does not bypass access restrictions.
 
 ## Validation
 
+The Phase 9 improvement and stabilization checks are complete for the tested
+Qwen Image 2.1 full-model, GGUF, and LoRA workflows. See
+[VALIDATION_MATRIX.md](VALIDATION_MATRIX.md) for evidence and remaining limits.
+Phase 10.1 protects model uploads: both upload paths reject existing filenames
+with HTTP 409 and atomically publish complete new files without replacement.
+Rename a conflicting upload or use the confirmed model deletion workflow first.
+The model storage filesystem must support hard links; publication failures
+report an error without overwriting existing storage.
+
 ```bash
 .venv/bin/python -m pytest -q tests
 timeout 300 .venv/bin/python -m pytest -q ui/tests
 node ui/tests/test_challenger_m2_node.js
 node ui/tests/test_tier5_node_stress.js
 ```
+
+UI pytest fixtures use temporary workflow storage and thumbnail cache. A session
+guard fails if repository runtime file paths, modes, sizes, or modification times
+change under `outputs/`, `inputs/`, `models/`, or `.cache/`. It does not cover external
+directories or directory-only changes; existing output history is retained.
+
+
+The optional browser validator requires Node with global `fetch` and `WebSocket`
+(validated here with Node 22.22.0), plus a running UI and Chrome debugging endpoint.
+Node is not required to run the application or CLI.
 
 Core tests do not download weights. Runtime tests use tiny, randomly initialized
 networks and temporary GGUF files. They test execution and logging, not image
@@ -514,7 +536,7 @@ must appear as a valid entry in the server's configured LoRA catalog.
 finished batch without rerunning inference. Production evidence requires two
 durable successful production-pipeline records matching the selected model and device;
 synthetic output is rejected. See `VALIDATION_MATRIX.md` for current regression
-results, historical hardware evidence, and outstanding checks. Pixel-identical ComfyUI parity and
+results, historical hardware evidence, and supported-scope limitations. Pixel-identical ComfyUI parity and
 quality on other hardware still require evaluation on that target system.
 
 The opt-in live download check uses pinned public tiny files (at most 1 MiB

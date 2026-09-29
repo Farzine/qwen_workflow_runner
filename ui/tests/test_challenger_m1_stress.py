@@ -24,6 +24,7 @@ from PIL import Image
 from starlette.testclient import TestClient
 
 from ui.runner_bridge import DemoBackend, get_runner_bridge
+from ui.runner_bridge import shutdown_runner_bridge
 from ui.server import app
 
 
@@ -50,10 +51,15 @@ class TestChallengerM1Stress(unittest.TestCase):
         cls.corrupt_img = cls.root / "corrupt_data.png"
         cls.corrupt_img.write_bytes(b"CORRUPTED_PNG_HEADER_DATA_FAIL")
 
+        shutdown_runner_bridge()
+        bridge = get_runner_bridge()
+        bridge.output_dir = cls.outputs_dir
+        bridge.custom_output_dirs = {cls.outputs_dir}
         cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
+        shutdown_runner_bridge()
         os.environ.pop("INPUTS_DIR", None)
         os.environ.pop("OUTPUTS_DIR", None)
         os.environ.pop("MODELS_DIR", None)
