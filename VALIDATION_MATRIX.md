@@ -698,3 +698,35 @@ in-memory batch/download state, whole-run output deletion, and model-dependent
 reference adherence remain documented operating limits. Phases 10.1–10.9 are
 complete within this scope. Current handoff and archived history retain these
 limitations; no new functional scope is implied.
+
+
+## Documentation and Sharing Assets — 2026-09-29
+
+Starting HEAD `3dd5fdb`; production code unchanged. Rewritten README with
+customization instructions and feature gallery; detailed usage retained;
+redundant TEST_READY/TEST_INFRA removed; eight generated cache directories removed
+(87 files, 1,131,051 bytes), pytest cache ignored. User assets and environment kept.
+
+Fresh production browser validation used two original robot inputs and one shared
+palette reference, then repeated with the supplied LoRA at strength 0.8. All four
+384×384 outputs succeeded on `cuda:1` (RTX A6000), BF16/model offload, 4 steps,
+CFG 1, fixed seed. Exact selected model ID/revision, conditioning order, adapter
+application, saved/served images and hashes verified. Adapter-vs-baseline MAE was
+24.690/21.519, with 99.142%/98.756% changed pixels; not a head-swap/quality benchmark.
+Base load count 1, compatible reuse count 1; shutdown slots empty/no active leases,
+owned processes exited. Residual allocator memory before exit was recorded rather
+than claiming zero with a live CUDA context.
+
+Native browser navigation: 8 pages × 3 widths (1440/900/390), selection retention,
+no overflow, and injected status-fetch failure/recovery passed. Fourteen screenshot
+PNGs cover all pages, progress, comparison, readable details, open parameter help,
+and mobile outputs. Five 1200×1500 LinkedIn slides rendered with native HTML/Chrome;
+image validity, layout/footer separation, local links, original source, and original
+LoRA hash checked. All 236 pre-existing runtime entries retained unchanged.
+`run.py --help`, `run.py --dry-run`, and `git diff --check` passed. No full suite or
+Hub download rerun was needed for documentation-only changes.
+
+Committed provenance: [SCREENSHOTS.md](docs/SCREENSHOTS.md) and
+[capture-evidence.json](docs/assets/capture-evidence.json). Local detailed evidence:
+`/tmp/qwen-docs-4ap3gcp7`. Post assets: [linkedin-post](linkedin-post/README.md).
+Nothing has been posted or committed by the agent.

@@ -27,16 +27,16 @@ benchmarks are not implied by that completion. Operating limits remain below.
 
 ## Active Task
 
-Phase 10.9 complete: shorten the root handoff and archive the full prior context.
-User commit `95e0f22` contains all nine formerly pending Phase 10.7/10.8 paths;
-resume started with a clean working tree. Scoped source review confirms latest
-batch replay, native scroll scheduling and mobile height bound match the record.
-No production behavior or existing runtime assets changed, and no commit was created.
-One concurrent setup-error record appeared outside the documentation commands;
-it is preserved and described under Current Problems / Tests Performed.
-Current changes: `CONTEXT.md`, `PROJECT.md`, `VALIDATION_MATRIX.md`, new
-`docs/CONTEXT_HISTORY.md`. Reconcile these with Git on the next resume.
-No further implementation task is queued; stop at this documentation checkpoint.
+Documentation, cleanup and sharing-assets request **complete** (2026-09-29).
+Starting HEAD `3dd5fdb` committed the four Phase 10.9 paths; working tree was clean.
+User chose neutral public samples and fresh real-model GPU captures. Rewritten
+README, preserved detailed usage, 14 feature screenshots, editable workflow plus
+PNG/SVG exports, and five LinkedIn PNGs/caption are integrated and validated.
+Removed only obsolete TEST_READY/TEST_INFRA summaries and regenerable Python/pytest
+caches; existing runtime assets/environment and production source remain intact.
+No commit or external post was created. No further implementation task is queued.
+Evidence/work root: `/tmp/qwen-docs-4ap3gcp7`; public proof is
+[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) and its linked capture JSON.
 
 ## Repository Map
 
@@ -133,6 +133,7 @@ IPC/loopback; sandbox hangs were reproduced independently of application code.
 | 10.1–10.4 | Collision-safe uploads, isolated UI test storage, uploaded-ID selection, configured output defaults/history. |
 | 10.5–10.8 | Saved inspection, truthful stop/reconnect, batch replay beyond event cap, responsive default log scrolling. |
 | 10.9 | Concise handoff, lossless full-history archive, current Git reconciliation, evidence/link/source/runtime checks. |
+| Docs/assets, 2026-09-29 | Selective cleanup, professional README/customization guide, 14 real UI screenshots, workflow SVG/PNG, fresh production samples, LinkedIn caption and five slides. |
 
 Per-task files, failed diagnostics and all original evidence remain in
 [archived completed tasks](docs/CONTEXT_HISTORY.md#completed-tasks),
@@ -141,25 +142,28 @@ Per-task files, failed diagnostics and all original evidence remain in
 
 ## Remaining Tasks
 
-No queued implementation task in the completed supported roadmap. Current limits
-below are not silently marked fixed. Future work should address an actual reported
-failure or an explicitly selected extension; do not invent Phase 10.10 merely to
-continue numbering. No files still require modification for Phase 10.9.
+No unfinished work for the documentation/assets request or the completed supported
+roadmap. The post assets are ready for the user to publish manually; no publication
+was requested. Known product/runtime limits below remain. Select further work only
+from a concrete new request or reproduced defect.
 
 ## Current Problems
 
-No new functional defect was found in this documentation slice. The original
-same-image root cause was silent DemoBackend substitution with an incompatible
-CUDA runtime: all 426 pre-fix records were synthetic. Production now always uses
-QwenBackend or reports an actionable setup error. Full-model outputs prove the
-transformation; persistence/display did not overwrite valid generated results.
+No new application defect was introduced or reproduced in this task. The original
+same-image cause remains historical: silent synthetic fallback with an incompatible
+CUDA runtime. Production now reports setup errors and never silently uses demo.
 
-During this task, `outputs/20260929T083542_9ec66f4252_setup_error.json` appeared.
-It reports expected `FileNotFoundError` validation for the absent default example
-`inputs/portrait_model_denim.png`, before backend loading. Its producer was not
-identified; none of this task's stdlib/Git documentation commands invokes inference.
-Preserve it. This is not evidence of a new model/pipeline defect or a reason to
-download examples automatically.
+The prior setup-error record `outputs/20260929T083542_9ec66f4252_setup_error.json`
+was already absent from the starting runtime snapshot. Earlier 5,268/5,269 runtime
+counts are historical; this session guarded 236 existing runtime file/symlink entries.
+Actual storage state takes precedence; no existing runtime entry was removed or
+changed by this task. Incompatible small model fixtures remain in the catalog and
+are documented as incompatible, rather than removed as presumed user data.
+
+Temporary extra-capture driver initially raced DOM readiness and later captured a
+closed help popover. It was corrected to wait for initialization/selected inputs,
+use keyboard focus, verify the open help state, and capture the viewport. These
+were diagnostic-driver corrections only; no application code was changed.
 
 ## Important Technical Findings
 
@@ -181,48 +185,49 @@ reference are [archived](docs/CONTEXT_HISTORY.md#reference-implementations).
 
 ## Files Modified
 
-This task changes four documentation paths only:
+- `README.md` — user-facing overview, install/quickstart, all-feature gallery, workflow, CLI, How to Modify, testing, supported limits and license.
+- `docs/USAGE.md` — retain the prior detailed CLI/model/cache/benchmark instructions; update moved links.
+- `ui/README.md` — correct the installation anchor to the rewritten root README.
+- `docs/SCREENSHOTS.md`, `docs/assets/` — capture provenance, settings, 14 screenshots, three original sample inputs/four generated outputs, hashes/measurements, editable SVG and PNG workflow.
+- `linkedin-post/` — requested-tone caption, posting instructions, editable native HTML composition, five 1200×1500 PNG slides. Nothing published.
+- `.gitignore` — ignore `.pytest_cache/`.
+- Deleted `TEST_READY.md`, `TEST_INFRA.md` — redundant initial test summaries with obsolete counts; current testing instructions/provenance remain in UI/usage guides, PROJECT and VALIDATION_MATRIX. Historical TEST_REPORT/context/licensing/source workflows retained.
+- Removed eight ignored Python/pytest cache directories (87 files, 1,131,051 bytes); do not remove `.venv`, its rollback backup, `.cache`, user assets, or agent/private configuration.
+- `CONTEXT.md`, `VALIDATION_MATRIX.md` — checkpoint current task and record fresh bounded validation.
 
-- `CONTEXT.md` — concise current state, contracts, scoped evidence, limits and continuation.
-- `docs/CONTEXT_HISTORY.md` — new lossless snapshot with navigation and SHA-256; old checkpoint instructions explicitly historical.
-- `PROJECT.md`, `VALIDATION_MATRIX.md` — mark 10.9 complete and link the current handoff/archive; remove the obsolete pending task.
-
-HEAD `95e0f22` committed the previous nine paths: four shared docs, runner bridge,
-backend tests, app JS/CSS and Node harness. Their former pending descriptions in
-the archive are historical. No production/test/runtime change by this task;
-the concurrent added error record is tracked separately below.
+Production Python/JS/CSS/template/JSON files match HEAD byte for byte. Starting
+HEAD `3dd5fdb` already contains Phase 10.9; its four paths are no longer pending.
+The lossless context archive is unchanged.
 
 ## Tests Performed
 
-**This task:** archive body equals both original context and `git show
-95e0f22:CONTEXT.md`; original SHA-256 is recorded in its preface. Required resume
-sections, local links/anchors and retained evidence references checked. Protected
-tracked-file hashes and all 5,268 pre-existing runtime file/symlink modes/sizes/
-mtimes unchanged. One concurrent added setup-error record is recorded separately
-(5,269 total entries); no removals or changes to existing assets. Only the four
-intended tracked/new documentation paths differ. `git diff --check` passed. Check evidence:
-`/tmp/qwen-phase109-validation.json`. No suite/model/browser/GPU/download rerun.
+**Fresh documentation/assets validation:**
+
+- Actual production UI + native Chrome: two independent robot inputs and one shared palette reference, then repeat with supplied LoRA strength 0.8; four successful PNGs/records, selected full-model ID/revision, `cuda:1`, BF16/model offload, 4 steps, CFG 1, seed 1070478148268574, 384×384 outputs. Output bytes/hashes served and saved; all outputs differ from resized inputs. Adapter-vs-baseline MAE 24.690/21.519, changed pixels 99.142%/98.756%. Functional smoke samples, not quality/head-swap benchmarks.
+- Production resource evidence: one base load and one compatible job reuse; all leases released and slots empty on graceful shutdown. Before process exit PyTorch retained 9,568,256 allocated / 29,360,128 reserved bytes; owned server/browser processes exited. No zero-memory claim while the CUDA context was alive.
+- Existing browser navigation validation: 24 page/viewport checks (8 pages × widths 1440/900/390), no overflow, preserved configuration and injected status-error recovery passed. Additional captures show full Models download/upload controls and an actually open parameter help popover; no inference in that second server session.
+- Fourteen screenshot PNGs decoded/dimensions/hashes verified; all linked in README. Five 1200×1500 post PNGs rendered with native Chrome; actual HTML geometry checks reject footer overlap. Workflow SVG parses and SVG/PNG/slides visually inspected.
+- Local Markdown links/anchors, HTML image sources/alt text, artifact hashes, unchanged production source, all 236 starting runtime file/symlink modes/sizes/mtimes, and full original adapter SHA-256 checked. `git diff --check`, `run.py --help`, and `run.py --dry-run` passed. Eight generated caches removed; no unrelated runtime data deleted.
+- Evidence: `/tmp/qwen-docs-4ap3gcp7/{baseline,lora}-browser.json`, `{baseline,lora}-system.json`, `navigation.json`, `shutdown.json`, `slides-validation.json`, `extra-validation.json`, `cleanup.json`, `documentation-validation.json`. Temporary helpers `/tmp/qwen_docs_*.py/.js`; no new dependency/framework or production behavior.
+- Public settings/hash/measurement evidence: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md), [capture-evidence.json](docs/assets/capture-evidence.json). Full regression suites/Hub downloads were not rerun for documentation-only changes; prior results below are retained observations.
 
 **Latest retained results (not newly run):**
 
 | Validation | Result / scope | Evidence root |
 | --- | --- | --- |
-| UI/API/E2E, Phase 10.8 | 450 passed + 15 replay subtests in 14.22s; runtime metadata guard | [Matrix](VALIDATION_MATRIX.md#phase-108-log-replay-responsiveness) |
-| Node, Phase 10.8 | 57/57 frontend, 15/15 stress; pre-fix rejection, Copy/Clear/toggle/order/error safety | [Archive tests](docs/CONTEXT_HISTORY.md#tests-performed) |
-| Core, Phase 9.8c3 | 43 tests + 13 subtests; fused/split forward math and adapter lifecycle | `/tmp/qwen-lora-validation-hyd258je` |
-| Default auto-scroll, Phase 10.8 | Actual three separate CPU demo UI/SSE jobs at 1440/900/390; 4,995 retained lines, 4/3/4 geometry reads, 255/255/267ms replay; real scrolling/clipboard/results; seven records/eight PNG hashes; unchanged 5,268 entries and owned shutdown | `/tmp/qwen-autoscroll-browser-gzglllpu` |
-| Full production, Phase 9.8b | Four real outputs, input/reference/model/device/hash/serving, fixed-seed repeat, one load/reuse; explicit shutdown; tiny transfer recovery | `/tmp/qwen-phase98b.AJEcJM` |
-| Selected GGUF, Phase 9.8c2 | Cached Q4_0 transformer/297 exact tensors, four real outputs, model replacement/reuse and shutdown; full companions required | `/tmp/qwen-gguf-validation-9znq346l` |
-| Pretrained LoRA, Phase 9.8c3 | Eight real browser outputs: baseline/existing/uploaded/cleared; uploaded matches existing, removal restores baseline, measured effect, one base load, native upload/shutdown | `/tmp/qwen-lora-validation-hyd258je` |
-| Hub, Phase 9.8c1 | Pinned 484,951 total bytes; real HTTP/Xet callbacks/hashes, cancel/retry/cache/terminal/catalog; no model loading | `/tmp/qwen-hub-validation-hbikkfmd` |
-| Hub browser, Phase 9.8c1 | Real download, readable failure/new-ID retry and reachable phone controls | `/tmp/qwen-hub-validation-cax0tm3q` |
+| Phase 10.9 archive | Original context equals git 95e0f22; 16 handoff headings, 19 links, 82 protected tracked files, 5,268 original runtime entries preserved | `/tmp/qwen-phase109-validation.json` |
+| UI/API/E2E, Phase 10.8 | 450 passed + 15 replay subtests; runtime metadata guard | [Matrix](VALIDATION_MATRIX.md#phase-108-log-replay-responsiveness) |
+| Node, Phase 10.8 | 57/57 frontend, 15/15 stress | [Archive tests](docs/CONTEXT_HISTORY.md#tests-performed) |
+| Core, Phase 9.8c3 | 43 tests + 13 subtests; adapter math/lifecycle | `/tmp/qwen-lora-validation-hyd258je` |
+| Auto-scroll, Phase 10.8 | Three CPU demo UI jobs, 4,995 retained lines, 4/3/4 geometry reads; scrolling/Copy/Clear/results | `/tmp/qwen-autoscroll-browser-gzglllpu` |
+| Full production, Phase 9.8b | Four real outputs, conditioning/model/device/hash/serving/reuse/shutdown | `/tmp/qwen-phase98b.AJEcJM` |
+| GGUF, Phase 9.8c2 | Four real outputs, model replacement/reuse/shutdown | `/tmp/qwen-gguf-validation-9znq346l` |
+| Pretrained LoRA, Phase 9.8c3 | Eight real outputs: baseline/existing/uploaded/cleared; controlled effect/reuse/shutdown | `/tmp/qwen-lora-validation-hyd258je` |
+| Hub HTTP/Xet, Phase 9.8c1 | Pinned tiny 484,951 bytes, callbacks/hashes/cancel/retry/cache | `/tmp/qwen-hub-validation-hbikkfmd` |
+| Hub browser, Phase 9.8c1 | Real tiny download, failure/new-ID retry/phone controls | `/tmp/qwen-hub-validation-cax0tm3q` |
 
-These roots and their principal evidence files exist as of this checkpoint.
-`/tmp` evidence/helpers are local and disposable, not tracked or guaranteed to
-survive cleanup/restart. The archive/matrix preserve recorded observations if
-files disappear; absence does not invalidate history or establish fresh proof.
-Read retained JSON/screenshots only as needed; do not load weights to recreate
-missing documentation evidence without a relevant validation need.
+Temporary evidence is local/disposable; committed provenance preserves results if
+it disappears. Historical test counts are not current whole-project guarantees.
 
 ## Known Issues
 
@@ -240,21 +245,21 @@ missing documentation evidence without a relevant validation need.
 
 ## User Decisions / Required Input
 
-None. Preserve existing functionality/assets; use small independently tested slices;
-no unnecessary redesign/dependency/approval flow. User LoRA directory is recorded
-above. Explicit output overrides remain authoritative. Full historical decisions
-and failures are preserved in the archive; its old blockers are not current input
-requests. Any new product/architecture decision must arise from an actual need.
+None. User selected neutral original public sample imagery and fresh GPU model
+runs for documentation. Keep existing user/model/LoRA/runtime/environment assets,
+use native tooling and no new dependencies; only verified disposable caches and
+redundant initial test summaries were removed. LinkedIn assets are prepared for
+manual posting; no publishing/message-sending authorization is implied.
 
 ## Next Action
 
-This documentation checkpoint is complete; no next implementation task selected.
-On the next `Continue from CONTEXT.md`, read this file and inspect current Git and
-relevant changes. Reconcile a user commit of these four paths without repeating
-completed work. If a new request, source delta or reproduced defect exists, choose
-one bounded task and update this handoff. Otherwise report this ready checkpoint
-and the documented limits; do not restart the audit, rerun all hardware checks,
-or manufacture another phase. Do not commit, discard or delete assets implicitly.
+The requested cleanup, documentation, screenshots, workflow and LinkedIn assets
+are complete. On resume, read this file and inspect Git state; reconcile any user
+commit of the current docs/assets/deletions without regenerating screenshots or
+running models again. No implementation task remains queued. Handle a new request
+or reproduced defect; otherwise report this clean checkpoint and existing limits.
+Do not delete incompatible catalog fixtures, runtime assets or historical context
+merely because this task was called cleanup.
 
 ## Resume Instructions
 

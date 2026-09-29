@@ -60,7 +60,7 @@ Backend Server (`ui/app.py` / `ui/server.py` via FastAPI & Uvicorn)
 Ensure Python 3.10+ and the required packages are installed in your virtual environment:
 
 Install a PyTorch build matching the target device/driver first, following the
-[core installation guide](../README.md#1-install). Its CUDA 12.6 profile is the
+[core installation guide](../README.md#installation). Its CUDA 12.6 profile is the
 one validated on this host; generic requirements do not select a CUDA build.
 
 ```bash

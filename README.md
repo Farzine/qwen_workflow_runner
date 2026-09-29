@@ -1,574 +1,338 @@
-# Qwen Image 2.1 — standalone workflow runner
+# Qwen Workflow Runner
 
-A Python project built from your supplied ComfyUI image-editing JSON. It runs
-locally through PyTorch and Diffusers. **No ComfyUI installation, web server,
-API endpoint, or node execution is required.**
+A local image-editing workspace for **Qwen Image 2.1**, built with Python,
+PyTorch, Diffusers, FastAPI, and a self-contained browser UI. Experiment with
+prompts, reference images, LoRAs, and runtime settings through eight focused pages.
+The same inference core also supports CLI runs and repeatable benchmarks.
 
-Edit `CONFIG` in `run.py`, then run `python run.py`. Outputs and a separate JSON
-record for every inference go into `outputs/`.
+This is an experimental application for supported Qwen Image 2.1 checkpoints.
+It is not a universal model loader. No ComfyUI installation is required.
 
-## What is reproduced
+![Inference workspace with separate input and reference selections](docs/assets/screenshots/inference.png)
 
-The original graph is included at `workflow/original.json`.
+## Contents
 
-| Workflow setting | Project behavior |
-|---|---|
-| Two ordered `LoadImage` nodes | Legacy `generation.images`; image 1 is the person/canvas, image 2 the shirt |
-| Positive prompt | Original clothing-transfer prompt is the default |
-| Negative prompt | Empty by default; inactive when CFG is 1 |
-| `TextEncodeQwenImage21`, resolution **0** | Preserve each reference's own dimensions, rounded to multiples of 32; Lanczos resizing when needed |
-| `custom_size = false` | Output size follows the **first** reference after rounding |
-| `custom_size = true` | Use explicitly configured width and height; reference sizes stay independent |
-| Qwen3-VL encoder + reference VAE latents | Dedicated Qwen Image **2.1** pipeline, with all references in one edit |
-| Empty latent | Start with noise on an empty canvas; references condition generation |
-| KSampler | Euler, simple schedule, 25 steps, CFG 1, denoise/strength 1 |
-| Flow model sampling | Fixed shift 0.69 and Comfy's 10,000-point simple sigma selection |
-| Seed | 1070478148268574; fixed across repeats unless you enable incrementing |
-| Prefix cache | Lossless KV caching; auto, GPU or CPU storage |
-| VAE decode and save | One 8-bit PNG for each batch output |
-| ImageCompare | Optional saved side-by-side PNG |
+- [Features](#features)
+- [Installation](#installation)
+- [Quickstart](#quickstart)
+- [Feature screenshots](#feature-screenshots)
+- [Project workflow](#project-workflow)
+- [Command-line usage](#command-line-usage)
+- [How to modify](#how-to-modify)
+- [Testing](#testing)
+- [Limitations and troubleshooting](#limitations-and-troubleshooting)
+- [Documentation and license](#documentation-and-license)
 
-**Workflow fidelity is not a claim of pixel-identical output.** Your original
-graph loads `qwen_image_2.1_int8_convrot.safetensors`. The default here loads the
-official **BF16 Diffusers checkpoint** from the link you supplied; the GGUF
-option uses the selected quantized checkpoint. Comfy's `int8_convrot` format is
-not loaded or silently converted. Weights, quantization, attention kernels,
-floating-point calculations and cache-transfer implementations can change
-outputs and timing. See `workflow/PORTING_NOTES.md` for the precise differences.
+## Features
 
-## 1. Install
+- Separate, ordered process inputs and conditioning references, with previews,
+  uploads, drag-and-drop, and individual removal.
+- Downloaded-model selection, asynchronous Hugging Face downloads, local uploads,
+  and confirmed deletion of supported stored models.
+- LoRA discovery, upload, selection, strength adjustment, and confirmed deletion.
+- GPU inventory and device selection, precision/offload controls, and visible
+  resident pipeline state.
+- Batch stages, successful/failed/remaining counts, timing, ETA, and live logs.
+- Generated previews, input/output comparisons, readable run records, and
+  whole-run deletion that preserves shared files.
+- Compatible pipeline reuse between web requests and graceful resource cleanup.
+- Responsive task pages and accessible, implementation-based parameter help.
 
-Use Python 3.10 or newer, Git, and a PyTorch-supported environment. NVIDIA CUDA
-is the intended inference target. CPU is supported for functional testing but
-full-size generation will be slow. MPS is configurable but full-model operator
-coverage has not been validated here.
+## Installation
+
+Use **Python 3.10+** and Git. NVIDIA CUDA is the intended real-inference target.
+Model weights are downloaded separately and can require substantial disk space,
+RAM, and VRAM. A quantized transformer still needs the text encoder and VAE.
 
 ```bash
+git clone https://github.com/Farzine/qwen_workflow_runner.git
 cd qwen_workflow_runner
 python -m venv .venv
-```
-
-Activate the environment:
-
-```bash
-# Linux / macOS
 source .venv/bin/activate
+python -m pip install --upgrade pip
 ```
 
-```powershell
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-```
+On Windows PowerShell, activate with `.venv\Scripts\Activate.ps1`.
 
-Install a matching **PyTorch + torchvision** build for your CUDA driver using
-the command generated at <https://pytorch.org/get-started/locally/>. The
-checked-in CUDA 12.6 profile is verified with NVIDIA driver 560.28.03 and RTX
-A6000 GPUs:
+For the CUDA 12.6 profile validated on this project's host:
 
 ```bash
-python -m pip install --upgrade pip
 python -m pip install -r requirements-cu126.txt
+python -m pip install -r ui/requirements.txt
 python run.py --check
 ```
 
-For another CUDA runtime or CPU-only installation, install the appropriate
-PyTorch and torchvision wheels first, then install `requirements.txt`. The
-generic requirements deliberately do not choose a CUDA build for you.
+For another driver/runtime or CPU, install matching PyTorch and torchvision
+using the [official installer](https://pytorch.org/get-started/locally/), then
+install `requirements.txt` and `ui/requirements.txt`. The generic requirements do
+not select a CUDA build. Keep the pinned Diffusers revision: older Qwen Image/Edit
+pipelines are not interchangeable with the dedicated 2.1 implementation.
 
-Diffusers is pinned to a reviewed Git commit containing the dedicated
-`QwenImage21Pipeline`, transformer and VAE. An older Qwen Image/Edit pipeline
-is not an interchangeable substitute. Every run records installed versions and
-the installed Diffusers Git revision.
+## Quickstart
 
-No model weights are bundled. The transformer, text encoder and VAE together
-require substantial disk space and RAM. A GGUF transformer does **not** make
-the separate Qwen3-VL text encoder small. Start with CPU offload, a reasonable
-reference resolution, and a smaller GGUF if VRAM is limited; actual fit depends
-on image sizes, number of references, cache policy and hardware.
-
-## 2. Provide input images
-
-Your JSON contains image filenames, not the image files themselves. Either
-copy your own files into `inputs/` and change the generation image fields, or download
-the two public template assets referenced in the original JSON:
+Start the production application:
 
 ```bash
-python scripts/download_examples.py
+python ui/app.py --host 127.0.0.1 --port 7878
 ```
 
-For new integrations, use separate `input_images` and `reference_images` fields:
+Open **http://localhost:7878**. If the port is busy, the server reports the next
+available port. Loopback binding is appropriate for local use; the application
+does not provide authentication for public deployment.
 
-```python
-config.generation.input_images = ["inputs/person-a.png", "inputs/person-b.png"]
-config.generation.reference_images = ["inputs/shirt.png"]
-```
+1. Open **Models** and download or select a compatible Qwen Image 2.1 model.
+   Transformer-only GGUF/SafeTensors entries require compatible companion components.
+2. Open **Inference**. Upload or browse your images, select process inputs, and
+   optionally select references separately. Each input is processed independently.
+3. Enter a prompt. Select an optional LoRA and configure generation settings.
+4. Open **System**, choose an available device, and apply its runtime settings.
+5. Start inference. Open **Batch** for progress and logs, then inspect comparisons,
+   **History**, or **Outputs** when results are ready.
 
-Each input creates an independent inference record and output using the ordered
-conditioning sequence `[current_input, *reference_images]`. The model loads once
-for the expanded batch. A repeat uses the same seed for every input; enabling
-`increment_seed` advances the seed between repeats. Up to ten process inputs and
-nine shared references are accepted, keeping each model call within its ten-image
-conditioning limit.
-
-The web runner reports batch-wide completed, failed, and remaining attempts,
-current stage, elapsed time, and ETA. ETA becomes available after the first
-attempt finishes; it uses the observed mean attempt time and excludes shared
-model loading. Warmup attempts count toward total operations and are labeled.
-Each finished item links to its Run Details record.
-
-The legacy `generation.images` field remains supported. Its first image is the
-editing canvas/input and later images are references. Reference order corresponds
-to `<image1>`, `<image2>`, and so on.
-
-## 3. Run
+Defaults use `inputs/`, `models/`, `models/loras/`, and `outputs/`. Override directories:
 
 ```bash
-python run.py
+python ui/app.py --host 127.0.0.1 \
+  --inputs-dir /path/to/images \
+  --models-dir /path/to/models \
+  --loras-dir /path/to/loras \
+  --outputs-dir /path/to/results
 ```
 
-The first run downloads the required model files. Subsequent runs reuse the
-completed local cache **without contacting Hugging Face or redownloading**.
-
-Useful overrides:
+For a GPU-free UI walkthrough:
 
 ```bash
-python run.py --images inputs/person.png inputs/shirt.png
-python run.py --input-images inputs/person-a.png inputs/person-b.png --reference-images inputs/shirt.png
-python run.py --model https://huggingface.co/Qwen/Qwen-Image-2.1/tree/main
-python run.py --model https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF
-python run.py --model abenzerps/Qwen-Image-2.1-GGUF --filename qwen-image-2.1-Q8_0.gguf
-python run.py --lora models/loras/portrait.safetensors --lora-scale 0.8
+python ui/app.py --demo --host 127.0.0.1
+```
+
+**Demo mode generates explicitly labeled synthetic previews. It does not run
+Qwen or apply a LoRA.** Production errors are reported rather than replaced
+with demo images.
+
+## Feature screenshots
+
+The screenshots below come from the running production application using
+original geometric toy-robot inputs, a shared color reference, and real Qwen
+inference. See [capture details](docs/SCREENSHOTS.md) for settings and validation.
+
+### Dashboard
+
+View server readiness, hardware snapshots, selected resources, resident pipelines,
+and recent runs. Batch and download activity reflects the current browser tab.
+
+![Dashboard with runtime and recent inference status](docs/assets/screenshots/dashboard.png)
+
+### Inference
+
+Keep process inputs separate from references; configure the prompt, model, LoRA,
+and generation parameters before submitting a job. Accessible help controls explain
+parameter behavior and trade-offs.
+
+![Separate inputs and references before submission](docs/assets/screenshots/inference-ready.png)
+
+![Generation settings with steps help open](docs/assets/screenshots/parameter-help.png)
+
+### Batch inference
+
+Follow per-item stages, counts, timing, ETA, and logs while the model works.
+Each finished attempt has its own saved record.
+
+![Real batch generation in progress](docs/assets/screenshots/batch-progress.png)
+
+![Completed batch with generated images](docs/assets/screenshots/batch.png)
+
+### History and run details
+
+Inspect saved runs and readable input, model, adapter, generation, hardware, and
+output facts. Technical JSON remains available when needed.
+
+![Saved run history](docs/assets/screenshots/history.png)
+
+![Human-readable run details](docs/assets/screenshots/run-details.png)
+
+### Outputs and comparisons
+
+Browse recorded outputs, open the exact selected image, download it, or compare it
+with its process input. Deletion removes a whole run and its unshared artifacts.
+
+![Output library](docs/assets/screenshots/outputs.png)
+
+![Original illustration and actual generated result side by side](docs/assets/screenshots/comparison.png)
+
+### Models
+
+Download from Hugging Face, upload local checkpoints, select a compatible model,
+or confirm deletion. The selected catalog model is authoritative for inference.
+
+![Model download, upload, and selection controls](docs/assets/screenshots/models.png)
+
+### LoRAs
+
+Manage local SafeTensors adapters and their strength. This capture shows the
+supplied adapter selected after an actual LoRA-enabled run.
+
+![LoRA catalog and strength controls](docs/assets/screenshots/loras.png)
+
+### System and smaller screens
+
+Inspect GPU memory, PyTorch/CUDA, selected device, and loaded resources. Applied
+settings affect the next job. Task pages also adapt to narrow viewports.
+
+![System configuration and resident resources](docs/assets/screenshots/system.png)
+
+<details>
+<summary>View the mobile output browser</summary>
+
+![Output browser at a 390-pixel viewport](docs/assets/screenshots/mobile-outputs.png)
+
+</details>
+
+## Project workflow
+
+![Complete project workflow](docs/assets/workflow.svg)
+
+<details>
+<summary>Editable Mermaid diagram</summary>
+
+```mermaid
+flowchart TD
+    Browser[Browser: eight task pages] <-->|REST and SSE| API[FastAPI: validation and storage APIs]
+    API --> Catalog[Selected model catalog]
+    API --> Downloads[Background downloads and uploads]
+    Hub[Hugging Face] --> Downloads
+    Downloads --> Store[Model files and completed manifests]
+    Store --> Catalog
+    Browser --> Config[Inputs, references, prompt, LoRA and device]
+    Config --> API
+    API --> Queue[Single-worker job queue]
+    Queue --> Resources[Exclusive per-device pipeline manager]
+    Catalog --> Resources
+    LoRA[Local LoRA files] --> Resources
+    System[Device, precision and offload] --> Resources
+    Resources -->|Load or reuse| Pipeline[Qwen model, encoder and VAE]
+    CLI[CLI and benchmark] --> Runner[Core runner: ordered inputs and repeats]
+    Queue --> Runner
+    Runner --> Prepare[EXIF, RGB, dimensions and seeded noise]
+    Prepare --> Pipeline
+    Pipeline --> Generate[Conditioning, denoising and decoding]
+    Generate --> Save[PNG outputs, comparisons and JSON records]
+    Save --> API
+    API -->|Progress and results| Browser
+    Resources --> Shutdown[Drain jobs, unload resources and clear GPU caches]
+```
+
+</details>
+
+Download the [SVG](docs/assets/workflow.svg) or [PNG](docs/assets/workflow.png) for presentations.
+The browser uses no Node service or external CDN. The CLI shares inference logic;
+resident reuse is managed by the long-running web server.
+
+## Command-line usage
+
+Supply your own files, or fetch the public workflow examples with
+`python scripts/download_examples.py`.
+
+```bash
+python run.py --input-images inputs/person.png \
+  --reference-images inputs/reference.png
+python run.py --input-images inputs/person.png \
+  --reference-images inputs/reference.png \
+  --lora models/loras/adapter.safetensors --lora-scale 0.8
 python run.py --offline
 python run.py --dry-run
 ```
 
-`--dry-run` only validates the configuration; it does not validate image paths,
-download models, run inference, or fabricate benchmark numbers.
-
-For authenticated repositories, set `HF_TOKEN` in your environment or use your
-normal Hugging Face login. Tokens are not read into the run configuration or
-written to logs.
-
-## Change parameters directly in Python
-
-All settings are dataclasses in `qwen_runner/config.py`. `run.py` includes an
-editable instance; you can also import the runner from your own script:
-
-```python
-from qwen_runner.config import Config
-from qwen_runner.runner import run
-
-config = Config()
-config.model.source = "https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF"
-config.model.gguf_quantization = "Q4_K_M"
-config.model.lora_path = "models/loras/portrait.safetensors"
-config.model.lora_scale = 0.8
-config.generation.images = ["inputs/person.png", "inputs/shirt.png"]
-config.generation.prompt = (
-    "Put the shirt from <image2> on the person in <image1>. "
-    "Preserve the person's face, hair, body shape, pose, background and lighting."
-)
-config.generation.negative_prompt = ""
-config.generation.steps = 25
-config.generation.cfg = 1.0
-config.generation.seed = 42
-config.generation.strength = 1.0
-config.generation.resolution = 1024  # Set 0 to match the uploaded graph.
-config.generation.custom_size = False
-config.generation.batch_size = 1
-config.generation.kv_cache_device = "auto"
-config.runtime.offload = "model"
-config.runtime.warmup_runs = 1
-config.runtime.repeats = 3
-records = run(config)
-```
-
-Important parameter semantics:
-
-- **Resolution** controls each reference's approximate area: `resolution²`
-  pixels, preserving its aspect ratio. Zero keeps its own dimensions rounded to
-  the 32-pixel grid. Width/height take effect only when `custom_size=True`.
-- **Strength** maps to the original KSampler's `denoise`. This graph starts
-  from an empty latent, not an encoded source image. Lower strength selects the
-  last `steps` values from a longer schedule and reduces initial noise. It is
-  **not a source-image preservation or blending percentage**.
-- **CFG** is actual classifier-free guidance (`true_cfg_scale`), not a
-  guidance embedding. Negative conditioning is skipped at CFG 1. CFG below 1
-  is supported too.
-- **Sampler/scheduler:** Euler with `simple` reproduces the submitted graph.
-  Euler with `normal` is also implemented. Other values raise a clear error.
-- **Device selection:** `runtime.device` is authoritative. CUDA selections call
-  `torch.cuda.set_device()` and the same device is passed to pipeline placement
-  or model/sequential CPU offload. The web UI System tab discovers available
-  GPUs and shows live memory/readiness before applying a choice to the next run.
-- **KV cache:** `kv_cache=False` recomputes the prefix each step.
-  `kv_cache_device="auto"` keeps a configurable CUDA memory reserve, then
-  stores additional cache layers on CPU; `"cpu"` and `"gpu"` are explicit.
-  CPU cache transfers are synchronous. Storage is lossless, not int8/int4.
-- **Reference mode:** default `rgb` matches the connected `LoadImage.IMAGE`
-  output. Optional `rgba` preserves alpha for the VAE and composites over white
-  for the vision encoder; this is an intentional extension.
-
-## Web application
-
-Install the web dependencies after the core runtime:
-`python -m pip install -r ui/requirements.txt`.
-
-Start the production UI with `.venv/bin/python ui/app.py`, or add `--demo` for
-explicit synthetic previews. Inference is the initial page. The primary
-navigation provides eight task views:
-
-| Page | Workflow |
-| --- | --- |
-| Dashboard | Server/GPU/resident-resource snapshots, this tab's activity, and five recent runs. |
-| Inference | Configure ordered inputs, shared references, prompt, model, LoRA, and generation; launch the job. |
-| Batch | Monitor the submitted batch, counts, stages, timings, ETA, failures, and results. |
-| History | Inspect durable records and readable details; confirm whole-run deletion. |
-| Outputs | Browse all record-linked images; select the exact preview, comparison, or download. |
-| Models | Download, upload, select a compatible catalog model, or confirm deletion. |
-| LoRAs | Upload/select/scale one adapter or confirm deletion. |
-| System | Inspect hardware/runtime state and apply device/precision/offload for the next job. |
-
-Navigation preserves configuration and the active event stream. Dashboard
-inventory is timestamped and refreshed on request or existing lifecycle events;
-batch/download activity is monitored in the current tab. History and Outputs
-share the result viewer with live jobs. Output deletion removes a whole record
-and its unshared files; it does not remove arbitrary orphan files. See
-[ui/README.md](ui/README.md) for startup options, API contracts, and limitations.
-
-## Models and cache
-
-The web UI selects an entry from its downloaded-model catalog. The selection
-has a stable ID, and the server resolves that ID to the actual checkpoint and
-companion components for both validation and inference. The download form only
-starts downloads; its source, revision, and filename fields do not change the
-active inference model. Incompatible or incomplete entries remain visible with
-a reason and cannot be selected. A compatible complete Qwen Image 2.1 Diffusers
-pipeline can run directly; a compatible single-file GGUF or SafeTensors
-transformer also needs exactly one compatible local companion pipeline. The
-CLI and existing direct-source API requests remain supported when no catalog
-ID is supplied.
-
-The Models page can delete a catalog entry after confirmation. Deletion
-removes a direct local model or a completed Hub selection and its exclusive
-snapshot files; Hub blobs still referenced by another snapshot are preserved.
-Active downloads and inference jobs block deletion, while an idle pipeline
-using the model is unloaded before removal.
-
-The web server keeps one compatible production pipeline resident per selected
-device. A later request on the same device reuses it when the model, companion
-components, precision, offload mode, and VAE mode match. Prompt, sampling,
-image, and LoRA-strength changes do not rebuild compatible base weights; LoRA
-changes are applied under the same exclusive device lease. Selecting an
-incompatible model/runtime replaces only that device's slot. Server shutdown
-drains the single-worker queue, removes Diffusers/Accelerate hooks, releases
-pipeline references, synchronizes CUDA, and clears the CUDA allocator cache.
-`GET /api/system` reports each slot's model, device, LoRA, state, and load/reuse
-counts.
-
-Supported sources:
-
-| Source | Handling |
-|---|---|
-| `owner/repository` or Hugging Face repo URL | Detect a complete Qwen 2.1 Diffusers pipeline or select a GGUF |
-| `/tree/main` URL | Normalize to repository + revision |
-| `/blob/revision/file.gguf` or `/resolve/revision/file.gguf` | Select that exact file |
-| Local Diffusers folder | Load entirely from that folder |
-| Local `.gguf` | Load that transformer and obtain companion components from `base_model` |
-| Floating-point `.safetensors` transformer | Strictly match Qwen 2.1 tensor names/shapes; obtain companions from `base_model` |
-
-Only compatible **Qwen Image 2.1** checkpoints reproduce this graph. Older
-Qwen-Image, Qwen-Image-Edit and Edit-2511 architectures are rejected rather than
-silently using the wrong pipeline. This project is not a universal loader for
-arbitrary Hugging Face models or Comfy-specific quantized safetensors.
-
-One Qwen Image LoRA can be loaded from a local `.safetensors` file. The adapter
-is kept unfused and activated through Diffusers/PEFT so `lora_scale` remains
-explicit and is recorded in each run. A scale of `0` disables the adapter's
-effect, `1` uses its trained strength, and values up to `2` are accepted. The
-web UI discovers and validates files in `models/loras/` by default and supports
-uploading an adapter into that directory. The LoRA list can also delete a
-stored adapter after confirmation. Deletion refuses adapters used by queued or
-running inference; an idle resident pipeline using the adapter is unloaded
-before its file is removed. A SafeTensors header check cannot
-prove architecture compatibility; an incompatible adapter fails during model
-loading with the adapter filename and Diffusers error in the diagnostic.
-AI-Toolkit Qwen Image 2.1 adapters with fused `img_mlp.gate_up` projections are
-converted to Diffusers' separate gate/projection layers without changing their
-LoRA updates. Standard Diffusers adapters retain the existing loading path.
-
-The History drawer can also delete a finished run after confirmation. Its
-record and output/comparison files are removed together; files referenced by
-another run are kept. Deletion waits for active inference to finish.
-
-For the supplied GGUF repository, changing only `source` selects its single
-Q4_K_M file. Set `filename` to choose another variant. If multiple files match,
-the runner asks for an explicit filename instead of choosing an arbitrary one.
-The GGUF loader validates every tensor name and shape and retains packed
-quantized linear weights using Diffusers' GGUF kernels. It does **not**
-dequantize the entire transformer into BF16. Norms and floating-point weights
-remain ordinary floating-point tensors.
-
-GGUF repositories are often transformer-only or bundle Comfy-format companions.
-The runner downloads the **Diffusers-format** encoder, processor and VAE from
-`model.base_model`, default `Qwen/Qwen-Image-2.1`, plus the transformer config.
-It excludes the base model's full transformer weights from this companion
-download. `text_encoder_source` can override both the encoder and processor
-with another compatible Diffusers-layout repository or local folder.
-
-```text
-models/
-├── hub/                 # Hugging Face snapshots and deduplicated blobs
-└── manifests/           # Completed file selection, sizes and immutable revision
-```
-
-An interrupted download never creates a completion manifest. A missing or
-truncated cached file invalidates that manifest. Online mode lets the Hub client
-reuse its existing blobs and fetch missing files; offline mode fails clearly.
-Same-size corruption is not detected by the lightweight size check. Local
-folders must contain all required files.
-
-The web downloader reports selected-file counts and materialized bytes while
-Hugging Face downloads each file. It shows a percentage and ETA only when the
-Hub reports sizes for every selected file and a transfer rate can be measured.
-Otherwise the progress bar is indeterminate. Cancel stops the job between file
-operations, so an active large file may finish first. Cancellation before
-manifest publication leaves no new completion manifest; a request arriving
-after publication may leave a valid cached model. Retry starts a new attempt
-and reuses complete cached files. Download work runs in a background thread while
-the web app remains available.
-
-A completed `main` cache stays on its first resolved commit. To test a newer
-release, set `model.revision` to its commit hash. Pin `base_revision` as well
-when comparing quantizations. Moving the cache to another machine may
-invalidate manifests because they contain absolute paths; use a complete local
-snapshot path or rebuild the manifests online.
-
-## Benchmark multiple models
-
-Edit `MODELS` in `benchmark.py`, and the shared generation/runtime settings in
-`run.py`. Each model runs in a separate process, avoiding overlapping model
-allocations:
+Edit `CONFIG` in `run.py` for the prompt, model, output sizing, and runtime settings.
+`--dry-run` validates configuration only; it does not verify files or run inference.
+For benchmarks, edit `MODELS` in `benchmark.py`, then run:
 
 ```bash
 python benchmark.py
 python scripts/summarize_logs.py outputs > benchmark_summary.csv
 ```
 
-For comparison, use the same images, prompt, seed, dimensions, steps, cache
-settings, hardware and offload mode. Use at least one warmup and multiple
-measured repeats. The default reproduces a single cold run, so warmups are zero
-unless you configure them. Warmup logs and images are retained but excluded
-from the CSV summary. No hidden performance preset changes your parameters.
+See the [detailed usage guide](docs/USAGE.md) for model formats, Python integration,
+cache semantics, measurements, and workflow fidelity.
 
-## Performance measurements and logs
+## How to modify
 
-Each requested inference, including warmups, gets a unique JSON file. A
-`started` record is written before execution, then updated atomically to
-`success`, `error` or `interrupted`. Setup failures get a separate
-`*_setup_error.json`. A hard process kill or machine crash can leave `started`
-with no completed metrics.
+Start with the smallest relevant layer, then validate the affected workflow.
 
-The logs include:
+| Customization | Where to work |
+| --- | --- |
+| Default prompt, model source, generation/runtime parameters | `run.py` and dataclasses in `qwen_runner/config.py` |
+| UI layout, labels, navigation | `ui/templates/index.html` |
+| Colors, spacing, responsive layout | `ui/static/css/style.css` |
+| Browser interactions, state, parameter help | `ui/static/js/app.js` |
+| API endpoints, validation, directory policies | `ui/server.py` |
+| Job execution, logs, progress and monitoring | `ui/runner_bridge.py` |
+| Model compatibility, downloads and storage | `ui/model_catalog.py`, `ui/download_jobs.py`, `qwen_runner/models.py` |
+| Pipeline reuse and shutdown | `qwen_runner/resources.py` |
+| Preprocessing, model/LoRA loading or denoising | `qwen_runner/images.py`, `qwen_runner/backend.py`, `qwen_runner/pipeline.py` |
+| Output records and readable metadata | `qwen_runner/runner.py`, `qwen_runner/record_metadata.py` |
 
-- Model source, repository, selected filename and resolved commit; companion
-  model identity and cache hits.
-- Actual text encoder, transformer and VAE classes and local component paths.
-- Requested and effective parameters, ordered input paths and SHA-256 hashes,
-  original/reference/output dimensions, actual seed and complete sigma schedule.
-- UTC timestamps, software versions, Diffusers source commit, device, CUDA
-  runtime and GPU hardware information when available.
-- Inference seconds, setup seconds, memory metrics, saved outputs and hashes,
-  warmup status, and tracebacks on failures.
+1. Create a branch and change only the layer needed for your customization.
+2. For a new parameter, update its dataclass validation, browser collection/help,
+   API propagation, and saved metadata together. Keep essential model selection
+   authoritative; an advanced field must not silently replace it.
+3. Preserve process-input/reference ordering, path validation, active-job locks,
+   explicit errors, and accessibility when changing UI or APIs.
+4. Run relevant existing tests and check the actual UI. Use demo mode for UI
+   iteration, then real inference for changes affecting model behavior.
 
-Terminal records also include `summary.summary_version: 1`, a compact view of
-input/reference files, model and LoRA, generation, device, output, and error
-facts. The original detailed fields remain available. Missing files or unknown
-model parameter counts and sizes are reported as unavailable, not estimated.
+Adding another model family requires deliberate loader, pipeline, catalog,
+validation, and test support; renaming a model option is insufficient.
+Static UI changes need no build step. Restart the server after Python changes,
+or use `--reload` during local development.
 
-| Metric | Meaning |
-|---|---|
-| `inference_time_seconds` | Synchronized wall time for prompt encoding, reference VAE encoding, noise creation, denoising, decode and conversion to output images |
-| `setup_seconds` | Validation, input file loading/resizing, model resolution/download/load and device setup; shared by all runs in one process |
-| `gpu_peak_allocated_bytes` | Reset-per-run PyTorch CUDA allocator peak on the selected device, including resident model allocations |
-| `gpu_peak_reserved_bytes` | Peak memory reserved by PyTorch on that device |
-| `process_rss_peak_bytes` | Sampled whole-process resident memory during inference, including model memory |
-| Baselines and peak increases | Separate the starting footprint from growth during the run |
-| MPS sampled allocated peak | Sampled PyTorch MPS allocation; unified memory can overlap RSS |
+## Testing
 
-Image file saving is outside inference timing. CUDA work is synchronized before
-and after measurement. CUDA allocator peaks exclude allocations made outside
-PyTorch and other processes; they are **not total card VRAM**. RSS is process
-memory, not total system RAM, and polling can miss very short spikes. CPU-only
-runs use `null` for GPU measurements. Setup/download memory is not included in
-the inference peak. JSON stores bytes; the summary uses GiB (`2**30` bytes).
-
-## Project layout
-
-```text
-qwen_workflow_runner/
-├── run.py                       # Editable configuration and command-line entry
-├── benchmark.py                 # Isolated model comparisons
-├── requirements.txt
-├── requirements-cu126.txt
-├── pyproject.toml
-├── README.md
-├── LICENSE
-├── NOTICE
-├── qwen_runner/
-│   ├── config.py                # Model, generation and runtime configuration
-│   ├── models.py                # URL normalization, selection and local cache
-│   ├── gguf_loader.py           # Strict packed-GGUF loading
-│   ├── images.py                # Workflow sizing and reference image loading
-│   ├── sampling.py              # Sigma schedules and denoise behavior
-│   ├── kv_cache.py              # Lossless prefix cache placement
-│   ├── pipeline.py              # Attributed upstream pipeline with workflow patches
-│   ├── backend.py               # Component loading and generation
-│   ├── metrics.py               # Synchronized timing and memory sampling
-│   └── runner.py                # Repeats, warmups, output saving and JSON logs
-├── scripts/
-│   ├── download_examples.py
-│   ├── summarize_logs.py
-│   └── validate_browser_production.js # Hardware-gated real-browser check
-├── tests/
-├── VALIDATION_MATRIX.md         # Final functional and hardware evidence
-├── workflow/
-│   ├── original.json
-│   ├── PORTING_NOTES.md
-│   ├── source_manifest.json
-│   └── reviewed_gguf_tensor_inventory.json
-├── inputs/
-├── models/
-└── outputs/
-```
-
-## Troubleshooting
-
-**Missing QwenImage21 classes:** reinstall `requirements.txt` in the active
-environment. Do not substitute `QwenImageEditPlusPipeline`.
-
-**CUDA unavailable:** check that you installed a CUDA PyTorch wheel. For CPU
-testing set `device="cpu"`, `dtype="float32"`, `offload="none"`.
-
-**Out of memory or unusable output with large references:** use
-`resolution=1024` or lower rather than retaining native multi-megapixel inputs.
-`resolution=0` deliberately preserves source dimensions; a 4000x6000 reference
-can consume nearly an entire 48 GiB GPU and overwhelm a small output canvas.
-Use the GGUF variant and `offload="model"` or `"sequential"`; try CPU KV
-storage, disabling the KV cache, or VAE tiling. These change the memory/time
-tradeoff and are recorded. The text encoder can still require significant RAM.
-
-**Missing images:** run the example-download script or supply your own images.
-
-**Offline cache missing/incomplete:** populate it once online or specify a
-complete local model snapshot. The loader never silently switches models.
-
-**GGUF tensor mismatch:** the file belongs to another architecture or layout.
-Use a compatible Qwen 2.1 checkpoint; do not bypass strict validation.
-
-**LoRA loading failed:** verify that the adapter targets the Qwen Image 2.1
-transformer and is a Diffusers/PEFT-compatible `.safetensors` file. Selecting a
-file takes effect on the next production job, including a compatible cached
-pipeline; synthetic demo mode
-records the selection but does not apply model adapters.
-
-**HF 401/403:** authenticate and obtain access to the repository, if required.
-The project does not bypass access restrictions.
-
-## Validation
-
-The Phase 9 improvement and stabilization checks are complete for the tested
-Qwen Image 2.1 full-model, GGUF, and LoRA workflows. See
-[VALIDATION_MATRIX.md](VALIDATION_MATRIX.md) for evidence and remaining limits.
-Phase 10.1 protects model uploads: both upload paths reject existing filenames
-with HTTP 409 and atomically publish complete new files without replacement.
-Rename a conflicting upload or use the confirmed model deletion workflow first.
-The model storage filesystem must support hard links; publication failures
-report an error without overwriting existing storage.
-After upload, the UI selects the compatible catalog entry matching the server's
-completed receipt path. Its stable ID determines the next run. Incompatible files,
-catalog-refresh failures, and upload conflicts preserve the prior valid selection
-and display the reason; stored bytes alone do not establish model compatibility.
-
-Web output defaults follow `--outputs-dir`, then `OUTPUTS_DIR`, then the repository's
-`outputs/` directory. The browser displays that path and presets restore it.
-An empty or omitted output directory uses the same default in validation and
-submission. Explicit per-run paths remain supported, including relative paths
-resolved from the server working directory. History includes the configured root
-and output directories registered by jobs in the current server session.
+Install pytest into your development environment if needed, then run:
 
 ```bash
-.venv/bin/python -m pytest -q tests
-timeout 300 .venv/bin/python -m pytest -q ui/tests
+python -m pytest -q tests ui/tests
 node ui/tests/test_challenger_m2_node.js
 node ui/tests/test_tier5_node_stress.js
 ```
 
-UI pytest fixtures use temporary workflow storage and thumbnail cache. A session
-guard fails if repository runtime file paths, modes, sizes, or modification times
-change under `outputs/`, `inputs/`, `models/`, or `.cache/`. It does not cover external
-directories or directory-only changes; existing output history is retained.
+The tests include CPU/demo logic, API/storage behavior, resource lifecycles, and
+frontend regression checks. They do not establish full-model quality or universal
+GPU compatibility. Optional real-browser and Hub checks are documented in
+[the UI guide](ui/README.md#testing--verification).
 
+[VALIDATION_MATRIX.md](VALIDATION_MATRIX.md) records exact test scope, evidence,
+and known gaps. Its historical counts are observations, not a fresh test guarantee.
 
-The optional browser validator requires Node with global `fetch` and `WebSocket`
-(validated here with Node 22.22.0), plus a running UI and Chrome debugging endpoint.
-Node is not required to run the application or CLI.
+## Limitations and troubleshooting
 
-Core tests do not download weights. Runtime tests use tiny, randomly initialized
-networks and temporary GGUF files. They test execution and logging, not image
-quality. The final local validation also ran the cached full model through the
-actual browser with two process inputs, one shared reference, SSE progress,
-`cuda:0`, BF16/model offload, saved comparisons, records, history, and rendered
-results. Phase 9.8b repeated the workflow on `cuda:1` after final navigation,
-verified a second compatible batch through one model load, and measured explicit
-server/GPU cleanup. Phase 9.8c2 verified the cached Q4_0 GGUF selection through
-two browser batches, strict tensor loading, compatible reuse, saved/served
-artifacts, and shutdown. Phase 9.8c3 verified a user-supplied pretrained adapter,
-actual browser upload/selection, output effect against a fixed-seed control,
-compatible reuse, and removal restoring the control's exact hashes.
-Failed inference also resets interrupted offload placement
-before later reuse. The model-free browser check covers all eight pages at three widths
-and Dashboard error recovery:
+- **Supported models:** compatible Qwen Image 2.1 full pipelines or supported
+  transformer-only formats with matching companions. Other families and
+  Comfy-specific `int8_convrot` checkpoints are rejected.
+- **Memory:** native reference resolution (`0`) can exhaust VRAM. Start with
+  bounded reference dimensions and model offload; quantization does not eliminate
+  encoder memory requirements.
+- **Monitoring:** Stop monitoring disconnects the browser stream; inference
+  continues. Reconnect requires the same tab/job identity. It is not cancellation.
+- **Persistence:** records in the configured default output directory survive
+  restart. Custom per-run output roots are discovered only during that server session.
+- **Downloads:** cancellation is cooperative between file operations; a file
+  already transferring may finish. Unknown totals show indeterminate progress.
+- **Security:** designed for trusted local use. Do not expose the unauthenticated
+  server directly to the public internet.
+- **Errors:** inspect the stage and log details. Missing weights, incompatible
+  LoRAs, unavailable GPUs, or invalid inputs are not silently repaired by switching models.
 
-```bash
-# Start a local UI and Chrome with remote debugging before running this.
-node scripts/validate_browser_production.js http://127.0.0.1:9234 http://127.0.0.1:7899 --navigation-only
-```
+More troubleshooting and measurement details are in [docs/USAGE.md](docs/USAGE.md).
 
-Omit `--navigation-only` to submit the hardware-gated two-input production batch
-from the `Child` folder. Choose a free GPU with `--device=cuda:N` and
-use `--output-dir=/tmp/qwen-browser-check/outputs` to isolate generated artifacts.
-Use `--model-id=model_...` to apply a specific compatible catalog selection;
-the checker rejects records that used another model.
-Use `--lora-path=/absolute/adapter.safetensors`, `--lora-scale=1`, and
-`--prompt-file=/path/to/prompt.txt` for an adapter-specific check. The adapter
-must appear as a valid entry in the server's configured LoRA catalog.
-`--collect-existing` instead verifies a displayed
-finished batch without rerunning inference. Production evidence requires two
-durable successful production-pipeline records matching the selected model and device;
-synthetic output is rejected. See `VALIDATION_MATRIX.md` for current regression
-results, historical hardware evidence, and supported-scope limitations. Pixel-identical ComfyUI parity and
-quality on other hardware still require evaluation on that target system.
+## Documentation and license
 
-The opt-in live download check uses pinned public tiny files (at most 1 MiB
-selected), temporary storage, and real API workers for HTTP/Xet progress,
-cancel/retry, manifests, hashes, catalog discovery, and terminal SSE. It does
-not load models or establish their inference compatibility:
+- [Web UI, startup options, APIs, and security](ui/README.md)
+- [Detailed CLI and model guide](docs/USAGE.md)
+- [Workflow porting and implementation differences](workflow/PORTING_NOTES.md)
+- [Validation matrix](VALIDATION_MATRIX.md)
+- [Persistent development handoff](CONTEXT.md) and [historical context](docs/CONTEXT_HISTORY.md)
+- [LinkedIn caption and presentation assets](linkedin-post/README.md)
 
-```bash
-# Requires network and local loopback access; evidence is retained under /tmp.
-timeout 120 .venv/bin/python scripts/validate_hub_download.py
-```
-
-## Sources and licensing
-
-- [Official Qwen Image 2.1 model](https://huggingface.co/Qwen/Qwen-Image-2.1)
-- [Supplied GGUF repository](https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF)
-- [Comfy Qwen nodes](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy_extras/nodes_qwen.py)
-- [Comfy samplers](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/samplers.py)
-- [Comfy flow sampling](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/model_sampling.py)
-- [Pinned Diffusers source](https://github.com/huggingface/diffusers/tree/fbf49e7f35857f76bc57b177e26f12b03687c668)
-
-The adapted Diffusers pipeline retains its Apache-2.0 attribution; see `NOTICE`
-and `LICENSE`. Downloaded model weights and sample assets retain their own
-licenses. Model files are not redistributed with this project.
+Code is licensed under [Apache 2.0](LICENSE), with upstream attributions in
+[NOTICE](NOTICE). Model weights, adapters, and downloaded sample assets retain
+their own licenses. Weights are not distributed with this repository.

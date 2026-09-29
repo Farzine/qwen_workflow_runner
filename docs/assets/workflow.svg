@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1190" viewBox="0 0 1400 1190" role="img" aria-labelledby="title desc">
+<title id="title">Qwen Workflow Runner project workflow</title>
+<desc id="desc">Inputs and configuration enter the browser and FastAPI. Downloads feed the model catalog. A queued job acquires reusable device resources, preprocesses inputs and references, runs Qwen inference, and saves images and records. Results return to the UI. Shutdown drains jobs and releases resources. The CLI uses the shared inference core.</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10" fill="#667c9f"/></marker></defs>
+<rect width="1400" height="1190" rx="24" fill="#0c1322"/>
+<g font-family="Arial,sans-serif"><text x="60" y="64" fill="#f5f8ff" font-size="34" font-weight="700">Qwen Workflow Runner</text><text x="60" y="99" fill="#aabbd1" font-size="19">From configurable image inputs to traceable generation results</text>
+<path d="M700 240V280" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M700 380V420" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M700 520V560" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M700 660V700" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M700 800V840" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M700 940V980" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M380 190H440" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M960 330H1020" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M1180 380V420" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M1020 490H1000V610H960" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M1020 610H960" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M380 610H440" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M380 750H440" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M960 630H995V1030H1020" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M440 1030H407V190H440" fill="none" stroke="#667c9f" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="393" y="903" fill="#aabbd1" font-size="16" transform="rotate(-90 393 903)">Results, records and SSE progress</text>
+<rect x="440" y="140" width="520" height="100" rx="14" fill="#142c3d" stroke="#20b9ca" stroke-width="2"/>
+<text x="460" y="172" fill="#f5f8ff" font-size="21" font-weight="700">Browser workspace</text>
+<text x="460" y="199" fill="#b8c7da" font-size="17">Dashboard · Inference · Batch · History</text>
+<text x="460" y="221" fill="#b8c7da" font-size="17">Outputs · Models · LoRAs · System</text>
+<rect x="440" y="280" width="520" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="460" y="312" fill="#f5f8ff" font-size="21" font-weight="700">FastAPI · REST + SSE</text>
+<text x="460" y="339" fill="#b8c7da" font-size="17">Validate parameters, paths and selected model</text>
+<text x="460" y="361" fill="#b8c7da" font-size="17">Serve catalogs, files, status and progress</text>
+<rect x="440" y="420" width="520" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="460" y="452" fill="#f5f8ff" font-size="21" font-weight="700">RunnerBridge job queue</text>
+<text x="460" y="479" fill="#b8c7da" font-size="17">Single worker · ordered input attempts</text>
+<text x="460" y="501" fill="#b8c7da" font-size="17">Shared references · per-item timing and errors</text>
+<rect x="440" y="560" width="520" height="100" rx="14" fill="#142c3d" stroke="#20b9ca" stroke-width="2"/>
+<text x="460" y="592" fill="#f5f8ff" font-size="21" font-weight="700">PipelineManager</text>
+<text x="460" y="619" fill="#b8c7da" font-size="17">Exclusive lease per device · compatible reuse</text>
+<text x="460" y="641" fill="#b8c7da" font-size="17">Load/switch base weights and apply LoRA</text>
+<rect x="440" y="700" width="520" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="460" y="732" fill="#f5f8ff" font-size="21" font-weight="700">Shared inference core</text>
+<text x="460" y="759" fill="#b8c7da" font-size="17">EXIF/RGB/size preparation · seeded noise</text>
+<text x="460" y="781" fill="#b8c7da" font-size="17">Qwen conditioning → denoising → VAE decode</text>
+<rect x="440" y="840" width="520" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="460" y="872" fill="#f5f8ff" font-size="21" font-weight="700">Save and persist</text>
+<text x="460" y="899" fill="#b8c7da" font-size="17">Generated PNGs · comparison images</text>
+<text x="460" y="921" fill="#b8c7da" font-size="17">Durable JSON records · hashes · measurements</text>
+<rect x="440" y="980" width="520" height="100" rx="14" fill="#142c3d" stroke="#20b9ca" stroke-width="2"/>
+<text x="460" y="1012" fill="#f5f8ff" font-size="21" font-weight="700">Inspect results</text>
+<text x="460" y="1039" fill="#b8c7da" font-size="17">Preview · compare · download · readable details</text>
+<text x="460" y="1061" fill="#b8c7da" font-size="17">Confirmed whole-run deletion · shared-file guards</text>
+<rect x="60" y="140" width="320" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="80" y="172" fill="#f5f8ff" font-size="21" font-weight="700">Your configuration</text>
+<text x="80" y="199" fill="#b8c7da" font-size="17">Inputs + references + prompt</text>
+<text x="80" y="221" fill="#b8c7da" font-size="17">Model + LoRA + parameters</text>
+<rect x="1020" y="280" width="320" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="1040" y="312" fill="#f5f8ff" font-size="21" font-weight="700">Model management</text>
+<text x="1040" y="339" fill="#b8c7da" font-size="17">Hugging Face downloads</text>
+<text x="1040" y="361" fill="#b8c7da" font-size="17">Local uploads + progress</text>
+<rect x="1020" y="420" width="320" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="1040" y="452" fill="#f5f8ff" font-size="21" font-weight="700">Model storage / catalog</text>
+<text x="1040" y="479" fill="#b8c7da" font-size="17">Weights + companion files</text>
+<text x="1040" y="501" fill="#b8c7da" font-size="17">Manifests + selected IDs</text>
+<rect x="1020" y="560" width="320" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="1040" y="592" fill="#f5f8ff" font-size="21" font-weight="700">LoRA files</text>
+<text x="1040" y="619" fill="#b8c7da" font-size="17">Validated local SafeTensors</text>
+<text x="1040" y="641" fill="#b8c7da" font-size="17">One selected adapter + scale</text>
+<rect x="60" y="560" width="320" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="80" y="592" fill="#f5f8ff" font-size="21" font-weight="700">System settings</text>
+<text x="80" y="619" fill="#b8c7da" font-size="17">GPU / CPU · precision</text>
+<text x="80" y="641" fill="#b8c7da" font-size="17">Offload · runtime readiness</text>
+<rect x="60" y="700" width="320" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="80" y="732" fill="#f5f8ff" font-size="21" font-weight="700">CLI / benchmark</text>
+<text x="80" y="759" fill="#b8c7da" font-size="17">Same core inference modules</text>
+<text x="80" y="781" fill="#b8c7da" font-size="17">Separate process lifecycle</text>
+<rect x="1020" y="980" width="320" height="100" rx="14" fill="#182236" stroke="#34465f" stroke-width="2"/>
+<text x="1040" y="1012" fill="#f5f8ff" font-size="21" font-weight="700">Graceful shutdown</text>
+<text x="1040" y="1039" fill="#b8c7da" font-size="17">Reject / drain queued jobs</text>
+<text x="1040" y="1061" fill="#b8c7da" font-size="17">Unload + clear GPU caches</text>
+<text x="60" y="1140" fill="#aabbd1" font-size="18">Production uses Qwen. Explicit demo mode is synthetic and never a silent fallback.</text></g></svg>

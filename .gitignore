@@ -10,3 +10,4 @@ outputs/*
 inputs/*
 !inputs/README.md
 !inputs/.gitkeep
+.pytest_cache/

@@ -1,0 +1,225 @@
+{
+  "captured_at": "2026-09-29",
+  "mode": "production",
+  "model": "Qwen/Qwen-Image-2.1",
+  "model_revision": "790c92633540aa0cb11d9abf19eb46d861714758",
+  "model_id": "model_4ff66ef0ec9f18e2d3e2",
+  "device": "cuda:1",
+  "gpu": "NVIDIA RTX A6000",
+  "precision": "bfloat16",
+  "offload": "model",
+  "steps": 4,
+  "cfg": 1.0,
+  "seed": 1070478148268574,
+  "reference_resolution": 512,
+  "output_dimensions": [
+    384,
+    384
+  ],
+  "reference": "3-color-reference.png",
+  "runs": [
+    {
+      "run_id": "20260929T110835_f5814f9fa3_run_001",
+      "status": "success",
+      "input": "2-robot-teal.png",
+      "output": "baseline-robot-2.png",
+      "sha256": "f63d33b35b348877787e118d4977c57b408fde0fdd9b9023ded361ecb9661aa6",
+      "lora_applied": false,
+      "lora_name": null,
+      "lora_scale": null,
+      "input_output_mean_absolute_difference_8bit": 36.318,
+      "changed_pixel_percent": 99.999,
+      "duration_seconds": 15.659010165021755,
+      "peak_gpu_memory_gb": 18.808
+    },
+    {
+      "run_id": "20260929T110835_f5814f9fa3_run_000",
+      "status": "success",
+      "input": "1-robot-gold.png",
+      "output": "baseline-robot-1.png",
+      "sha256": "d09c008c739e0f2cbdd618ad1043a2a085c8457ce1b96e51797f9dc50fbde7d7",
+      "lora_applied": false,
+      "lora_name": null,
+      "lora_scale": null,
+      "input_output_mean_absolute_difference_8bit": 44.134,
+      "changed_pixel_percent": 99.999,
+      "duration_seconds": 17.073153227975126,
+      "peak_gpu_memory_gb": 18.803
+    },
+    {
+      "run_id": "20260929T110921_635793f962_run_001",
+      "status": "success",
+      "input": "2-robot-teal.png",
+      "output": "lora-robot-2.png",
+      "sha256": "a11aba776110712504b333d21dc85ec3e3981ecb982789a31bc4e2e1d25f8940",
+      "lora_applied": true,
+      "lora_name": "bfs_head_v1.1_qwen_2.1.safetensors",
+      "lora_scale": 0.8,
+      "input_output_mean_absolute_difference_8bit": 32.719,
+      "changed_pixel_percent": 100.0,
+      "duration_seconds": 16.161787902005017,
+      "peak_gpu_memory_gb": 18.805
+    },
+    {
+      "run_id": "20260929T110921_635793f962_run_000",
+      "status": "success",
+      "input": "1-robot-gold.png",
+      "output": "lora-robot-1.png",
+      "sha256": "0aacb5f0a54c338f003cf612afc2e6a49b24c439d260f42060a671f279374c28",
+      "lora_applied": true,
+      "lora_name": "bfs_head_v1.1_qwen_2.1.safetensors",
+      "lora_scale": 0.8,
+      "input_output_mean_absolute_difference_8bit": 34.018,
+      "changed_pixel_percent": 99.999,
+      "duration_seconds": 15.734256114054006,
+      "peak_gpu_memory_gb": 18.809
+    }
+  ],
+  "screenshots": [
+    {
+      "filename": "batch-progress.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "3944de9715c24bfae540fd7f481cf5f5b8547baf110c1523549140e43180bd06"
+    },
+    {
+      "filename": "batch.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "365b72ac954d3db7720fd368da9efb5ae1234b535512cafac08ef9ebfbf69f62"
+    },
+    {
+      "filename": "comparison.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "18733ee9e438ffb372acfd6963c7ed1ace7d1179c2dc953b94942ebac375796d"
+    },
+    {
+      "filename": "dashboard.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "a501013cfa32c24e342273318bf5b9ed83edd5f01781a922fefffcfdde3b8161"
+    },
+    {
+      "filename": "history.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "c0164eee2473a88bf7813c6fb3e2a608e4a2840caa34e111f73698e20d410cc1"
+    },
+    {
+      "filename": "inference-ready.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "5abe332c8415f68f253e73604d67b59a01ca92f859774ba578ee352a089a0055"
+    },
+    {
+      "filename": "inference.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "b2cb870f78b772cacaba9b92ccf9eb1de40bc94487f6397749de0634bae10218"
+    },
+    {
+      "filename": "loras.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "cb4130ff4c91a13a8d6faa06d0e6142cd7a625f8e7648b92f55821b118961002"
+    },
+    {
+      "filename": "mobile-outputs.png",
+      "dimensions": [
+        390,
+        2197
+      ],
+      "sha256": "fbc497daa933a222a2d896a3806bda364673fd87af2768c8ce839f3e9a921dc4"
+    },
+    {
+      "filename": "models.png",
+      "dimensions": [
+        1440,
+        1600
+      ],
+      "sha256": "7248c956cc70d00007ff21975e25886f07ffe8ccfac25b091073cb60bf65deb3"
+    },
+    {
+      "filename": "outputs.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "3d853d5ab86f139a93481a86e2e9ca965f6e197d8e5432f247dfded02c88434d"
+    },
+    {
+      "filename": "parameter-help.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "29bcb5bea0f7085f8a0e240c4eb9778c186b34b5e445674ca3a4533659cdfc96"
+    },
+    {
+      "filename": "run-details.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "c43ac83a6a221519c82e550a71efa2075324cb907d420deaf35a5d0bb43ae1e1"
+    },
+    {
+      "filename": "system.png",
+      "dimensions": [
+        1440,
+        1100
+      ],
+      "sha256": "8ca6700dbdd85c513ce81ac81dba6f5f59ae53a73e8b9ef805402f829596d7ff"
+    }
+  ],
+  "navigation": {
+    "validated_layouts": 24,
+    "widths": [
+      1440,
+      900,
+      390
+    ],
+    "status_recovery": true
+  },
+  "resources": {
+    "base_load_count": 1,
+    "compatible_reuse_count": 1,
+    "shutdown_slots_empty": true,
+    "shutdown_active_leases": 0,
+    "allocated_bytes_before_process_exit": 9568256,
+    "reserved_bytes_before_process_exit": 29360128
+  },
+  "adapter_effect": [
+    {
+      "input_index": 0,
+      "baseline_output": "baseline-robot-1.png",
+      "lora_output": "lora-robot-1.png",
+      "mean_absolute_difference_8bit": 24.69,
+      "changed_pixel_percent": 99.142
+    },
+    {
+      "input_index": 1,
+      "baseline_output": "baseline-robot-2.png",
+      "lora_output": "lora-robot-2.png",
+      "mean_absolute_difference_8bit": 21.519,
+      "changed_pixel_percent": 98.756
+    }
+  ]
+}
