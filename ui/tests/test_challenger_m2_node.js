@@ -222,6 +222,11 @@ shiftSlider.value = "0.69";
 const shiftParam = getOrCreateElement("param-shift", "input");
 shiftParam.value = "0.69";
 
+// The served HTML supplies the native input default before app.js loads.
+const outputDirField = getOrCreateElement("param-output-dir", "input");
+outputDirField.defaultValue = "/tmp/server-output-root";
+outputDirField.value = outputDirField.defaultValue;
+
 // Mock document object
 const mockDocument = {
   getElementById(id) {
@@ -361,6 +366,19 @@ RunHub.init();
 function assertJsonEqual(actual, expected, msg) {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(actual)), JSON.parse(JSON.stringify(expected)), msg);
 }
+
+runTest("Output directory initializes from the server and presets restore that default", () => {
+  assert.strictEqual(Store.state.config.runtime.output_dir, outputDirField.defaultValue);
+  outputDirField.value = "/tmp/user-override";
+  outputDirField.dispatchEvent("input");
+  assert.strictEqual(Store.state.config.runtime.output_dir, "/tmp/user-override");
+  outputDirField.value = "";
+  outputDirField.dispatchEvent("input");
+  assert.strictEqual(Store.state.config.runtime.output_dir, "", "Clearing delegates to the server default");
+  ParamForm.applyDefaultPresets();
+  assert.strictEqual(Store.state.config.runtime.output_dir, outputDirField.defaultValue);
+  assert.strictEqual(outputDirField.value, outputDirField.defaultValue);
+});
 
 runTest("Boundary at 0 images: initial state is empty", () => {
   InputBrowser.clearAll();

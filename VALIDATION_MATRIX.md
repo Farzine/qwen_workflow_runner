@@ -458,14 +458,44 @@ or unlisted stored files report that they were uploaded but not selected.
   These are structural catalog fixtures, not complete inference models. No new
   GPU/model-loading/download or image-quality claim follows from this check.
 
+## Phase 10.4 configured output directory
+
+Completed 2026-09-29. Browser initialization/presets use the escaped server-rendered
+native input default. Web validation/submission share the existing directory
+resolver for omitted/empty paths; explicit nested, flat, and relative overrides
+remain authoritative. The singleton initializes at the configured root, and
+history respects CLI/state precedence over a conflicting environment root.
+Core CLI defaults and inference loading are unchanged.
+
+- Focused integration: 3 passed for CLI, environment, and default configuration.
+  Each exercises actual temporary CPU demo jobs, persisted/served output hashes,
+  initial/restarted history, explicit overrides, unsafe/invalid values, and an
+  output path containing quotes/ampersand/angle brackets.
+- Full UI suite: 447 passed in 14.26s with the runtime-file guard; only the two
+  known deprecation warnings remain. Frontend checks: 52/52; stress: 15/15.
+  The new default-path check fails against pre-fix JavaScript (51/52).
+- Native Chrome at 1440px/390px: configured default, manual override, and cleared
+  field produced three completed CPU demo jobs. Presets restored the configured
+  path. Requests, saved paths, result display, output serving, and isolated
+  history agree; both layouts have no horizontal overflow.
+- Browser evidence `/tmp/qwen-output-directory-browser-wc6n_f0v` contains
+  `browser.json`, three screenshots, verified `artifacts.json`, logs, and
+  `shutdown.json`. The wrapper redirects thumbnails only; actual CLI startup
+  constructs the singleton. Server PID 3405975 and Chrome PID 3405976 exited 0.
+  The first driver waited for a multi-result strip on a single-result run and
+  timed out; the corrected driver passed. Its outer artifact check then used
+  the wrong metadata location; corrected offline checks verified all retained
+  records/hashes/comparisons without another browser run.
+- `runtime-comparison.json`: all 5,268 runtime entries match the retained
+  pre-Phase-10.2 baseline; no additions/removals/changes. SHA-256 covers
+  outputs/inputs/cache/small model files; large model sizes/mtimes are unchanged.
+  This is synthetic workflow/storage validation, not new GPU inference evidence.
+
 ## Remaining scope and next task
 
-**Phase 10.4 — Configured output directory:** scoped inspection found that the
-singleton still constructs `RunnerBridge()` with the relative `outputs` default,
-while the browser presets also send literal `outputs` even when `--outputs-dir`
-configures another root. The API only applies the configured default if the
-request omits it. Verify and fix default-root propagation while preserving
-explicit per-run overrides. This is a source finding, not a new inference result.
+**Phase 10.5 — Saved-result inspection:** background completion currently replaces
+the shared History/Outputs viewer. Preserve the user's saved-image inspection
+while keeping completed-job progress/results available through the existing state.
 
 Model upload publication requires filesystem hard-link support and fails safely
 when unavailable; no overwrite fallback is provided. Distinct concurrent upload
@@ -477,5 +507,5 @@ Arbitrary model families, quantized-transformer LoRA compatibility, production
 portrait-quality benchmarking, large-download throughput, and interrupted-network
 recovery are not established by these bounded checks. Large unpaginated history,
 in-memory batch/download state, whole-run output deletion, and model-dependent
-reference adherence remain documented operating limits. Phases 10.1–10.3 are complete;
-configured-output-directory propagation is the next focused task.
+reference adherence remain documented operating limits. Phases 10.1–10.4 are complete;
+saved-result inspection during background completion is the next focused task.

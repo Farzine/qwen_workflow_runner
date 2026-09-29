@@ -140,6 +140,15 @@ Validation messages remain visible outside these help cards, so required correct
 | `--outputs-dir`| `str` | `None` | Path override for output images & records | `--outputs-dir /data/outputs` |
 | `--reload` | `flag` | `False` | Enable auto-reload for local development | `--reload` |
 
+The output default follows CLI configuration, then `OUTPUTS_DIR`, then the
+repository's `outputs/` directory. The served page displays that resolved path;
+workflow presets restore it, and clearing the field delegates to the server.
+Validation and submission resolve omitted/empty output paths identically.
+Explicit per-run paths remain authoritative, including relative paths resolved
+from the server working directory. History searches the configured root and
+directories registered by this session's jobs; arbitrary override directories
+are not rediscovered after restart. The core CLI default is unchanged.
+
 ### CLI Usage Examples
 
 ```bash
@@ -423,7 +432,7 @@ node ui/tests/test_tier5_node_stress.js
 ```
 
 The current regression result is 43 core tests plus 13 parameterized subtests,
-444 UI/API/E2E tests, and 51/51 plus 15/15 Node cases. The model-free browser
+447 UI/API/E2E tests, and 52/52 plus 15/15 Node cases. The model-free browser
 checker covers all eight routes at 1440, 900, and 390px, selection preservation,
 and Dashboard failure/retry.
 

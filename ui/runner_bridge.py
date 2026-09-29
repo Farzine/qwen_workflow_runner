@@ -1165,21 +1165,11 @@ class RunnerBridge:
         if self.output_dir not in dirs:
             dirs.append(self.output_dir)
 
-        if "OUTPUTS_DIR" in os.environ and os.environ["OUTPUTS_DIR"].strip():
-            env_out = Path(os.environ["OUTPUTS_DIR"]).resolve()
-            if env_out not in dirs:
-                dirs.append(env_out)
-
         try:
             import ui.server
             s_out = ui.server.get_outputs_dir()
             if s_out and s_out not in dirs:
                 dirs.append(s_out)
-            state_out = getattr(ui.server.app.state, "outputs_dir", None)
-            if state_out:
-                p = Path(state_out).resolve()
-                if p not in dirs:
-                    dirs.append(p)
         except Exception:
             pass
 
@@ -1400,7 +1390,8 @@ def get_runner_bridge() -> RunnerBridge:
     global _bridge_instance
     with _bridge_lock:
         if _bridge_instance is None:
-            _bridge_instance = RunnerBridge()
+            from ui.server import get_outputs_dir
+            _bridge_instance = RunnerBridge(output_dir=str(get_outputs_dir()))
         return _bridge_instance
 
 

@@ -15,6 +15,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import fields
 import hashlib
+import html
 import inspect
 from io import BytesIO
 import json
@@ -256,7 +257,9 @@ async def get_index():
     """Serve single-page application entrypoint."""
     index_file = TEMPLATES_DIR / "index.html"
     if index_file.is_file():
-        return FileResponse(index_file, media_type="text/html")
+        return HTMLResponse(index_file.read_text(encoding="utf-8").replace(
+            "__OUTPUTS_DIR__", html.escape(str(get_outputs_dir()), quote=True)
+        ))
     return HTMLResponse("<html><head><title>Qwen Workflow Runner</title></head><body><h1>Qwen Workflow Runner</h1></body></html>")
 
 
@@ -1010,6 +1013,11 @@ def dict_to_config(data: Dict[str, Any]) -> Config:
         elif k in run_fields and k not in r_in:
             r_in[k] = v
 
+    if "output_dir" not in r_in or r_in["output_dir"] == "":
+        r_in["output_dir"] = str(get_outputs_dir())
+    if not isinstance(r_in["output_dir"], str):
+        raise ValueError("output_dir must be a string")
+
     def coerce(in_dict: dict, cls: type) -> Any:
         kwargs = {}
         for f in fields(cls):
@@ -1223,8 +1231,8 @@ async def start_run(payload: Dict[str, Any]):
         )
 
     # Validate output_dir confinement
-    if payload.get("runtime", {}).get("output_dir"):
-        raw_out = payload["runtime"]["output_dir"]
+    if config.runtime.output_dir:
+        raw_out = config.runtime.output_dir
         cand_out = Path(raw_out).resolve()
         allowed_roots = [
             PROJECT_ROOT.resolve(),
@@ -1253,10 +1261,6 @@ async def start_run(payload: Dict[str, Any]):
             },
         )
     bridge = get_runner_bridge()
-
-    # Synchronize default output directory if configured
-    if not payload.get("runtime", {}).get("output_dir"):
-        config.runtime.output_dir = str(get_outputs_dir())
 
     try:
         job = bridge.submit_run(config=config, demo_mode=demo_mode)

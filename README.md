@@ -490,6 +490,13 @@ completed receipt path. Its stable ID determines the next run. Incompatible file
 catalog-refresh failures, and upload conflicts preserve the prior valid selection
 and display the reason; stored bytes alone do not establish model compatibility.
 
+Web output defaults follow `--outputs-dir`, then `OUTPUTS_DIR`, then the repository's
+`outputs/` directory. The browser displays that path and presets restore it.
+An empty or omitted output directory uses the same default in validation and
+submission. Explicit per-run paths remain supported, including relative paths
+resolved from the server working directory. History includes the configured root
+and output directories registered by jobs in the current server session.
+
 ```bash
 .venv/bin/python -m pytest -q tests
 timeout 300 .venv/bin/python -m pytest -q ui/tests

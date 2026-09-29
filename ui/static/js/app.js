@@ -275,7 +275,7 @@
           warmup_runs: 0,
           increment_seed: false,
           memory_poll_seconds: 0.02,
-          output_dir: "outputs",
+          output_dir: document.getElementById("param-output-dir")?.defaultValue || "",
           filename_prefix: "Qwen_image_2.1",
           save_comparison: true,
         },
@@ -623,7 +623,7 @@
     "param-output-dir": {
       title: "Output Directory",
       summary: "Directory used for generated PNGs, comparisons, and durable JSON run records.",
-      details: [["Web safety", "The API accepts locations only within the project, configured outputs root, or system temporary directory."], ["Behavior", "Relative paths resolve from the project process working directory and are created when needed."]],
+      details: [["Default", "Uses the server's configured output directory. Clearing the field uses that same default; workflow presets restore it."], ["Web safety", "The API accepts locations only within the project, configured outputs root, or system temporary directory."], ["Behavior", "Relative overrides resolve from the server working directory and are created when needed."]],
     },
     "param-filename-prefix": {
       title: "Filename Prefix",
@@ -1704,7 +1704,7 @@
       r.warmup_runs = 0;
       r.increment_seed = false;
       r.memory_poll_seconds = 0.02;
-      r.output_dir = "outputs";
+      r.output_dir = document.getElementById("param-output-dir")?.defaultValue || "";
       r.filename_prefix = "Qwen_image_2.1";
       r.save_comparison = true;
 

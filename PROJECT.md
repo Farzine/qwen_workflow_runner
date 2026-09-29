@@ -87,8 +87,10 @@ and history, sibling/E2E runners drain before cleanup, and pytest isolates
 thumbnail writes and guards repository runtime file metadata. The full suite
 passed with unchanged runtime snapshots. Phase 10.3 is complete: uploaded models
 are selected by matching the final receipt path to a refreshed compatible catalog
-ID; failures preserve the prior valid selection. Next, Phase 10.4 will verify/fix
-configured output-directory defaults in browser submission and singleton history. Broader model families,
+ID; failures preserve the prior valid selection. Phase 10.4 is complete: browser
+defaults/presets, validation, submission, and singleton history honor the configured
+output root while preserving explicit per-run paths. The next focused UX task is
+preserving saved-result inspection when a background job finishes. Broader model families,
 quantized LoRA, large-download recovery, and portrait-quality benchmarking
 remain outside the validated scope.
 
