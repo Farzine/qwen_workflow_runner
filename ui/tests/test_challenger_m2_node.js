@@ -1698,7 +1698,7 @@ runTest("Model upload conflicts show API details, stop chunks, and preserve sele
       requests++;
       return {ok: false, status: 409, json: async () => ({detail})};
     };
-    ModelManager.loadModels = async () => { refreshes++; };
+    ModelManager.loadModels = async () => { refreshes++; return true; };
     ModelManager.cachedSelect = null;
     await ModelManager.uploadFile(file);
     assert.strictEqual(requests, 1, "A conflict must stop remaining chunks");
@@ -1710,19 +1710,118 @@ runTest("Model upload conflicts show API details, stop chunks, and preserve sele
     assert.strictEqual(toastLog.at(-1).type, "error");
     assert.strictEqual(JSON.stringify([Store.state.models.selectedId, Store.state.config.model]), selected);
 
-    sandbox.fetch = async () => { requests++; return {ok: true, json: async () => ({status: "completed"})}; };
+    sandbox.fetch = async () => { requests++; return {ok: true, json: async () => ({
+      success: true, status: requests === 2 ? "uploading" : "completed", path: "/models/new.gguf",
+    })}; };
     await ModelManager.uploadFile({...file, name: "new.gguf"});
     assert.strictEqual(requests, 3);
     assert.strictEqual(refreshes, 1, "Successful uploads must refresh the catalog");
     assert(ModelManager.uploadProgressError.classList.contains("hidden"));
     assert.strictEqual(ModelManager.uploadProgressBadge.textContent, "100%");
-    assert.strictEqual(toastLog.at(-1).type, "success");
+    assert.strictEqual(toastLog.at(-1).type, "warning", "Stored files without a selectable entry must not claim selection");
   } finally {
     sandbox.fetch = originalFetch;
     sandbox.FormData = originalFormData;
     ModelManager.loadModels = originalLoad;
     ModelManager.cachedSelect = originalSelect;
     Object.assign(ModelManager, originalProps);
+  }
+});
+
+runTest("Uploaded model selection uses the final receipt path and authoritative catalog ID", async () => {
+  const originalUpload = ApiClient.uploadModelChunk, originalList = ApiClient.listModels;
+  const originalTrigger = ParamForm.triggerValidation, originalValidate = ApiClient.validateConfig;
+  const originalStart = ApiClient.startRun, originalStream = RunController.connectStream;
+  const originalState = JSON.parse(JSON.stringify(Store.state));
+  const old = {id: "model_111", name: "Old model", path: "/models/old", compatible: true, type: "diffusers"};
+  const uploaded = {id: "model_222", name: "stored.safetensors", path: "/models/stored.safetensors", compatible: true};
+  const decoy = {...uploaded, id: "model_333", path: "/models/another/stored.safetensors"};
+  let catalog, completion, catalogFailure, calls, refreshes;
+  const reset = (selection = old.id) => {
+    Store.state.models.selectedId = selection;
+    Store.state.models.cached = [old, uploaded]; // Stale matching entries cannot authorize selection.
+    catalog = [old, decoy, uploaded];
+    completion = {success: true, status: "completed", path: uploaded.path};
+    catalogFailure = false; calls = 0; refreshes = 0;
+  };
+  try {
+    ParamForm.triggerValidation = () => {};
+    ApiClient.listModels = async () => {
+      refreshes++;
+      if (catalogFailure) throw new Error("Catalog offline");
+      return {models: catalog};
+    };
+    ApiClient.uploadModelChunk = async (_blob, _name, index, total) => {
+      calls++;
+      return index === total - 1 ? completion : {success: true, status: "uploading", path: decoy.path};
+    };
+    const file = {name: "browser-name.safetensors", size: 1, slice: () => new Blob(["fixture"])};
+    for (const [size, selection] of [[1, old.id], [6 * 1024 * 1024, old.id], [1, null]]) {
+      reset(selection);
+      const modelConfig = JSON.stringify(Store.state.config.model);
+      await ModelManager.uploadFile({...file, size});
+      assert.strictEqual(calls, size === 1 ? 1 : 2);
+      assert.strictEqual(refreshes, 1);
+      assert.strictEqual(Store.state.models.selectedId, uploaded.id);
+      assert.strictEqual(ModelManager.cachedSelect.value, uploaded.id);
+      assert.strictEqual(ModelManager.applyCachedBtn.disabled, false);
+      assert.strictEqual(ModelManager.infoPath.textContent, uploaded.path);
+      assert(domRegistry.get("model-active-status").textContent.includes(uploaded.name));
+      assert.strictEqual(JSON.stringify(Store.state.config.model), modelConfig, "Download/advanced fields cannot change selection");
+      assert.strictEqual(toastLog.at(-1).type, "success");
+    }
+
+    // Exercise the real validation and submission controllers with the selected ID.
+    ParamForm.applyDefaultPresets();
+    Store.state.config.demo_mode = false;
+    Store.state.config.model.source = "deliberately-wrong-download-source";
+    Store.state.inputs.inputImages = [{path: "/inputs/input.png"}];
+    Store.state.inputs.referenceImages = [];
+    Store.state.run.status = "idle";
+    const requests = [];
+    ApiClient.validateConfig = async (payload) => { requests.push(payload); return {valid: true}; };
+    ApiClient.startRun = async (payload) => { requests.push(payload); return {run_id: "selected_upload", stream_url: "/stream"}; };
+    RunController.connectStream = () => {};
+    await RunController.startRun();
+    assert.strictEqual(requests.length, 2, "Validation and run submission must both execute");
+    for (const payload of requests) {
+      assert.strictEqual(payload.selected_model_id, uploaded.id);
+      assert.strictEqual(payload.model.source, undefined);
+      assert.strictEqual(payload.model.base_model, undefined);
+    }
+
+    for (const failure of ["incompatible", "missing", "catalog offline"]) {
+      reset();
+      if (failure === "incompatible") catalog = [old, {...uploaded, compatible: false, compatibility_reason: "Wrong transformer"}];
+      if (failure === "missing") catalog = [old, decoy];
+      if (failure === "catalog offline") catalogFailure = true;
+      await ModelManager.uploadFile(file);
+      assert.strictEqual(Store.state.models.selectedId, old.id, failure);
+      assert.strictEqual(toastLog.at(-1).type, "warning");
+      assert(toastLog.at(-1).msg.includes(failure === "incompatible" ? "Wrong transformer" : "not selected"));
+    }
+    reset(null);
+    catalog = [old, {...uploaded, compatible: false}];
+    await ModelManager.uploadFile(file);
+    assert.strictEqual(Store.state.models.selectedId, null, "An incompatible upload cannot trigger default selection");
+
+    for (const receipt of [null, {}, {success: false, status: "completed", path: uploaded.path},
+      {success: true, status: "uploading", path: uploaded.path},
+      {success: true, status: "completed"}, {success: true, status: "completed", path: " "},
+      {success: true, status: "completed", path: {path: uploaded.path}}]) {
+      reset(); completion = receipt;
+      await ModelManager.uploadFile(file);
+      assert.strictEqual(Store.state.models.selectedId, old.id);
+      assert.strictEqual(refreshes, 0, "Unconfirmed uploads cannot refresh or select");
+      assert.strictEqual(toastLog.at(-1).type, "error");
+      assert(toastLog.at(-1).msg.includes("did not confirm"));
+    }
+  } finally {
+    ApiClient.uploadModelChunk = originalUpload; ApiClient.listModels = originalList;
+    ParamForm.triggerValidation = originalTrigger; ApiClient.validateConfig = originalValidate;
+    ApiClient.startRun = originalStart; RunController.connectStream = originalStream;
+    Store.state = originalState;
+    RunController.setRunningState(false);
   }
 });
 

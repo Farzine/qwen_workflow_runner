@@ -149,13 +149,15 @@ The original ComfyUI graph follows the same broad semantics: its `KSampler` rece
 
 Extend the validated Qwen workflow into a production-quality management application with authoritative compatible-model selection, efficient per-device resource reuse, observable downloads, safe deletion, human-readable records, dedicated batch workflow, and task-oriented responsive pages.
 
-Phases 0–9, Phase 10.1 model-upload collision safety, and Phase 10.2 UI test-output isolation are complete within the recorded validation scope. Next is Phase 10.3: correct uploaded-model auto-selection to use authoritative stable catalog IDs. Broader model-family/quantized-LoRA support and quality benchmarking are not implied by the completed roadmap.
+Phases 0–9 and Phases 10.1–10.3 are complete within the recorded validation scope. Uploaded-model auto-selection now uses the final receipt path and authoritative stable catalog ID. Next is Phase 10.4: verify/fix configured output-directory propagation for default browser submissions and singleton history roots. Broader model-family/quantized-LoRA support and quality benchmarking are not implied by the completed roadmap.
 
 ## Active Task
 
-Phase 10.2 is complete. HEAD remains `5c8d379`; all nine pending Phase 10.1/9.8d paths were preserved. The legacy workflow stress tests now use generated temporary inputs, explicit temporary output/model paths, a test-owned runner, and confined environment/app-state/history fallback roots. Each case starts with empty history and produces its own results; the hash check cannot skip or silently omit assertions. Shared E2E and sibling singleton suites now drain/reset jobs before switching roots or removing storage; backend API tests use their owned bridge. Pytest thumbnails use temporary cache storage and a session guard fails if repository runtime file paths/modes/sizes/mtimes change. Focused workflow tests: 4 passed; final UI suite: 444 passed in 14.01s, including the session guard. Separate before/after snapshots of 5,268 runtime entries show no additions/removals/changes, with SHA-256 for outputs/inputs/cache and small model files; large model sizes/mtimes are unchanged. Existing synthetic records were retained. This session changes only tests and documentation; no new production/UI/inference change, browser, model, GPU, or network run. There are 22 pending paths, including two new test files; see Files Modified. Next: Phase 10.3 uploaded-model auto-selection. No user input is pending.
+Phase 10.3 is complete. Initial Git status was clean at user commit `5c0c29f` ("Enhance model upload functionality and testing"), which contains all 22 previously pending Phase 9.8d/10.1/10.2 paths; no earlier changes were discarded or repeated. The upload UI now validates the final completed receipt, refreshes without selecting a default model, matches the exact saved path to a compatible catalog entry, and applies its stable ID through the existing controller. The selected name/path and request payload agree. Missing/incompatible entries or failed catalog refreshes truthfully report uploaded-but-not-selected; malformed receipts/conflicts report failure. Prior valid selection and download/advanced fields remain intact. Selection from an initially empty state also keeps the Select control enabled. Final Node checks: 51/51; stress: 15/15; UI suite: 444 passed in 13.78s with the runtime-file guard. Native browser uploads at 1440/390px used isolated structural catalog fixtures and the real validation API; no inference/GPU/download run. Seven paths are modified; no commit created. Next: Phase 10.4 configured output-directory propagation. No user input is pending.
 
 ## Completed Tasks
+
+- [x] Completed Phase 10.3 uploaded-model selection: final receipt/path validation, refreshed compatible catalog ID, existing controller/visible state, preserved prior selection on failure, ID-based validation/run payloads, Node/API/browser regressions, and documentation.
 
 - [x] Inspected Git state, tracked source, documentation, workflow artifacts, entry points, tests, runtime directories, and recent history.
 - [x] Mapped frontend, API, job bridge, core model, sampling, image, caching, persistence, and output-display flows.
@@ -278,7 +280,8 @@ Phase 10.2 is complete. HEAD remains `5c8d379`; all nine pending Phase 10.1/9.8d
 - [x] Phase 9.8d: final stabilization/diff/documentation review, reconcile completion state and explicit supported-scope limitations.
 - [x] Phase 10.1: prevent model uploads from replacing existing storage, including files used by active jobs; collision-safe atomic publication for single/chunked requests, meaningful conflicts, cleanup, concurrency and UI/API regressions.
 - [x] Phase 10.2: isolate legacy UI stress tests from real output/history storage, generate temporary inputs, drain/reset sibling/E2E runners, isolate thumbnails, and guard repository runtime artifacts. Final 444 tests pass with unchanged 5,268-entry snapshots.
-- [ ] Phase 10.3: use the final upload receipt path and refreshed compatible catalog entry to auto-select an uploaded model by its stable ID; preserve prior selection for invalid/incompatible uploads and conflicts. Depends on Phase 9.2 catalog authority and Phase 10.1 safe uploads; no model loader redesign needed.
+- [x] Phase 10.3: final receipt path resolves the refreshed compatible catalog ID; prior valid selection survives incompatible/missing uploads, refresh failures, malformed receipts, and conflicts. Node 51/51, stress 15/15, UI 444, native desktop/phone uploads and real API validation passed.
+- [ ] Phase 10.4: verify/fix configured output-directory propagation for default browser submissions and singleton history roots, preserving deliberate per-run overrides and existing API compatibility. Depends on Phase 10.2 storage-isolation findings; no model-loading change needed.
 
 ## Current Problems
 
@@ -322,14 +325,15 @@ Phase 10.2 is complete. HEAD remains `5c8d379`; all nine pending Phase 10.1/9.8d
 - The completed-job SSE hang was caused by running Starlette `TestClient` inside the restricted command sandbox. The exact test and full UI suite pass with the local IPC/loopback access already required by these tests; no streaming code change was needed.
 - Backend choice is explicit. The new runtime probe validates the selected device/dtype/offload combination before model loading and returns the same actionable message used by `QwenBackend`.
 - Every meaningful configuration field now has a consistent information control backed by verified implementation behavior. Validation remains inline and outside the help cards.
-- The UI suite now contains 444 tests and completes in about 14 seconds after Phase 10.2 isolation when local loopback sockets are permitted. The frontend Node harness has 50 checks plus 15 stress checks. Core broad validation remains 43 tests/13 subtests from Phase 9.8c3; Phase 10.2 changes only tests/docs; Phase 10.1 changed web upload/storage behavior.
+- The UI suite now contains 444 tests and completes in about 14 seconds after Phase 10.2 isolation when local loopback sockets are permitted. The frontend Node harness has 51 checks plus 15 stress checks. Core broad validation remains 43 tests/13 subtests from Phase 9.8c3; Phase 10.2 changes only tests/docs; Phase 10.1 changed web upload/storage behavior.
 
 ### Model upload collision safety (Phase 9.8d finding; fixed Phase 10.1)
 
 - Phase 9.8d reproduced both branches publishing with `Path.replace`, silently replacing model bytes without a bridge/lease check. Phase 10.1 now rejects occupied paths early and shares atomic `os.link` publication; the complete first upload wins even if another writer races after the early check. All existing files are protected, including queued/running source paths, without unloading a resident model.
 - Logical destination paths remain un-followed at publication; the separate resolved confinement check is retained. Dangling symlinks are rejected as occupied. `finally` removes temporary publication files and assembled session parts; an early chunk conflict clears that request's relevant parts and preserves unrelated uploads.
 - Upload still checks extension, path, chunk fields, and non-empty content; catalog/loader compatibility inspection occurs separately. Arbitrary non-empty `.gguf` bytes can be stored, with no expected-checksum comparison. Storage needs hard-link support and fails safely if unavailable; no replacement fallback exists.
-- Separate follow-up: `ModelManager.uploadFile` searches `option.value.includes(file.name)` after refreshing models. Catalog values are `model_<hash>` IDs, so that auto-selection path cannot identify the newly uploaded file. Existing manual selection works. Phase 10.3 should match the returned path to a compatible catalog entry and apply its ID; this finding comes from source inspection, not a new inference run.
+- Phase 10.3 fixes the filename-versus-hashed-ID auto-selection defect. Only the final confirmed saved path can identify the refreshed compatible catalog entry; failed refreshes cannot select stale cached entries. Selected-ID validation and run submission were verified through the actual controllers; browser/API checks used structural fixtures, not inference weights.
+- Separate Phase 10.4 finding: `get_runner_bridge()` constructs `RunnerBridge()` with its relative `outputs` default even when the server has a custom output root. Browser initial state, HTML field, and default presets also send literal `outputs`; the run API substitutes `get_outputs_dir()` only when that field is omitted. Confirm desired configured-default propagation and preserve explicit per-run overrides. No production behavior changed for this finding.
 
 ### Test storage isolation (Phase 10.2)
 
@@ -355,6 +359,8 @@ Phase 10.2 is complete. HEAD remains `5c8d379`; all nine pending Phase 10.1/9.8d
 - Content covers prompt image-token order, negative conditioning, steps/strength/schedule behavior, seed/repeat semantics, resolution/canvas sizing, batch multiplication, RGB/RGBA handling, lossless KV-cache placement, VAE tiling, warmup artifacts, memory polling, output confinement, device/dtype/offload constraints, model compatibility, LoRA application, offline mode, and synthetic demo limitations.
 
 ## Important Technical Findings
+
+- Phase 10.3 resume: user commit `5c0c29f` contains all 22 recorded pending paths; Git was clean. Scoped upload/catalog/controller/API tracing confirmed the filename/hashed-ID defect. No full repository re-audit, model load, or asset replacement. `loadModels` now returns success/failure so uploads cannot select stale catalog entries; ordinary callers retain their existing behavior.
 
 ### Root cause evidence
 
@@ -501,7 +507,15 @@ Useful concepts to adapt are the separation of base input from optional referenc
 
 ## Files Modified
 
-Phase 10.2 current changes (22 total pending paths at HEAD `5c8d379`; nine prior paths below retained):
+Phase 10.3 current changes (seven modified paths at HEAD `5c0c29f`):
+
+- `ui/static/js/app.js` — retain/validate final upload receipt; refresh catalog without default selection; exact-path compatible-ID resolution; use existing apply controller; truthful uploaded/unselected/error status; catalog refresh outcome and enabled selection control.
+- `ui/tests/test_challenger_m2_node.js` — realistic existing upload receipts and one parameterized regression covering both upload sizes, initial empty state, duplicate names, intermediate paths, malformed receipts, failed refreshes, compatibility, unchanged download fields, and actual validation/run payloads.
+- `README.md`, `ui/README.md`, `PROJECT.md` — document stable-ID upload selection and preservation/error contract.
+- `VALIDATION_MATRIX.md` — current Node/UI/browser evidence, fixture limits, and configured-output-root follow-up.
+- `CONTEXT.md` — reconcile committed prior work; record completion, findings, evidence, files, and exact handoff.
+
+Phase 10.2 historical changes (all 22 prior paths committed by the user as `5c0c29f`; original HEAD `5c8d379`):
 
 - `ui/tests/test_tier5_frontend_stress.py` — independent temporary fixture/owned bridge/history roots, generated image, shared submission/terminal verification, exact 20-record history, mandatory disk/API/hash checks, and LIFO drain before cleanup; removes duplicated payloads and fixed sleeps.
 - `ui/tests/conftest.py` (new) — temporary pytest thumbnail cache and session-wide repository runtime file metadata regression guard.
@@ -512,7 +526,7 @@ Phase 10.2 current changes (22 total pending paths at HEAD `5c8d379`; nine prior
 - `README.md`, `ui/README.md`, `PROJECT.md`, `VALIDATION_MATRIX.md`, `CONTEXT.md` — isolation/guard scope, real unchanged-artifact evidence, final tests, preserved history, and exact Phase 10.3 handoff.
 - Prior production files `ui/server.py`/`ui/static/js/app.js`, Node harness, and new upload API tests are unchanged in this session.
 
-Phase 10.1 changes (nine paths at that checkpoint; retained in the current 22):
+Phase 10.1 historical changes (nine paths at that checkpoint; now part of user commit `5c0c29f`):
 
 - `ui/server.py` — shared atomic non-replacing publication for both upload branches, readable conflicts, dangling-symlink protection, and temporary/part cleanup. No pipeline/resource/model-loading change.
 - `ui/static/js/app.js` — failed model uploads set the visible status to `Upload failed`; existing detail/toast/selection behavior reused.
@@ -778,6 +792,17 @@ Phase 9.7b4 additions to the cumulative files above (uncommitted alongside 9.7b1
 - `ui/README.md`, `CONTEXT.md` — Dashboard usage, snapshot/monitor scope, verification, remaining limitations, and Phase 9.8 handoff.
 
 ## Tests Performed
+
+Phase 10.3 validation (2026-09-29 Asia/Dhaka):
+
+- Read CONTEXT.md completely; clean Git at `5c0c29f`, matching all 22 previously pending paths. Scoped review traced upload receipts, catalog IDs/compatibility, all model-refresh callers, application controller, request payloads, API resolution, and prior fixture lifecycle. No repository/inference re-audit.
+- `node ui/tests/test_challenger_m2_node.js` — final 51/51 passed. One new parameterized case checks single/two-chunk uploads, initial empty selection, exact receipt path despite filename/decoy/intermediate mismatches, active metadata, unchanged download fields, actual validation/run requests using the ID, missing/incompatible entries, failed catalog refresh with stale cached matches, and seven malformed/unconfirmed receipts. Existing 409 test still verifies stopped chunks, visible details, no refresh, and preserved selection; success mock now reflects real receipts and uploaded-but-unselectable status.
+- Updated harness run against committed pre-fix JavaScript in `/tmp` — intentionally failed 49/51, including selected ID remaining `model_111` instead of uploaded `model_222`; confirms the regression detects the root defect. Log: `/tmp/qwen-phase103-old-harness.log`. No production file was reverted.
+- `node ui/tests/test_tier5_node_stress.js` — 15/15 passed. `node --check ui/static/js/app.js` and final diff whitespace checks passed.
+- Host `timeout 300 .venv/bin/python -m pytest -q ui/tests` — 444 passed in 13.78s with the repository runtime-file metadata guard. Only known Starlette/AnyIO deprecation warnings. A later one-line shared controller change enabling Select from empty state was validated by the final Node rerun; Python/API code did not change.
+- `timeout 90 .venv/bin/python /tmp/qwen_model_selection_browser.py` — native Chrome single/two-chunk uploads at 1440px/390px passed against temporary offline server storage. Selected IDs/name/path/100%/error state and non-overflowing layouts agree with final receipts; actual UI validation payloads resolve through the real API to the uploaded source and unique local companion. Incompatible upload and subsequent HTTP 409 retain prior selection. Uploaded bytes match fixtures; temporary publication/part files are absent; no inference outputs exist.
+- Browser evidence `/tmp/qwen-model-selection-browser-305mc13c`: `browser.json`, `selected-1440.png`, `selected-390.png`, logs, `shutdown.json`; both screenshots visually inspected. Server PID 3372782 and Chrome PID 3372783 exited 0. Helpers `/tmp/qwen_model_selection_{browser.py,browser.js,server.py}` use an explicitly temporary bridge, configured roots, thumbnail cache, and fake structural pipeline/SafeTensors fixtures. Fixtures only establish catalog/selection/API transport, not model inference compatibility. Prior real-model/GPU/download evidence is retained, not newly rerun.
+
 
 Phase 10.2 validation (2026-09-29 Asia/Dhaka; runs began on 2026-09-28 UTC):
 
@@ -1088,7 +1113,8 @@ Phase 9.1 validation:
 
 - Phase 10.2 fixes the confirmed UI test output/history leakage and drains the audited sibling/E2E runners. Pytest has a temporary thumbnail cache and repository file metadata guard; this does not cover external-directory writes, directory-only mutations, direct unittest invocation, or abrupt termination. Earlier synthetic records are deliberately retained.
 
-- Model upload auto-selection still searches stable hashed option IDs for the filename after catalog refresh. New storage appears correctly; manual selection works. Phase 10.3 must use the final upload path to find and apply a compatible catalog ID, preserving prior selection for invalid uploads/conflicts.
+- Phase 10.3 fixes uploaded-model ID selection and truthful failure states. Upload publication still does not establish exact tensor/loader compatibility; the structural browser fixtures were never used for inference.
+- Phase 10.4 pending: configured output-root defaults are not consistently propagated into the browser/runtime singleton. See Current Problems and Next Action. Existing manual per-run output paths must remain supported; production semantics need a focused regression before modification.
 - Model upload replacement is fixed in Phase 10.1. Atomic publication requires filesystem hard-link support and does not fall back to overwriting. Normal failure/conflict cleanup is verified, but permission/disk errors can still prevent cleanup, and abandoned incomplete chunk sessions have no new automatic expiry. Concurrency coverage uses distinct upload IDs; session identity/retry/quota management is unchanged. Upload success is not compatibility/checksum verification.
 - Generation-error cleanup now resets model-offload placement/hooks using Diffusers. If that cleanup itself fails, the original inference error remains authoritative and the secondary error is logged; recovery is not guaranteed for a permanently broken CUDA context. Graceful shutdown cannot run after SIGKILL/exit 137. The normal fixed-server shutdown path was explicitly verified.
 
@@ -1117,7 +1143,7 @@ None. The supplied adapter and original runtime assets remain unchanged. Uploade
 
 ## Next Action
 
-Implement Phase 10.3 only: correct model upload auto-selection using stable catalog IDs. HEAD is `5c8d379`; 22 current paths are listed above and must be preserved or reconciled if the user commits them. In `ui/static/js/app.js`, `ModelManager.uploadFile` currently discards each `ApiClient.uploadModelChunk` receipt, refreshes the catalog, then checks `opt.value.includes(file.name)`. Those values are `model_<hash>` IDs (`ui/model_catalog.py`), so the filename comparison cannot identify the upload. Retain the final completed receipt's exact path, find the refreshed compatible `Store.state.models.cached` entry by that path, set the selector to its ID, and call the existing `applySelectedCachedModel` controller. Keep authoritative selection/legacy APIs intact and preserve previous selection for incompatible uploads, malformed/missing completion receipts, or conflicts. Use the existing Node harness and isolated API/browser fixtures to verify old selected A/new compatible B, incompatible/failed upload, stable-ID request payload, visible active metadata, and catalog refresh. Do not change inference loading or add a new API/abstraction; no model/GPU/download rerun is needed for a frontend ID fix. Record any completed-but-unselectable upload truthfully. Broader chunk-session expiry/quota/header validation and model-quality work remain separate. No user input is pending. Do not create commits or discard changes unless requested.
+Implement Phase 10.4 only: verify and correct configured output-directory propagation. HEAD is `5c0c29f`; seven Phase 10.3 paths above are pending and must be preserved or reconciled if committed by the user. Trace `ui/app.py:configure_app`, `ui/server.py:get_outputs_dir`/validation/run/history/health, `ui/runner_bridge.py:get_runner_bridge` and history roots, plus HTML/client initial state/presets/output field. Confirm with temporary storage that launching with `--outputs-dir` should make default browser jobs/history use that root: currently the singleton constructs `RunnerBridge()` at relative `outputs`, the browser sends literal `outputs`, and the run API applies the configured default only for omitted/empty values. Preserve intentional per-run overrides and legacy APIs; do not reinterpret all literal paths or change core CLI defaults. Add the smallest shared default wiring and focused regression; use Phase 10.2 fixture/guard patterns. Validate actual default browser/API submission and isolated history using temporary demo fixtures, no real model/GPU/download run. The Phase 10.3 browser driver used an explicitly temporary bridge to avoid this separate issue; its evidence does not prove normal CLI startup-root behavior. No user input is pending. Do not create commits, delete old records, or discard changes unless requested.
 
 ## Resume Instructions
 

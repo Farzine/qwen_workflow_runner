@@ -485,6 +485,10 @@ with HTTP 409 and atomically publish complete new files without replacement.
 Rename a conflicting upload or use the confirmed model deletion workflow first.
 The model storage filesystem must support hard links; publication failures
 report an error without overwriting existing storage.
+After upload, the UI selects the compatible catalog entry matching the server's
+completed receipt path. Its stable ID determines the next run. Incompatible files,
+catalog-refresh failures, and upload conflicts preserve the prior valid selection
+and display the reason; stored bytes alone do not establish model compatibility.
 
 ```bash
 .venv/bin/python -m pytest -q tests

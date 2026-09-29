@@ -431,14 +431,41 @@ Their SHA check could skip or perform no assertion because durable outputs use
   unchanged in this slice, so no new browser/GPU/model/network validation was run.
   Earlier Node/core/hardware evidence is retained without claiming fresh reruns.
 
+## Phase 10.3 uploaded model selection
+
+Completed 2026-09-29. The browser retains the final confirmed upload receipt,
+matches its exact path to a refreshed compatible catalog entry, and applies the
+stable ID through the existing controller. Download/advanced fields cannot
+override it. Failed refreshes cannot select stale cached entries; incompatible
+or unlisted stored files report that they were uploaded but not selected.
+
+- Node state-machine checks: 51/51; stress checks: 15/15. Coverage includes single
+  and chunked uploads, initial empty selection, misleading intermediate paths,
+  duplicate filenames at different paths, malformed/unconfirmed receipts,
+  catalog failure, incompatibility, and validation/run submission using the ID.
+- Running the updated harness against the committed pre-fix JavaScript failed
+  the upload selection assertion (`model_111` remained instead of `model_222`).
+- UI pytest: 444 passed in 13.78s, including the repository runtime-file guard.
+  Only the two known Starlette/AnyIO deprecation warnings remain.
+- Native Chrome file-input uploads passed at 1440px and 390px. The real catalog
+  and validation API resolved each selected ID to the uploaded path and local
+  companion. Visible active name/path, 100% completion, no horizontal overflow,
+  incompatible-file preservation, and HTTP 409 preservation were verified.
+- Evidence: `/tmp/qwen-model-selection-browser-305mc13c` contains receipts,
+  request/resolved configuration, screenshots, logs, and normal shutdown for
+  server PID 3372782 and Chrome PID 3372783 (both exit 0). Fixture bytes matched
+  storage; upload temporary files were cleaned; no inference was requested.
+  These are structural catalog fixtures, not complete inference models. No new
+  GPU/model-loading/download or image-quality claim follows from this check.
+
 ## Remaining scope and next task
 
-**Phase 10.3 — Uploaded model selection:** `ModelManager.uploadFile` still
-searches option values for the filename, although catalog values are stable
-`model_<hash>` IDs. Use the upload receipt path to find the refreshed compatible
-entry and apply its ID through the existing selection controller. Preserve the
-current selection for incompatible uploads and conflicts. This finding is from
-source inspection; manual catalog selection remains supported.
+**Phase 10.4 — Configured output directory:** scoped inspection found that the
+singleton still constructs `RunnerBridge()` with the relative `outputs` default,
+while the browser presets also send literal `outputs` even when `--outputs-dir`
+configures another root. The API only applies the configured default if the
+request omits it. Verify and fix default-root propagation while preserving
+explicit per-run overrides. This is a source finding, not a new inference result.
 
 Model upload publication requires filesystem hard-link support and fails safely
 when unavailable; no overwrite fallback is provided. Distinct concurrent upload
@@ -450,5 +477,5 @@ Arbitrary model families, quantized-transformer LoRA compatibility, production
 portrait-quality benchmarking, large-download throughput, and interrupted-network
 recovery are not established by these bounded checks. Large unpaginated history,
 in-memory batch/download state, whole-run output deletion, and model-dependent
-reference adherence remain documented operating limits. Phases 10.1 and 10.2 are complete;
-uploaded-model selection is the next focused task.
+reference adherence remain documented operating limits. Phases 10.1–10.3 are complete;
+configured-output-directory propagation is the next focused task.

@@ -85,8 +85,10 @@ asset tests cover conflicts, cleanup, catalog refresh, and frontend errors.
 Phase 10.2 is complete: UI stress tests generate their own temporary inputs
 and history, sibling/E2E runners drain before cleanup, and pytest isolates
 thumbnail writes and guards repository runtime file metadata. The full suite
-passed with unchanged runtime snapshots. Next, Phase 10.3 will correct upload
-auto-selection, which still compares hashed catalog IDs with the uploaded filename. Broader model families,
+passed with unchanged runtime snapshots. Phase 10.3 is complete: uploaded models
+are selected by matching the final receipt path to a refreshed compatible catalog
+ID; failures preserve the prior valid selection. Next, Phase 10.4 will verify/fix
+configured output-directory defaults in browser submission and singleton history. Broader model families,
 quantized LoRA, large-download recovery, and portrait-quality benchmarking
 remain outside the validated scope.
 
@@ -109,6 +111,7 @@ remain outside the validated scope.
   - Form multipart upload: file (`.gguf` or `.safetensors`). Saves directly to `models/`.
   - The browser sends chunks with `chunk_index`, `total_chunks`, and `upload_id`; the server assembles a non-empty file with an allowed extension. Catalog inspection and the inference loader check compatibility separately; upload does not verify a supplied content checksum.
   - Existing destinations return HTTP 409 with rename/delete guidance. Both single and assembled uploads publish atomically using a hard link, so a concurrent upload cannot replace the first complete file. Temporary/assembled parts are removed on publication success or failure.
+  - Browser auto-selection uses the final completed receipt's exact path to resolve a refreshed compatible catalog ID. Validation/run payloads use that ID; incompatible files, refresh failures, and upload conflicts preserve the prior valid selection with a visible explanation.
   - Returns: `{"success": true, "filename": "...", "path": "..."}`
 - `DELETE /api/models/catalog/{model_id}`:
   - Removes a catalog model after active download/inference checks; unloads an idle resident pipeline and preserves Hub cache files still referenced by other selections or snapshots.

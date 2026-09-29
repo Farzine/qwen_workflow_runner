@@ -276,6 +276,8 @@ The backend provides a structured REST and Server-Sent Events (SSE) API:
   - Upload checks the extension, confined destination, chunk fields, and non-empty assembled content. Catalog and loader compatibility checks occur separately; no expected content checksum is verified.
   - Existing files, directories, and dangling destination symlinks return HTTP 409. Rename the upload or confirm deletion of the stored model first; active model deletion remains guarded separately.
   - Single files and assembled chunks publish complete bytes atomically without replacing a concurrent winner. Temporary publication files and assembled/conflicting upload parts are cleaned up. The model filesystem must support hard links; unsupported publication returns an error rather than falling back to replacement.
+  - The browser requires a final `success: true`, `status: completed`, and non-empty `path` receipt. It refreshes the catalog and matches that exact path to a compatible entry, then applies its stable ID for validation and inference.
+  - Incompatible/missing entries and failed catalog refreshes report that the file was uploaded but not selected. Upload conflicts or unconfirmed completion report failure. The prior valid selection is preserved; upload does not imply compatibility.
 - **`DELETE /api/models/catalog/{model_id}`**
   - Deletes a discovered model by its stable catalog ID after browser confirmation.
     Direct local files/directories are removed; completed Hub selection manifests
@@ -421,7 +423,7 @@ node ui/tests/test_tier5_node_stress.js
 ```
 
 The current regression result is 43 core tests plus 13 parameterized subtests,
-444 UI/API/E2E tests, and 50/50 plus 15/15 Node cases. The model-free browser
+444 UI/API/E2E tests, and 51/51 plus 15/15 Node cases. The model-free browser
 checker covers all eight routes at 1440, 900, and 390px, selection preservation,
 and Dashboard failure/retry.
 

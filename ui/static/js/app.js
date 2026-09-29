@@ -2275,10 +2275,12 @@
         this.displayCachedModelInfo(Store.state.models.selectedId);
         this.renderActiveModel();
         ParamForm.triggerValidation();
+        return true;
       } catch (err) {
         console.error("Failed to list models:", err);
         const status = document.getElementById("model-active-status");
         if (status) status.textContent = `Model catalog unavailable: ${err.message}`;
+        return false;
       }
     },
 
@@ -2369,6 +2371,7 @@
         return;
       }
       Store.state.models.selectedId = model.id;
+      if (this.applyCachedBtn) this.applyCachedBtn.disabled = false;
       this.displayCachedModelInfo(model.id);
       this.renderActiveModel();
       Toast.show(`Selected model: ${model.name}`, "success");
@@ -2568,13 +2571,14 @@
         const chunkSize = 5 * 1024 * 1024; // 5MB chunks
         const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
         const uploadId = `up_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        let receipt;
 
         for (let i = 0; i < totalChunks; i++) {
           const start = i * chunkSize;
           const end = Math.min(file.size, start + chunkSize);
           const chunkBlob = file.slice(start, end);
 
-          await ApiClient.uploadModelChunk(chunkBlob, file.name, i, totalChunks, uploadId);
+          receipt = await ApiClient.uploadModelChunk(chunkBlob, file.name, i, totalChunks, uploadId);
 
           const pct = Math.round(((i + 1) / totalChunks) * 100);
           if (this.uploadProgressBar) this.uploadProgressBar.style.width = `${pct}%`;
@@ -2584,19 +2588,22 @@
           }
         }
 
-        Toast.show(`Model file uploaded successfully: ${file.name}`, "success");
-        await this.loadModels();
-
-        // Auto select uploaded model
-        if (this.cachedSelect) {
-          for (const opt of this.cachedSelect.options) {
-            if (opt.value.includes(file.name)) {
-              opt.selected = true;
-              this.displayCachedModelInfo(opt.value);
-              this.applySelectedCachedModel();
-              break;
-            }
-          }
+        if (receipt?.success !== true || receipt.status !== "completed"
+            || typeof receipt.path !== "string" || !receipt.path.trim()) {
+          throw new Error("Server did not confirm a completed model upload. Refresh the model catalog before retrying.");
+        }
+        const refreshed = await this.loadModels(false);
+        const model = refreshed && Store.state.models.cached.find((item) => item.path === receipt.path);
+        if (model?.compatible && model.id && this.cachedSelect) {
+          this.cachedSelect.value = model.id;
+          this.applySelectedCachedModel();
+          if (this.uploadProgressStatus) this.uploadProgressStatus.textContent = `Uploaded and selected: ${model.name}`;
+        } else {
+          const reason = !refreshed ? "Model catalog could not be refreshed. Refresh it before selecting this upload."
+            : model?.compatibility_reason || "The uploaded file is not selectable in the model catalog.";
+          const message = `Uploaded ${file.name}; not selected. ${reason}`;
+          if (this.uploadProgressStatus) this.uploadProgressStatus.textContent = message;
+          Toast.show(message, "warning");
         }
       } catch (err) {
         console.error("Upload error:", err);
