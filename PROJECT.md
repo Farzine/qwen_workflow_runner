@@ -95,8 +95,13 @@ the finished job when returning to Inference/Batch; deletion and late-response
 guards prevent stale artifacts from reappearing. Phase 10.6 is complete: stopped or
 disconnected monitoring keeps the job unverified and submission locked; the shared
 result header reconnects the same SSE job without resubmission, preserving saved
-inspection and accepting only verified completion. Next: make long-job replay
-include the latest batch snapshot beyond the 5,000-event history ceiling. Broader model families,
+inspection and accepting only verified completion. Phase 10.7 is complete:
+long-job replay restores the latest full batch snapshot beyond the 5,000-event
+history ceiling, before live events or completion, under the existing job lock.
+Phase 10.8 is complete: log scrolling is coalesced into native animation frames,
+Clear cancels pending scrolling, and phone terminal height is bounded.
+Next: compact the persistent handoff while archiving completed task/evidence
+history without losing architecture, decisions, or limitations. Broader model families,
 quantized LoRA, large-download recovery, and portrait-quality benchmarking
 remain outside the validated scope.
 

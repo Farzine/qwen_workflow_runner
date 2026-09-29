@@ -296,6 +296,8 @@ const sandbox = {
   clearTimeout: (id) => clearTimeout(id),
   setInterval,
   clearInterval,
+  requestAnimationFrame: (fn) => setTimeout(fn, 0),
+  cancelAnimationFrame: (id) => clearTimeout(id),
   fetch: async (url, opts) => {
     return {
       ok: true,
@@ -368,6 +370,80 @@ ComparisonSlider.init();
 function assertJsonEqual(actual, expected, msg) {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(actual)), JSON.parse(JSON.stringify(expected)), msg);
 }
+
+runTest("Log bursts scroll once per frame while preserving text, controls and clearing", async () => {
+  const viewer = modules.TerminalViewer;
+  const container = viewer.consoleContainer, lines = viewer.logLinesContainer, toggle = viewer.autoscrollToggle;
+  const originalFrame = sandbox.requestAnimationFrame, originalCancel = sandbox.cancelAnimationFrame;
+  const originalNavigator = sandbox.navigator, originalChecked = toggle.checked;
+  const originalHeight = Object.getOwnPropertyDescriptor(container, "scrollHeight");
+  const originalTop = Object.getOwnPropertyDescriptor(container, "scrollTop");
+  const frames = new Map();
+  let nextFrame = 0, reads = 0, writes = 0, top = 0, copied;
+  const flush = () => {
+    const callbacks = [...frames.values()];
+    frames.clear();
+    callbacks.forEach(callback => callback());
+  };
+  try {
+    sandbox.requestAnimationFrame = callback => {const id = nextFrame++; frames.set(id, callback); return id;};
+    sandbox.cancelAnimationFrame = id => frames.delete(id);
+    sandbox.navigator = {clipboard: {writeText: async text => {copied = text;}}};
+    Object.defineProperty(container, "scrollHeight", {configurable: true, get: () => {reads++; return lines.children.length * 20;}});
+    Object.defineProperty(container, "scrollTop", {configurable: true, get: () => top, set: value => {writes++; top = value;}});
+    viewer.clear();
+    toggle.checked = true;
+    for (let index = 0; index < 5000; index++) viewer.appendLogLine(`line ${index}`);
+    viewer.appendLogLine("\x1b[31mError: <script>unsafe</script>\x1b[0m", "stderr");
+    viewer.appendSystemLog("Replay connected");
+    assert.strictEqual(lines.children.length, 5002, "Log text is available before the frame");
+    assert.strictEqual(reads, 0, "Appending cannot force layout for every line");
+    assert.strictEqual(writes, 0);
+    assert.strictEqual(frames.size, 1, "Both append paths share one pending frame, including frame ID zero");
+    assert.strictEqual(lines.children[0].textContent, "line 0");
+    assert.strictEqual(lines.children[4999].textContent, "line 4999");
+    const error = lines.children[5000];
+    assert.strictEqual(error.textContent, "Error: <script>unsafe</script>");
+    assert(error.classList.contains("stream-stderr") && error.classList.contains("log-error"));
+    assert.strictEqual(error.children[0].nodeType, 3, "HTML-like logs remain text");
+    assert.strictEqual(lines.children[5001].textContent, "[SYSTEM] Replay connected");
+    domRegistry.get("btn-copy-logs").dispatchEvent("click");
+    await Promise.resolve();
+    assert.strictEqual(copied, lines.textContent, "Copy sees all logs without waiting for scrolling");
+    flush();
+    assert.strictEqual(reads, 1); assert.strictEqual(writes, 1); assert.strictEqual(top, 5002 * 20);
+
+    viewer.appendLogLine("next frame");
+    toggle.checked = false; // A toggle change must take effect even while a frame is pending.
+    flush();
+    assert.strictEqual(reads, 1); assert.strictEqual(writes, 1);
+    viewer.appendSystemLog("Paused");
+    assert.strictEqual(frames.size, 0);
+    toggle.checked = true;
+    viewer.appendLogLine("Following again");
+    flush();
+    assert.strictEqual(reads, 2); assert.strictEqual(writes, 2); assert.strictEqual(top, lines.children.length * 20);
+
+    viewer.appendSystemLog("Old job");
+    assert.strictEqual(frames.size, 1);
+    domRegistry.get("btn-clear-logs").dispatchEvent("click");
+    assert.strictEqual(lines.children.length, 0); assert.strictEqual(frames.size, 0, "Clear cancels pending scrolling");
+    flush();
+    assert.strictEqual(reads, 2);
+    viewer.appendLogLine("New job");
+    flush();
+    assert.strictEqual(reads, 3); assert.strictEqual(writes, 3); assert.strictEqual(top, 20);
+  } finally {
+    viewer.clear();
+    toggle.checked = originalChecked;
+    sandbox.requestAnimationFrame = originalFrame; sandbox.cancelAnimationFrame = originalCancel;
+    sandbox.navigator = originalNavigator;
+    for (const [name, descriptor] of [["scrollHeight", originalHeight], ["scrollTop", originalTop]]) {
+      if (descriptor) Object.defineProperty(container, name, descriptor);
+      else delete container[name];
+    }
+  }
+});
 
 runTest("Output directory initializes from the server and presets restore that default", () => {
   assert.strictEqual(Store.state.config.runtime.output_dir, outputDirField.defaultValue);

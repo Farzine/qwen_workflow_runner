@@ -580,16 +580,101 @@ Saved inspection and deferred live-result delivery remain intact.
   IDs and a fresh full run passed. Earlier diagnostic evidence remains at
   `/tmp/qwen-monitor-browser-3g2tugv5`; its owned processes also exited 0.
 
+## Phase 10.7 latest batch snapshot replay
+
+Completed 2026-09-29. Ordinary events stop entering history at 5,000, which
+previously discarded later batch item/progress updates. `RunJob.push_event`
+now retains one full snapshot only when a batch event is omitted. It preserves
+the published scalar values and copies all existing planned items. Replay
+captures it with history/subscription under the job lock and inserts it before
+live events or the first completion. Earlier retained event sequences, terminal
+retention, API payloads, frontend controllers, and the log ceiling are unchanged.
+
+- Focused host tests: 3 passed/28 deselected plus 15 subtests in 1.49s. Coverage:
+  4,999/5,000/5,500-event boundaries, unchanged retained replay, replaced omitted
+  snapshots, counts/errors/items/steps/elapsed/ETA, unpublished mutation isolation,
+  success/partial/error/interrupted completion order, deterministic producer
+  blocking during snapshot/subscription, later live updates/terminal delivery,
+  zero leaked subscribers, and actual two-input noisy demo API/output serving.
+- New regressions reject an isolated pre-fix bridge: two failed test methods and
+  three failed boundary subtests (overall exit 1). Evidence
+  `/tmp/qwen-phase107-before-tests.log`; pre-fix source
+  `/tmp/qwen-phase107-before-runner_bridge.py`. Working source was not reverted.
+- Full host UI/API/E2E: 450 passed plus 15 subtests in 13.91s, with repository
+  runtime guard; only existing Starlette/AnyIO deprecations. Node frontend 56/56
+  and stress 15/15 passed. Scoped Python compilation and diff checks passed.
+- Real temporary CLI/server/bridge/native Chrome CPU demo: stop monitoring,
+  emit 5,200 worker logs, finish the first input, enter second generation, then
+  reconnect the same SSE URL without another POST. Replay showed completed 1/2,
+  failed 0, remaining 1, 50%, current red.png generating, first blue.png completed
+  with Details, and measured 4s elapsed/ETA. All three 1440/900/390px layouts
+  displayed this snapshot without horizontal overflow. Final completion, saved
+  records, native preview, and serving/hashes were verified.
+- Evidence `/tmp/qwen-replay-browser-9joh6wt_`: `browser.json`, four screenshots,
+  `artifacts.json`, fresh `runtime-before.json`, logs and `shutdown.json`. Three
+  durable demo records and four PNG hashes, unchanged unrelated fixture and all
+  5,268 runtime file/symlink modes/sizes/mtimes verified. Server PID 3590641 and
+  Chrome PID 3590642 exited 0; desktop/phone active snapshots visually inspected.
+- Browser success used the native Auto-scroll toggle **off**. Initial on-mode
+  attempt `/tmp/qwen-replay-browser-gt1hxt2v` hit a 10s CDP evaluation timeout while
+  processing the burst; server/Chrome exited 0. Existing TerminalViewer reads
+  scrollHeight and writes scrollTop after each appended line; repeated forced
+  layout was the suspected cause at that checkpoint. Phase 10.8 below records
+  the shared fix and final native Auto-scroll-on validation. Wrapper generates real demo
+  records with fixture-only logs/delays; no real weights/GPU/download ran.
+- Fixture corrections: a generated test string initially needed newline escaping;
+  pytest replaced sys.stdout, so noisy demo logs now explicitly use the existing
+  worker capture hook. Sandbox concurrent-loop test stalled and was stopped;
+  the same host-access tests passed. No production workaround was introduced.
+
+## Phase 10.8 log replay responsiveness
+
+Completed 2026-09-29. Both terminal append methods previously read scrollHeight
+and wrote scrollTop after every DOM insertion. One pending native animation
+frame now handles both methods; text is still appended immediately in order.
+Clear cancels pending scrolling and the callback checks the current toggle.
+Phone terminal height is bounded at 60vh so it can actually scroll.
+
+- Pre-fix Node regression: 56/57, 5,002 geometry reads during 5,002 appends;
+  `/tmp/qwen-phase108-before-tests.log`. Final frontend 57/57, stress 15/15:
+  frame-ID-zero coalescing, immediate ordered text, ANSI/stderr/error formatting,
+  HTML-like log text safety, actual Copy/Clear handlers, pending toggle changes,
+  resumed follow and new-job cleanup. No production source reverted.
+- Final host UI/API/E2E: 450 passed plus 15 subtests in 14.22s, runtime-file guard
+  passed; only two known Starlette/AnyIO deprecations. JS syntax/diff checks pass.
+  Prior core/hardware evidence keeps its original scope; no model/GPU rerun.
+- First native on-mode check passed timing, but phone screenshot revealed the
+  console grew to fit every line. The stricter real phone check before CSS fails
+  `Terminal grew to fit all replay logs instead of scrolling` at
+  `/tmp/qwen-autoscroll-phone-before-7u979hr6`; both owned processes exited 0.
+- Final real CLI/server/bridge/native Chrome CPU demo: three separate two-input
+  jobs, at 1440/900/390px, native stop before 5,200 logs, second generation, same
+  URL reconnect with no new POST. Auto-scroll on: 4,995 ordered retained lines,
+  4/3/4 geometry reads, 255/255/267ms replay, 16/16/17 layouts (about
+  20.4/19.0/25.3ms total layout time). Original 10s CDP deadline retained.
+  Current completed 1/2/items/Details/50%/timing restored; terminal scrollHeight
+  exceeds clientHeight and positive scrollTop reaches bottom at all widths.
+  No horizontal overflow. Native clipboard equals complete visible log text;
+  Clear/toggle work; actual completion unlocks and displays saved results.
+- Evidence `/tmp/qwen-autoscroll-browser-gzglllpu`: browser.json, six screenshots,
+  artifacts.json, fresh runtime-before.json, logs, shutdown.json. Seven durable
+  demo records/eight PNG hashes, unrelated fixture and all 5,268 runtime entries
+  unchanged. Server PID 3743267/Chrome PID 3743268 exited 0; final desktop/phone
+  screenshots visually inspected. Temporary helpers reuse the existing replay
+  wrapper/CDP client; fixture-only logs/delays, real SSE/jobs/results, no weights,
+  GPU/network, new dependency/renderer, or user storage change.
+
 ## Remaining scope and next task
 
-**Phase 10.7 — Latest batch replay:** `RunJob.push_event` retains the first
-5,000 events, then only status/error/complete. Active reconnection can replay
-stale early batch counts, stages, elapsed time, and ETA until another live event
-arrives. Preserve the latest authoritative batch snapshot for replay under the
-existing job lock while retaining bounded logs and terminal delivery. Add CPU-only
-regressions for replay after the history ceiling and subscription/terminal races.
-Reconnection currently requires the same tab/job ID; missing server jobs stay
-unverified. Tab-reload recovery and backend inference cancellation are unchanged.
+**Phase 10.9 — Persistent handoff maintenance:** archive detailed completed-task,
+file and test history without losing evidence or decisions, and keep root
+CONTEXT.md concise with current architecture/state/limits/next action. No
+production behavior change. Reconnection still requires the same tab/job ID;
+missing jobs remain unverified. Tab-reload recovery, omitted ordinary logs and
+inference cancellation are unchanged. Live browser log nodes remain unbounded
+until Clear/next job/reconnect; native frames can wait in hidden tabs, while text
+is still appended immediately. This bounded replay does not benchmark unlimited
+log retention.
 
 Model upload publication requires filesystem hard-link support and fails safely
 when unavailable; no overwrite fallback is provided. Distinct concurrent upload
@@ -601,5 +686,5 @@ Arbitrary model families, quantized-transformer LoRA compatibility, production
 portrait-quality benchmarking, large-download throughput, and interrupted-network
 recovery are not established by these bounded checks. Large unpaginated history,
 in-memory batch/download state, whole-run output deletion, and model-dependent
-reference adherence remain documented operating limits. Phases 10.1–10.6 are complete;
-latest authoritative batch replay is the next focused task.
+reference adherence remain documented operating limits. Phases 10.1–10.8 are complete within this scope; persistent handoff maintenance
+is the next focused task. No new functional scope is implied.

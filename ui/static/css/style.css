@@ -2364,6 +2364,7 @@ code, pre, .font-mono {
   .output-drawer-backdrop {
     display: none;
   }
+  .terminal-container { max-height: 60vh; }
   .form-grid-2, .form-grid-3 {
     grid-template-columns: 1fr;
   }

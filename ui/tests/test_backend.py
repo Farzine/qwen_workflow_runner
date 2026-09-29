@@ -11,8 +11,9 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import threading
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from starlette.testclient import TestClient
 
@@ -642,6 +643,187 @@ class TestBackendRunnerBridge(unittest.TestCase):
         job.push_event("complete", {"status": "success", "outputs": []})
         self.assertEqual(len(job.history), 5001)
         self.assertEqual(job.history[-1]["event"], "complete")
+
+    def test_batch_replay_history_boundary_keeps_latest_full_snapshot(self):
+        """Retained events are unchanged; omitted deltas replay once with every item's state."""
+        for history_size in (4999, 5000, 5500):
+            with self.subTest(history_size=history_size):
+                config = Config(generation=GenerationConfig(input_images=["one.png", "two.png", "three.png"], steps=4))
+                job = RunJob(f"batch-boundary-{history_size}", config, demo_mode=True)
+                self.bridge.jobs[job.job_id] = job
+                job.push_event("batch", job.batch_snapshot(include_items=True))
+                for index, status in ((0, "completed"), (1, "failed")):
+                    item = job.batch_items[index]
+                    item.update(status=status, run_id=f"item-{index}", duration_seconds=4 + index,
+                                error="Invalid input" if status == "failed" else None)
+                    job.push_event("batch", job.batch_snapshot(item))
+                for index in range(history_size - 3):
+                    job.push_event("log", {"text": f"line {index}"})
+                job.batch_items[2]["status"] = "generating"
+                job.batch_current = 2
+                job.batch_stage = "generating"
+                job.batch_step = 2
+                job.batch_started = 10
+                with patch("ui.runner_bridge.time.perf_counter", return_value=40):
+                    first = job.batch_snapshot()
+                    job.push_event("batch", first)
+                    expected = job.batch_snapshot(include_items=True)
+
+                request = MagicMock()
+                request.is_disconnected = AsyncMock(return_value=True)
+
+                async def replay():
+                    stream = self.bridge.event_generator(job.job_id, request)
+                    return [json.loads(chunk.split("data: ", 1)[1])
+                            async for chunk in stream if chunk.startswith("event: batch")]
+
+                batches = asyncio.run(replay())
+                self.assertEqual(len(job.subscribers), 0)
+                self.assertEqual(len(job.history), 5000)
+                self.assertEqual(batches[-1], first if history_size == 4999 else expected)
+                self.assertEqual(sum(batch["step"] == 2 for batch in batches), 1)
+                self.assertEqual(expected["elapsed_seconds"], 30)
+                self.assertEqual(expected["eta_seconds"], 4.5)
+                self.assertEqual((expected["completed"], expected["failed"], expected["remaining"]), (1, 1, 1))
+
+                # A second omitted progress-only event must replace the snapshot without losing item deltas.
+                job.batch_step = 3
+                with patch("ui.runner_bridge.time.perf_counter", return_value=45):
+                    job.push_event("batch", job.batch_snapshot())
+                    expected = job.batch_snapshot(include_items=True)
+                # Unpublished worker mutations must not change a previously captured snapshot.
+                job.batch_items[0]["status"] = "unpublished"
+                batches = asyncio.run(replay())
+                self.assertEqual(batches[-1], expected)
+                self.assertEqual(sum(batch["step"] == 3 for batch in batches), 1)
+                self.assertEqual([item["status"] for item in batches[-1]["items"]], ["completed", "failed", "generating"])
+                self.assertEqual(batches[-1]["items"][1]["error"], "Invalid input")
+                self.assertEqual(len(job.history), 5000)
+
+                for status in ("success", "partial_success", "error", "interrupted"):
+                    with self.subTest(status=status):
+                        # Completion already in history must follow the omitted full snapshot and end replay.
+                        job.history[:] = [event for event in job.history if event["event"] != "complete"]
+                        job.push_event("complete", {"status": status, "outputs": []})
+                        job.push_sentinel()
+
+                        async def finished():
+                            return [chunk async for chunk in self.bridge.event_generator(job.job_id, request)]
+
+                        chunks = asyncio.run(finished())
+                        self.assertTrue(chunks[-2].startswith("event: batch"))
+                        self.assertEqual(json.loads(chunks[-2].split("data: ", 1)[1]), expected)
+                        self.assertEqual(json.loads(chunks[-1].split("data: ", 1)[1])["status"], status)
+                        self.assertEqual(sum(chunk.startswith("event: complete") for chunk in chunks), 1)
+                        self.assertEqual(len(job.history), 5001)
+                        self.assertEqual(len(job.subscribers), 0)
+
+    def test_batch_replay_snapshot_precedes_updates_published_during_subscription(self):
+        """The job lock separates retained snapshot replay from new queued events, including completion."""
+        config = Config(generation=GenerationConfig(input_images=["one.png", "two.png"], steps=4))
+        job = RunJob("batch-subscription-race", config, demo_mode=True)
+        self.bridge.jobs[job.job_id] = job
+        job.push_event("batch", job.batch_snapshot(include_items=True))
+        for index in range(5000):
+            job.push_event("log", {"text": f"line {index}"})
+        job.batch_items[0].update(status="completed", run_id="first", duration_seconds=4)
+        job.batch_items[1]["status"] = "generating"
+        job.batch_current = 1
+        job.batch_stage = "generating"
+        job.push_event("batch", job.batch_snapshot())
+        expected = job.batch_snapshot(include_items=True)
+        started, published = threading.Event(), threading.Event()
+
+        def publish():
+            started.set()
+            with job._lock:
+                job.batch_items[1]["status"] = "saving"
+                job.batch_stage = "saving"
+                job.push_event("batch", job.batch_snapshot(job.batch_items[1]))
+                job.batch_items[1].update(status="completed", run_id="second", duration_seconds=5)
+                job.batch_stage = "completed"
+                job.batch_current = None
+                final = job.batch_snapshot(include_items=True)
+                job.push_event("batch", final)
+                job.push_event("complete", {"status": "success", "outputs": [], "batch": final})
+                job.push_sentinel()
+            published.set()
+
+        worker = threading.Thread(target=publish)
+        original_add = job.add_subscriber
+
+        def subscribe(queue, loop):
+            original_add(queue, loop)
+            worker.start()
+            self.assertTrue(started.wait(timeout=2))
+            self.assertFalse(published.is_set(), "Publisher must wait for atomic snapshot/subscription")
+
+        async def check():
+            request = MagicMock()
+            request.is_disconnected = AsyncMock(return_value=False)
+            stream = self.bridge.event_generator(job.job_id, request)
+            try:
+                with patch.object(job, "add_subscriber", side_effect=subscribe):
+                    first = await stream.asend(None)
+                await asyncio.to_thread(worker.join, 2)
+                self.assertFalse(worker.is_alive())
+                chunks = [first] + [chunk async for chunk in stream]
+                batches = [json.loads(chunk.split("data: ", 1)[1])
+                           for chunk in chunks if chunk.startswith("event: batch")]
+                self.assertEqual(batches[-3], expected)
+                self.assertEqual([item["status"] for item in batches[-3]["items"]], ["completed", "generating"])
+                self.assertEqual(batches[-2]["item"]["status"], "saving")
+                self.assertEqual(batches[-1]["completed"], 2)
+                self.assertEqual([batch["current_stage"] for batch in batches], ["queued", "generating", "saving", "completed"])
+                self.assertTrue(chunks[-1].startswith("event: complete"))
+            finally:
+                await stream.aclose()
+                worker.join(timeout=2)
+            self.assertEqual(len(job.subscribers), 0)
+
+        asyncio.run(asyncio.wait_for(check(), timeout=5))
+
+    def test_noisy_demo_batch_api_replay_keeps_final_items_and_saved_outputs(self):
+        """Actual worker logs fill history; terminal replay still includes all real attempt records."""
+        from PIL import Image
+        paths = [self.root / "noisy-blue.png", self.root / "noisy-red.png"]
+        for path, color in zip(paths, ("blue", "red")):
+            Image.new("RGB", (32, 32), color).save(path)
+        original = DemoBackend.generate
+
+        def noisy_generate(backend, images, *args, **kwargs):
+            # Pytest replaces sys.stdout; use the worker's actual registered capture hook.
+            self.bridge.capture_mgr.stdout_hook.write("".join(f"Temporary demo log {index}\n" for index in range(5100)))
+            return original(backend, images, *args, **kwargs)
+
+        payload = {"demo_mode": True,
+                   "generation": {"input_images": [str(path) for path in paths], "steps": 1},
+                   "runtime": {"device": "cpu", "dtype": "float32", "offload": "none", "output_dir": str(self.outputs_dir)}}
+        with patch.object(DemoBackend, "generate", new=noisy_generate):
+            response = self.client.post("/api/run", json=payload)
+            self.assertEqual(response.status_code, 200)
+            job_id = response.json()["run_id"]
+            job = self.bridge.jobs[job_id]
+            self.assertTrue(job.done_event.wait(timeout=5))
+        stream = self.client.get(response.json()["stream_url"])
+        self.assertEqual(stream.status_code, 200)
+        chunks = [chunk for chunk in stream.text.split("\n\n") if chunk]
+        self.assertTrue(chunks[-2].startswith("event: batch"))
+        self.assertTrue(chunks[-1].startswith("event: complete"))
+        batch = json.loads(chunks[-2].split("data: ", 1)[1])
+        complete = json.loads(chunks[-1].split("data: ", 1)[1])
+        self.assertGreaterEqual(complete["batch"]["elapsed_seconds"], batch["elapsed_seconds"])
+        self.assertEqual({**batch, "elapsed_seconds": complete["batch"]["elapsed_seconds"]}, complete["batch"])
+        self.assertEqual((batch["completed"], batch["failed"], batch["remaining"], batch["percent"]), (2, 0, 0, 100))
+        self.assertEqual([item["status"] for item in batch["items"]], ["completed", "completed"])
+        self.assertEqual([item["run_id"] for item in batch["items"]], [record["run_id"] for record in complete["records"]])
+        self.assertEqual(len(job.history), 5001)
+        self.assertLess(sum(event["event"] == "log" for event in job.history), 5000)
+        self.assertEqual(len(job.subscribers), 0)
+        for output in complete["outputs"]:
+            import hashlib
+            self.assertEqual(hashlib.sha256(Path(output["path"]).read_bytes()).hexdigest(), output["sha256"])
+            self.assertEqual(self.client.get(output["url"]).content, Path(output["path"]).read_bytes())
 
     def test_setup_error_attribution_and_lookup_without_404(self):
         corrupt_img = self.root / "corrupt_backend.png"

@@ -3562,6 +3562,7 @@
     autoscrollToggle: null,
     copyBtn: null,
     clearBtn: null,
+    scrollFrame: null,
 
     init() {
       this.consoleContainer = document.getElementById("terminal-stream-console");
@@ -3588,23 +3589,32 @@
       if (!this.logLinesContainer) return;
       const lineNode = Utils.parseLogLine(text, stream);
       this.logLinesContainer.appendChild(lineNode);
-
-      if (this.autoscrollToggle && this.autoscrollToggle.checked && this.consoleContainer) {
-        this.consoleContainer.scrollTop = this.consoleContainer.scrollHeight;
-      }
+      this.scheduleScroll();
     },
 
     appendSystemLog(text) {
       if (!this.logLinesContainer) return;
       const line = Utils.el("div", { class: "terminal-line log-system" }, `[SYSTEM] ${text}`);
       this.logLinesContainer.appendChild(line);
+      this.scheduleScroll();
+    },
 
-      if (this.autoscrollToggle && this.autoscrollToggle.checked && this.consoleContainer) {
-        this.consoleContainer.scrollTop = this.consoleContainer.scrollHeight;
-      }
+    scheduleScroll() {
+      if (this.scrollFrame !== null || !this.autoscrollToggle?.checked || !this.consoleContainer) return;
+      // Read geometry once per frame, not once per replayed line.
+      this.scrollFrame = requestAnimationFrame(() => {
+        this.scrollFrame = null;
+        if (this.autoscrollToggle?.checked && this.consoleContainer) {
+          this.consoleContainer.scrollTop = this.consoleContainer.scrollHeight;
+        }
+      });
     },
 
     clear() {
+      if (this.scrollFrame !== null) {
+        cancelAnimationFrame(this.scrollFrame);
+        this.scrollFrame = null;
+      }
       if (this.logLinesContainer) {
         this.logLinesContainer.innerHTML = "";
       }

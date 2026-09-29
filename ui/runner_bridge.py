@@ -489,6 +489,7 @@ class RunJob:
         self.created_at = self.created_dt.isoformat()
         self.status = "queued"  # queued | running | completed | partial_success | error | interrupted
         self.history: List[Dict[str, Any]] = []
+        self.latest_batch: Optional[Dict[str, Any]] = None
         self.subscribers: Dict[asyncio.Queue, Optional[asyncio.AbstractEventLoop]] = {}
         self.records: List[Dict[str, Any]] = []
         self.primary_run_id: str = job_id
@@ -547,6 +548,11 @@ class RunJob:
         with self._lock:
             if len(self.history) < 5000:
                 self.history.append(event)
+            elif event_type == "batch":
+                # Retain one full snapshot: omitted deltas cannot rebuild every item on reconnect.
+                self.latest_batch = {"event": "batch", "data": {
+                    **data, "items": [self.batch_items[index].copy() for index in sorted(self.batch_items)],
+                }}
             elif event_type in {"complete", "error", "status"}:
                 self.history.append(event)
             subs = list(self.subscribers.items())
@@ -1106,12 +1112,13 @@ class RunnerBridge:
         except RuntimeError:
             curr_loop = None
 
-        has_completed = False
         with job._lock:
             history_snapshot = list(job.history)
-            for item in history_snapshot:
-                if item.get("event") == "complete":
-                    has_completed = True
+            completion_index = next((index for index, item in enumerate(history_snapshot)
+                                     if item.get("event") == "complete"), len(history_snapshot))
+            has_completed = completion_index < len(history_snapshot)
+            if job.latest_batch is not None:
+                history_snapshot.insert(completion_index, job.latest_batch)
             if not has_completed and not job.is_done:
                 job.add_subscriber(sub_queue, curr_loop)
 

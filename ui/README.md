@@ -99,7 +99,7 @@ Demo mode is an explicit synthetic preview. `DemoBackend` derives a labeled imag
 
 The top navigation opens **Dashboard**, **Inference**, **Batch**, **History**, **Outputs**, **Models**, **LoRAs**, and **System**. Configure and launch multiple inputs in Inference, then open Batch for full-width operation progress, counts, timing, failures, logs, outputs, comparisons, and per-item Details. Switching pages preserves the active monitor. Models and LoRAs use separate focused views of the existing catalogs; the selected model, adapter, and device remain active when you return to Inference. Existing `#model` and configuration-tab links continue to work.
 
-**Stop monitoring** in the result header disconnects this tab's stream; server inference continues. The badge, footer, and Dashboard show stopped/disconnected status, and batch counts/timing are labeled last known progress. New submission stays disabled until completion is verified. **Reconnect monitor** opens the same job's existing SSE endpoint and replays retained events without submitting again. It works on Inference, Batch, History, and Outputs; saved inspection remains intact during replayed completion. Reconnection is manual and depends on this tab retaining the job ID. Missing jobs or unreadable completion remain unverified rather than unlocking submission. Logs are cleared before replay to avoid duplicate retained lines. Very long jobs can replay stale batch progress after the server's 5,000-event history ceiling; repairing that snapshot is the next task.
+**Stop monitoring** in the result header disconnects this tab's stream; server inference continues. The badge, footer, and Dashboard show stopped/disconnected status, and batch counts/timing are labeled last known progress. New submission stays disabled until completion is verified. **Reconnect monitor** opens the same job's existing SSE endpoint and replays retained events without submitting again. It works on Inference, Batch, History, and Outputs; saved inspection remains intact during replayed completion. Reconnection is manual and depends on this tab retaining the job ID. Missing jobs or unreadable completion remain unverified rather than unlocking submission. Logs are cleared before replay to avoid duplicate retained lines. After the first 5,000 retained events, replay includes one latest full batch snapshot before live events or completion, preserving every item's state. Later ordinary logs are omitted from retained history. Auto-scroll updates geometry once per animation frame while log text appears immediately in order. Clear cancels pending scrolling, and turning Auto-scroll off preserves your reading position. On phones, terminal height is bounded so the latest lines appear inside the scrolling console. Live log nodes are still retained until Clear or the next job/reconnect; there is no new browser log limit.
 
 Dashboard shows server/runtime readiness, GPU inventory, resident production pipelines and applied adapters, the next run's selected model/device/LoRA, this tab's batch/download activity, and five recent saved runs. **Refresh status** checks health, system inventory, and the shared history list; unavailable responses show errors and label retained inventory as last known data. System values are timestamped snapshots, refreshed on startup, configuration changes, job completion, or request. Batch and download cards reuse the existing monitors, with no additional polling loop. Select a recent finished run to open its History details. Storage totals, server-wide download listings, and a full queue are not exposed by the existing APIs and are not displayed.
 
@@ -362,8 +362,13 @@ and passes that exact device to pipeline placement or Accelerate offload.
     - `event: error`: `{"status": "FAILED", "error": "CUDA out of memory"}`
 
 Batch events replay when a client reconnects to a job in the current server
-process. After restart, individual durable records remain in history, but the
-in-memory aggregate event stream is unavailable.
+process. History retains the first 5,000 ordinary events plus terminal events.
+Once batch updates no longer fit, one full latest snapshot is retained separately
+and replayed before live updates or completion. Published counts, stages, item
+records/errors, elapsed time, ETA, and step progress survive the limit. Snapshot
+capture and subscription share the existing job lock; a later publication cannot
+mutate the captured replay. After restart, individual durable records remain in
+history, but the in-memory aggregate event stream is unavailable.
 
 ### 6. Outputs & History
 
@@ -434,7 +439,7 @@ node ui/tests/test_tier5_node_stress.js
 ```
 
 The current regression result is 43 core tests plus 13 parameterized subtests,
-447 UI/API/E2E tests, and 56/56 plus 15/15 Node cases. The model-free browser
+450 UI/API/E2E tests plus 15 replay subtests, and 57/57 plus 15/15 Node cases. The model-free browser
 checker covers all eight routes at 1440, 900, and 390px, selection preservation,
 and Dashboard failure/retry.
 
